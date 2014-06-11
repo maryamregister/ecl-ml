@@ -10,8 +10,8 @@ ML.Mat.Types.Element Ad(l le) := TRANSFORM
 		SELF := le;
 	END;
 	
-RR := PROJECT(l, Ad(LEFT)); //perfomr sigmoid function on each record
+RRR := PROJECT(l, Ad(LEFT)); //perfomr sigmoid function on each record
 
-RETURN RR;
+RETURN RRR;
 
 END;
