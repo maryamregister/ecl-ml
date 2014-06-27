@@ -4,7 +4,7 @@ IMPORT ML.Mat;
 // This function adds elements of a matrix with elements of a vector. If R_C=1 then the summation is done per 
 //row, it means that the elements of row 1 are added to the elemnet 1 of the vector, the elements of row 2 are added
 //to the element 2 of the vector and so on. If R_C=2 then the summation is done colimn-wise
-// test file : 
+
 EXPORT Add_Mat_Vec(DATASET(ML.Mat.Types.Element) l,DATASET(ML.Mat.Types.VecElement) r, R_C) := FUNCTION
 
 StatsL := ML.Mat.Has(l).Stats;

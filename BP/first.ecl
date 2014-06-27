@@ -108,7 +108,89 @@ y := x;
 
 // d3=-(y-a3).*(a3.*(1-a3));
 
-y_a3 := -1 * ML.Mat.Sub (y,a3);
-a3_1 := $.Add_Mat_Num (-1 * a3,1);
-a3_  := $.Mul_ElementWise (a3,a3_1);
-d3   := $.Mul_ElementWise (y_a3,a3_);
+y_a3    := ML.Mat.Sub (y,a3);
+a3_     := $.Mul_Mat_Num (a3,-1);
+a3_1    := $.Add_Mat_Num (a3_,1);
+a3_a3_1 := $.Mul_ElementWise (a3, a3_1);
+d3_     := $.Mul_ElementWise (y_a3,a3_a3_1);
+d3      := $.Mul_Mat_Num (d3_,-1);
+OUTPUT(d3, ALL, NAMED('d3'));
+
+
+//sparsity_delta=((-sparsityParam./rhohat)+((1-sparsityParam)./(1.-rhohat)));
+
+
+term1          := $.Div_Num_Mat (RhoHat,-1*SparsityParam);
+RhoHat_        := $.Mul_Mat_Num (RhoHat,-1);
+RhoHat_1       := $.Add_Mat_Num (RhoHat_,1);
+term2          := $.Div_Num_Mat (RhoHat_1,(1-SparsityParam));
+Sparsity_Delta := ML.Mat.Add (term1,term2);
+OUTPUT(Sparsity_Delta, ALL, NAMED('Sparsity_Delta'));
+
+
+//d2=((W2'*d3)+beta*repmat(sparsity_delta,1,m)).*(a2.*(1-a2));  Trans
+
+W2_T      					:= ML.Mat.Trans (W2);
+OUTPUT(W2_T, ALL, NAMED('W2_T'));
+W2_T_d3   					:= ML.Mat.Mul (W2_T,d3);
+OUTPUT(W2_T_d3, ALL, NAMED('W2_T_d3'));
+Sparsity_Delta_Beta := $.Mul_Mat_Num (Sparsity_Delta,Beta);
+OUTPUT(Sparsity_Delta_Beta, ALL, NAMED('Sparsity_Delta_Beta'));
+d2_term1 						:= $.Add_Mat_Vec (W2_T_d3,Sparsity_Delta_Beta,1);
+OUTPUT(d2_term1, ALL, NAMED('d2_term1'));
+a2_      					  := $.Mul_Mat_Num (a2,-1);
+a2_1     					  := $.Add_Mat_Num (a2_,1);
+a2_a2_1  					  := $.Mul_ElementWise (a2, a2_1);
+OUTPUT(a2_a2_1, ALL, NAMED('a2_a2_1'));
+
+d2       					  := $.Mul_ElementWise (d2_term1,a2_a2_1);
+OUTPUT(d2, ALL, NAMED('d2'));
+
+
+
+// W1delta=d2*x';
+// W2delta=d3*a2';
+// b1delta=sum(d2,2);
+// b2delta=sum(d3,2);
+
+OUTPUT(x, ALL, NAMED('x'));
+x_T       := ML.Mat.Trans (x);
+OUTPUT(x_T, ALL, NAMED('x_T'));
+
+W1delta		:= ML.Mat.Mul (d2,x_T);
+OUTPUT(W1delta, ALL, NAMED('W1delta'));
+a2_T      := ML.Mat.Trans (a2);
+W2delta		:= ML.Mat.Mul (d3,a2_T);
+OUTPUT(W2delta, ALL, NAMED('W2delta'));
+
+b1delta   := $.MyHas(d2).SumRow;
+OUTPUT(b1delta, ALL, NAMED('b1delta'));
+b2delta   := $.MyHas(d3).SumRow;
+OUTPUT(b2delta, ALL, NAMED('b2delta'));
+
+
+// squared_error_cost=sum(0.5*sum((x-a3).^2));
+
+x_a3   := ML.Mat.Sub (x,a3);
+x_a3_2 := $.Pow_Each_El (x_a3,2);
+
+OUTPUT(x_a3_2, ALL, NAMED('x_a3_2'));
+
+Sum_x_a3_2  := $.MyHas(x_a3_2).SumCol;
+
+
+Sum_x_a3_2_5 := $.Mul_Mat_Num (Sum_x_a3_2,0.5);
+
+OUTPUT(Sum_x_a3_2_5, ALL, NAMED('Sum_x_a3_2_5'));
+
+Squared_Error_Cost := $.MyHas(Sum_x_a3_2_5).SumRow;
+OUTPUT(Squared_Error_Cost, ALL, NAMED('Squared_Error_Cost'));
+
+
+
+// cost=(1/m)*squared_error_cost+(lambda/2)*(sum(W2(:).^2)+sum(W1(:).^2))+beta*sum(KL(sparsityParam,rhohat));
+// W1grad=(1/m)*W1delta+lambda*W1;
+// W2grad=(1/m)*W2delta+lambda*W2;
+// b1grad=(1/m)*b1delta;
+// b2grad=(1/m)*b2delta;
+

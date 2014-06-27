@@ -2,10 +2,18 @@
 IMPORT ML.Mat;
 // This function multiply all the elements of the matrix to the value "v".
 
+MatRecord := ML.Mat.Types.Element;
 
-EXPORT Mul_Mat_Num(DATASET(ML.Mat.Types.Element) l, REAL8 v) := FUNCTION
+VecRecord := ML.Mat.Types.VecElement;
+MatIDRec := RECORD
+UNSIGNED8  id;
+MatRecord;
+END; 
 
-ML.Mat.Types.Element Mu(l le) := TRANSFORM
+
+EXPORT Mul_Mat_Num_2(DATASET(MatIDRec) l, REAL8 v) := FUNCTION
+
+MatIDRec Mu(l le) := TRANSFORM
 		SELF.value := le.value * v;
 		SELF := le;
 	END;
