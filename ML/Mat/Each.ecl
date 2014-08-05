@@ -1,4 +1,4 @@
-// Element-wise matrix operations
+﻿// Element-wise matrix operations
 IMPORT ML.Mat.Types;
 EXPORT Each := MODULE
 
@@ -56,5 +56,35 @@ EXPORT Reciprocal(DATASET(Types.Element) d, Types.t_Value factor=1) := FUNCTION
 	END;
 	RETURN PROJECT(d,divide(LEFT));
  END;
+ 
+
+
+EXPORT sigmoid(DATASET(Types.Element) l) := FUNCTION
+
+Types.Element sig(l le) := TRANSFORM
+		SELF.value := 1 / (1 + EXP(le.value * -1));
+		SELF := le;
+	END;
+	
+P := PROJECT(l, sig(LEFT)); //perfomr sigmoid function on each record
+
+RETURN P;
+
+END;
+
+
+
+EXPORT ScalarMul(DATASET(Types.Element) l, Types.t_Value scalar ) := FUNCTION //multiply each element of matrix with the value "scalar"
+
+Types.Element Mu(l le) := TRANSFORM
+		SELF.value := le.value * scalar;
+		SELF := le;
+	END;
+	
+R := PROJECT(l, Mu(LEFT)); //multiply each matrix element by v
+
+RETURN R;
+
+END;
 
 END;

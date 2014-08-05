@@ -114,16 +114,31 @@ b1 := DATASET ([
 VecRecord);
 OUTPUT(b1, ALL, NAMED('b1'));
 //b2 = zeros (visiblesize);
+b := DATASET ([
+{2,1,1,0},
+{2,2,1,0},
+{2,3,1,0},
+{2,4,1,0},
+{1,1,1,0},
+{1,2,1,0}],
+$.M_types.IDMatRec);
+OUTPUT(b, ALL, NAMED('b'));
+
 b2 := DATASET ([
 {1,1,0},
 {2,1,0},
 {3,1,0},
 {4,1,0}],
 VecRecord);
-OUTPUT(b2, ALL, NAMED('b2'));
+
 
 // make id numbers for the matrices which need to aggregated in a cell 
 IDW := DATASET ([
+{1},
+{2}],
+$.M_Types.IDRec);
+
+IDB := DATASET ([
 {1},
 {2}],
 $.M_Types.IDRec);
@@ -139,8 +154,11 @@ $.M_Types.IDRec);
 R1 := $.Cell(IDW,W) ;
 OUTPUT(R1,NAMED('R1'));
 
-R2 := $.Cell(IDPA,Patches) ;
+R2 := $.Cell(IDB,b) ;
 OUTPUT(R2,NAMED('R2'));
+
+R3 := $.Cell(IDPA,Patches) ;
+OUTPUT(R3,NAMED('R3'));
 
 
 //Feed Forward pass
@@ -212,7 +230,7 @@ $.M_Types.CellMatRec fill($.M_Types.CellMatRec le,$.M_Types.CellMatRec ri) := TR
 
 OUTPUT(o2,NAMED('o2'));
 
-//yes
+
 //apply ITERATE
 
 $.M_Types.CellMatRec T($.M_Types.CellMatRec L, $.M_Types.CellMatRec R, INTEGER C) := TRANSFORM
@@ -225,5 +243,33 @@ MySet1 := ITERATE(o2,T(LEFT,RIGHT,COUNTER));
 OUTPUT(MySet1,NAMED('MySet1'));
 
 
+//feed forward pass
+//a := $.FF (Patches, R1, R2 );
 
 
+
+$.M_Types.CellMatRec2 J2 (R1 l,R2 r) := TRANSFORM 
+	SELF.cellmat1 := l.cellmat;
+	SELF.cellmat2 := r.cellmat;
+	SELF 					:= l;
+END;
+
+wb := JOIN(R1,R2,(LEFT.id=RIGHT.id),J2(LEFT,RIGHT)); 
+
+
+OUTPUT(wb,NAMED('wb'));
+
+wb2 := $.cell2 (R1,R2);
+OUTPUT(wb2,NAMED('wb2'));
+
+$.M_Types.CellMatRec2 P1(wb le) := TRANSFORM // Z2 is calculating two times, make is efficient
+	  $.M_Types.MatRecord z       := ML.Mat.Mul(le.cellmat1,Patches2);
+		SELF.cellmat1 := IF (le.id=1, z , le.cellmat1);
+		SELF.cellmat2 := IF (le.id=1, ML.Mat.Vec.Add_Mat_Vec (z,le.cellmat2,1) , le.cellmat2);
+		SELF.id := le.id+1;
+	END;
+	
+Pol := PROJECT(wb, P1(LEFT)); //perfomr sigmoid function on each record
+
+
+OUTPUT(Pol,NAMED('Pol'));
