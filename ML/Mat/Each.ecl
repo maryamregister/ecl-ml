@@ -87,4 +87,35 @@ RETURN R;
 
 END;
 
+
+
+EXPORT Exponential(DATASET(Types.Element) l) := FUNCTION //apply exponential on each element of matrix 
+
+Types.Element E(l le) := TRANSFORM
+		SELF.value := EXP (le.value);
+		SELF := le;
+	END;
+	
+R := PROJECT(l, E(LEFT)); 
+
+RETURN R;
+
+END;
+
+
+
+EXPORT Logarithm(DATASET(Types.Element) l) := FUNCTION //apply exponential on each element of matrix 
+
+Types.Element DoL(l le) := TRANSFORM
+		SELF.value := LOG (le.value);
+		SELF := le;
+	END;
+	
+R := PROJECT(l, DoL(LEFT)); 
+
+RETURN R;
+
+END;
+
+
 END;
