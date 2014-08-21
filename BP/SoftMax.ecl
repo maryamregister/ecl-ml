@@ -1,12 +1,16 @@
 ﻿IMPORT * FROM ML;
 IMPORT ML.Mat;
 IMPORT $;
-//this is the same fucntion which is used in softmaxgradLoop. This is the first implementation of it
+//the first version of implementation of SoftMax classifier, I then changed it's name to SoftMax
 //d is input data
 //y is labels : c(i,j)=1 IFF the lable of the jth sample is i
 //theta is the softmax parameters which it's size is num_classes * num_features(input size)
-//this fucntion claculated the gradietn and update THETA (softmax parameters) based on the calculated gradietns
-EXPORT SoftMaxGrad(DATASET($.M_Types.MatRecord) d, DATASET($.M_Types.MatRecord) y, REAL8 LAMBDA, REAL8 ALPHA, DATASET($.M_Types.MatRecord) THETA  ) := FUNCTION
+//LAMBDA is wight decay parameter
+EXPORT SoftMax(DATASET($.M_Types.MatRecord) d, DATASET($.M_Types.MatRecord) y, REAL8 LAMBDA, REAL8 ALPHA,DATASET($.M_Types.MatRecord) IntTHETA , UNSIGNED LoopNum ) := MODULE
+
+
+
+SHARED SoftMaxGrad (DATASET($.M_Types.MatRecord) THETA ):= FUNCTION
 
 groundTruth:= y; 
 
@@ -67,5 +71,34 @@ THETAGrad := ML.Mat.Add (first_term, second_term);
 UpdatedTHETA := $.UpdateWB_Mat(THETA, THETAGrad, ALPHA).Regular;
 
 RETURN UpdatedTHETA;
-
 END; 
+
+
+
+EXPORT SoftMaxGradIterations := FUNCTION
+
+//apply SoftmaxGrad fucntion on Param for LoopNum number of iterations to update THETA in each iteration
+//then return the final updated THETA
+
+
+
+
+loopBody(DATASET($.M_Types.MatRecord) ds) :=
+ SoftMaxGrad (ds);
+		
+		
+
+		
+Final_Updated_THETA := LOOP(IntTHETA,  COUNTER <= LoopNum,  loopBody(ROWS(LEFT)));		
+
+
+
+
+
+RETURN 	Final_Updated_THETA;
+
+END;
+
+
+
+END;

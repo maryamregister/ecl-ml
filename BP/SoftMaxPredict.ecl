@@ -3,7 +3,7 @@ IMPORT ML.Mat;
 IMPORT $;
 
 //data is input data
-//y is labels : c(i,j)=1 IFF the lable of the jth sample is i
+
 //theta is the softmax parameters which it's size is num_classes * num_features(input size)
 EXPORT SoftMaxPredict(DATASET($.M_Types.MatRecord) d, DATASET($.M_Types.MatRecord) THETA  ) := FUNCTION
 

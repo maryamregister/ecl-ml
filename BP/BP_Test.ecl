@@ -2,6 +2,9 @@
 IMPORT ML.Mat;
 IMPORT $;
 
+
+// Number of iterations in back propagation algortihm
+LoopNum := 3; 
 // for the input data each colomn corresponds to one instance (sample)
 d := DATASET([
 {1,1,0.1},
@@ -30,16 +33,7 @@ Y := DATASET([
 {3,3,0}],
 $.M_Types.MatRecord);
 
-// it seems that the GenData produce same random numbers in a relatively small time interval
-a1 := ML.Distribution.Uniform(0,1);
-b1 := ML.Distribution.GenData(1,a1,1);
-r1 := MAX (b1,b1.value);
-	
-output(r1);
 
-b2 := ML.Distribution.GenData(1,a1,1);
-r2 := MAX (b2,b2.value);
-output(r2);
 
 
 //the NodeNum is the essential input which shows the structure of the network, each element of
@@ -83,7 +77,7 @@ Parameters := Wadd+B; //Now the ids related to B matrices are from 0 to n (numbe
 //done based on id values (the B matrix related to id=0 is not nessecary and do not need to be extracted);
 OUTPUT  (Parameters, ALL, NAMED ('Parameters'));
 
-Updated_Param:= $.GradDesLoop (  d, y,Parameters,  LAMBDA,  ALPHA,  3).GDIterations;
+Updated_Param:= $.GradDesLoop (  d, y,Parameters,  LAMBDA,  ALPHA,  LoopNum).GDIterations;
 //now updated_parameters contain the updated weights and bias values. and you need to extract W and B matrices
 //by considering weight ids as id+number(number od layers-1) of w matrices
 
