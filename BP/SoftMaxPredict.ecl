@@ -5,19 +5,14 @@ IMPORT $;
 //data is input data
 
 //theta is the softmax parameters which it's size is num_classes * num_features(input size)
-EXPORT SoftMaxPredict(DATASET($.M_Types.MatRecord) d, DATASET($.M_Types.MatRecord) THETA  ) := FUNCTION
+EXPORT SoftMaxPredict(DATASET(ML.Types.NumericField) input_data, DATASET($.M_Types.MatRecord) THETA  ) := FUNCTION
 
 
 
-/*
-
-x=data;
-M=(theta*x);
-M = bsxfun(@minus, M, max(M, [], 1));
-M=exp(M);
-M = bsxfun(@rdivide, M, sum(M));
-[~,pred]=max(M,[],1);
-*/
+//convert input_data to matrix foramt
+ dTmp := ML.Types.ToMatrix (input_data);
+ d := Ml.Mat.Trans(dTmp);
+ 
 
 x := d;
 
@@ -57,6 +52,6 @@ ML.Mat.Types.Element DoDiv(exp_tx_M le,SumCol_exp_tx_M ri) := TRANSFORM
 //tx minus max of each colomn, same as Final M in matlab code
 Prob :=  JOIN(exp_tx_M, SumCol_exp_tx_M, LEFT.y=RIGHT.y, DoDiv(LEFT,RIGHT)); 
 
-
-RETURN Prob;
+StandardRedult := ML.Types.FromMatrix (Ml.Mat.Trans(Prob));
+RETURN StandardRedult;
 END;

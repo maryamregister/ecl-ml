@@ -6,24 +6,13 @@ IMPORT $;
 //y is labels : c(i,j)=1 IFF the lable of the jth sample is i
 //theta is the softmax parameters which it's size is num_classes * num_features(input size)
 //LAMBDA is wight decay parameter
-EXPORT SoftMax(DATASET(ML.Types.NumericField) input_data, DATASET(ML.Types.NumericField) y, REAL8 LAMBDA, REAL8 ALPHA,DATASET($.M_Types.MatRecord) IntTHETA , UNSIGNED LoopNum ) := MODULE
+EXPORT SoftMax_matrixinput(DATASET($.M_Types.MatRecord) d, DATASET($.M_Types.MatRecord) y, REAL8 LAMBDA, REAL8 ALPHA,DATASET($.M_Types.MatRecord) IntTHETA , UNSIGNED LoopNum ) := MODULE
 
 
 
 SHARED SoftMaxGrad (DATASET($.M_Types.MatRecord) THETA ):= FUNCTION
 
-
-//convert input_data to matrix foramt
- dTmp := ML.Types.ToMatrix (input_data);
- d := Ml.Mat.Trans(dTmp);
- 
- 
- 
-//convert y to sparse matrix format, each colomn of matrix correponds to one sample,
-//in each column the element corresponded to the class number is 1 and all other labels are zero
-
-
-groundTruth:= $.ToGroundTruth (y); 
+groundTruth:= y; 
 
 m := MAX (d, d.y); //number of samples
 
@@ -100,7 +89,7 @@ loopBody(DATASET($.M_Types.MatRecord) ds) :=
 		
 
 		
-Final_Updated_THETA := LOOP(IntTHETA,  LoopNum,  loopBody(ROWS(LEFT)));		
+Final_Updated_THETA := LOOP(IntTHETA,  COUNTER <= LoopNum,  loopBody(ROWS(LEFT)));		
 
 
 
