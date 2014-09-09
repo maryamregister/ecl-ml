@@ -2,7 +2,7 @@
 IMPORT ML.Mat;
 IMPORT $;
 
-//This fucntion recives a label dataset in format NumericField
+//This fucntion recives a label dataset in format NumericField, labels should start from 1 
 //and convertsit to matrix format, each column is coresponded to one sample
 //in each column the element correponded to the class label would be 1, all other elements would be zero
 // a label dataset if like [{1,1,1}, {2,1,2}] would be converted to [{1,1,1},{2,1,0},{1,2,0},{2,2,1}]

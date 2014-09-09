@@ -6,12 +6,9 @@ IMPORT $;
 //the parameters are wights and bias values. two weight matrices and two bias matrices. the bias matrix of the first layer has 
 //id 1, the bias matrix of second layer has id 2, the weight matrix of first layer has id 3, the weight of secod layer has id 4
 
-EXPORT SA(DATASET(ML.Types.NumericField) input_data, REAL8 LAMBDA, REAL8 ALPHA, UNSIGNED Hidden_Nodes, UNSIGNED LoopNum ) := FUNCTION
+EXPORT SA_MatrixInput(DATASET($.M_Types.MatRecord) d, REAL8 LAMBDA, REAL8 ALPHA, UNSIGNED Hidden_Nodes, UNSIGNED LoopNum ) := FUNCTION
 
 
-//convert input_data to matrix foramt
- dTmp := ML.Types.ToMatrix (input_data);
- d := Ml.Mat.Trans(dTmp);
  
  
  

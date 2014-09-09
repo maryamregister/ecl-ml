@@ -5,7 +5,7 @@ IMPORT $;
 
 
 // Number of iterations in softmax algortihm
-LoopNum := 2; 
+LoopNum := 5; 
 
 // weight decay
 LAMBDA := 0.0001;
@@ -18,7 +18,6 @@ ALPHA := 0.1;
 //record size = 785*8
 //input data
 value_record := RECORD
-INTEGER id;
 		real	f1	;
 real	f2	;
 real	f3	;
@@ -805,10 +804,10 @@ real	f783	;
 real	f784	;
 INTEGER Label  ;
 END;
-input_data := DATASET('~online::maryam::mytest::mnist_data', value_record, CSV);
-OUTPUT  (input_data,NAMED ('input_data'));
+input_data_tmp := DATASET('~online::maryam::mytest::mnist_data', value_record, CSV);
+OUTPUT  (input_data_tmp,NAMED ('input_data_tmp'));
 
- //ML.AppendID(input_data_tmp, id, input_data);
+ ML.AppendID(input_data_tmp, id, input_data);
 //convert input data to two datset: samples dataset and labels dataset
 Sampledata_Format := RECORD 
 			input_data.id;

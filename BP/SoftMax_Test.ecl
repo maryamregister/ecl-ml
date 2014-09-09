@@ -5,7 +5,7 @@ IMPORT $;
 
 
 // Number of iterations in softmax algortihm
-LoopNum := 5; 
+LoopNum := 2; 
 
 // weight decay
 LAMBDA := 0.0001;
@@ -91,9 +91,11 @@ OUTPUT  (InputSize, NAMED ('InputSize'));
  OUTPUT  (THETA, ALL, NAMED ('THETA'));
 
 
-UpTHETA := $.SoftMax( sample_table_in_numeric_field_format, label_table_in_numeric_field_format,  LAMBDA,  ALPHA,THETA ,  LoopNum ).SoftMaxGradIterations;
+// UpTHETA := $.SoftMax_NumericFieldInput( sample_table_in_numeric_field_format, label_table_in_numeric_field_format,  LAMBDA,  ALPHA,THETA ,  LoopNum ).SoftMaxGradIterations;
 
-OUTPUT  (UpTHETA, ALL, NAMED ('UpTHETA'));
+ UpTHETA := $.SoftMax( sample_table_in_numeric_field_format, label_table_in_numeric_field_format,  LAMBDA,  ALPHA,THETA ,  LoopNum ).SoftMaxGradIterations;
+
+OUTPUT  (UpTHETA,  NAMED ('UpTHETA'));
 
 
 

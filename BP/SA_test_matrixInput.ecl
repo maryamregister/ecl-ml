@@ -1,24 +1,25 @@
 ﻿IMPORT * FROM ML;
 IMPORT ML.Mat;
 IMPORT $;
-//this function learns a sparse autoencoder and return the learnt parameters (training phase)
-//test is done on SA_test
-//the parameters are wights and bias values. two weight matrices and two bias matrices. the bias matrix of the first layer has 
-//id 1, the bias matrix of second layer has id 2, the weight matrix of first layer has id 3, the weight of secod layer has id 4
-
-EXPORT SA(DATASET(ML.Types.NumericField) input_data, REAL8 LAMBDA, REAL8 ALPHA, UNSIGNED Hidden_Nodes, UNSIGNED LoopNum ) := FUNCTION
-
-
-//convert input_data to matrix foramt
- dTmp := ML.Types.ToMatrix (input_data);
- d := Ml.Mat.Trans(dTmp);
- 
- 
- 
 
 
 
 
+// for the input data each colomn corresponds to one instance (sample)
+d := DATASET([
+{1,1,0.1},
+{1,2,0.9},
+{1,3,0.6},
+{2,1,0.4},
+{2,2,0.3},
+{2,3,0.1},
+{3,1,0.2},
+{3,2,0.4},
+{3,3,0.7},
+{4,1,0.4},
+{4,2,0.5},
+{4,3,0.3}],
+$.M_Types.MatRecord);
 // for the desired output values (class labeld for the samples) each colomns corresponds to one sample's output
 Y := d;
 
@@ -33,7 +34,7 @@ Y := d;
 // sparse autoencoder has 3 layers, in  first and third layers the number of nodes in equal to number of input features
 // the number of nodes in the hiddne layer (second layer) should be set by input parameters
 
-
+Hidden_Nodes := 8; // number of Hidden Layer Nodes
 First_Nodes := Max (d, d.x); // number of first layer nodes
 Last_nodes  := First_Nodes; // number of last layerndoes which is equal to number of first layer nodes
 
@@ -41,39 +42,48 @@ Last_nodes  := First_Nodes; // number of last layerndoes which is equal to numbe
 NodeNum := DATASET ([{1,First_Nodes},{2,Hidden_Nodes},{3,Last_nodes}],$.M_Types.IDNUMRec);
 
 
-
+//LAMDA : weight decay parameter
+//ALPHA : Learning rate parameter
+LAMBDA := 0.1;
+ALPHA := 0.1;
 
 //initilize the weight and bias values (weights with randome samll number, bias with zeros)
 W := $.IntWeights  (NodeNum);
-
+OUTPUT  (W, ALL, NAMED ('W'));
 
 
 B := $.IntBias (NodeNum);
-
+OUTPUT  (B, ALL, NAMED ('B'));
 
 
 //Maked PARAM and pass it to Gradietn Desent Function
 add_num := MAX (W, W.id);
-
+OUTPUT (add_num, NAMED('add_num'));
 
 $.M_Types.CellMatRec addone (W l) := TRANSFORM
-	SELF.id := l.id+add_num;
-	SELF := l;
+SELF.id := l.id+add_num;
+SELF := l;
 END;
 
 Wadd := PROJECT (W,addone(LEFT));
 
-
+OUTPUT  (Wadd, ALL, NAMED ('Wadd'));
 Parameters := Wadd+B; //Now the ids related to B matrices are from 0 to n (number of layers)
 // and ids for W matrices are from 1+n to n+n
 // in the GradDes W and B matrix are going to be extracted from the "Parameters" again and it is
 //done based on id values (the B matrix related to id=0 is not nessecary and do not need to be extracted);
+OUTPUT  (Parameters, ALL, NAMED ('Parameters'));
 
-
-Updated_Param:= $.SA_GradDesLoop (  d, y,Parameters,  LAMBDA,  ALPHA,  LoopNum).GDIterations;
+Updated_Param:= $.GradDesLoop (  d, y,Parameters,  LAMBDA,  ALPHA,  3).GDIterations;
 //now updated_parameters contain the updated weights and bias values. and you need to extract W and B matrices
-//by considering weight ids as id+number(number of layers-1) of w matrices
+//by considering weight ids as id+number(number od layers-1) of w matrices
 
-RETURN Updated_Param;
+OUTPUT  (Updated_Param, ALL, NAMED ('Updated_Param'));
 
-END;
+
+
+
+// apply the test with fucntion 
+
+updated_param2 := $.SA( d, 0.1, 0.1, 8, 3 );
+OUTPUT  (updated_param2, ALL, NAMED ('updated_param2'));
