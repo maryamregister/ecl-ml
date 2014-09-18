@@ -89,4 +89,49 @@ END;
 EXPORT SumCol := TABLE(d,r,d.y);
 
 
+
+//return the index of the maximun value in each colomn
+EXPORT MaxColIndex := FUNCTION
+
+
+numrow := MAX (d,d.x);
+
+
+S := SORT (d, y,value);
+
+
+SequencedS := RECORD
+  Types.Element;
+  INTEGER8 Sequence := 0;
+END;
+
+SequencedS AddSequence(S l, INTEGER c) := TRANSFORM
+  SELF.Sequence := c%numrow;
+  SELF := l;
+END;
+
+SequencedSRecs := PROJECT(S,
+          AddSequence(LEFT,COUNTER));
+					
+
+out := SequencedSRecs (SequencedSRecs.Sequence=0);
+
+
+
+Types.Element makematrix(SequencedS l) := TRANSFORM
+  SELF.x := 1;
+	SELF.value :=  l.x;
+  SELF.y := l.y;
+END;
+
+final_result := PROJECT (out, makematrix(LEFT));
+
+
+ 
+
+RETURN final_result;
+
+END;
+
+
 END;

@@ -2,12 +2,11 @@
 IMPORT ML.Mat;
 IMPORT $;
 
-//Apply Gradient Des  for LoopNum number of iterations in back propagation algortihm
-// the GradDes function uses FF, BPCost and UpdateWB to apply the gradient descent 
+//Apply Gradient Des  for LoopNum number of iterations  for Sparse Autoencoder algortihm
 //d : data
 //y : output
 
-EXPORT GradDesLoop ( DATASET ($.M_Types.MatRecord) d, DATASET ($.M_Types.MatRecord) y, DATASET ($.M_Types.CellMatRec) IntParam, REAL8 LAMBDA, REAL8 ALPHA, UNSIGNED LoopNum):= MODULE  
+EXPORT SA_GradDesLoop ( DATASET ($.M_Types.MatRecord) d, DATASET ($.M_Types.MatRecord) y, DATASET ($.M_Types.CellMatRec) IntParam, REAL8 LAMBDA, REAL8 ALPHA, UNSIGNED LoopNum):= MODULE  
 
 SHARED GradDes ( DATASET ($.M_Types.CellMatRec) Param) := FUNCTION 
 
@@ -38,14 +37,14 @@ A := $.FF(d,W,B );
 
 //1- calculate DELTA
 
-DELTA := $.BPcost( y, W, A, LAMBDA ).DELTA;
+DELTA := $.SA_BPcost( y, W, A, LAMBDA ).DELTA;
 
 //2- calculate Weigh Gradeints 
 
-WGrad := $.BPcost( y, W, A, LAMBDA ).Wgrad (DELTA);
+WGrad := $.SA_BPcost( y, W, A, LAMBDA ).Wgrad (DELTA);
 
 //3- calculate Bias Gradients 
-BGrad := $.BPcost( y, W, A, LAMBDA ).Bgrad (DELTA);
+BGrad := $.SA_BPcost( y, W, A, LAMBDA ).Bgrad (DELTA);
 
 //Update W 
 UpW := $.UpdateWB (W,  Wgrad,  ALPHA).Regular;

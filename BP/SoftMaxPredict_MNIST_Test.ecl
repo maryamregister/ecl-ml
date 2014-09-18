@@ -1649,17 +1649,12 @@ T1 := $.RandMat (Numclass,InputSize);
  OUTPUT  (THETA, NAMED ('THETA'));
 
 
-UpTHETA := $.SoftMax( sample_table_in_numeric_field_format, label_table_in_numeric_field_format,  LAMBDA,  ALPHA,THETA ,  2);
-
-OUTPUT  (UpTHETA, NAMED ('UpTHETA'));
+Prediction := $.SoftMaxPredict(sample_table_in_numeric_field_format, THETA  );
 
 
+OUTPUT  (Prediction, NAMED ('Prediction'));
 
 
-//test phase
-
- // Test_Prob := $.SoftMaxPredict( sample_table_in_numeric_field_format, UpTHETA );
- // OUTPUT  (Test_Prob,  NAMED ('Test_Prob'));
 
 
 

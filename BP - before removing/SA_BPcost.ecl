@@ -2,11 +2,11 @@
 IMPORT ML.Mat;
 IMPORT $;
 // This fucntion back propagate the error through the netwrok to calculate the gradients. it also calculate the 
-//cost. The input is the desired outputs, network weights and actual outputs of feed forward pass and also weight decay rate
+//cost. The input is the desired outputs and the network weights and actual outputs of the feed forward pass
 
 
 
-EXPORT BPcost(DATASET($.M_Types.MatRecord) Desired,DATASET($.M_Types.CellMatRec) W,DATASET($.M_Types.CellMatRec) A, REAL8 LAMBDA ) := MODULE
+EXPORT SA_BPcost(DATASET($.M_Types.MatRecord) Desired,DATASET($.M_Types.CellMatRec) W,DATASET($.M_Types.CellMatRec) A, REAL8 LAMBDA, REAL sparsityParam=0.1, REAL BETA=0.1 ) := MODULE
 
  SHARED SigGrad(DATASET($.M_Types.MatRecord) m ) := FUNCTION // this function recieves a matrix m and return m.*(1-m)
 
@@ -16,7 +16,7 @@ RETURN Result;
 END;
 
 
- SHARED LastLayerDelta (DATASET($.M_Types.MatRecord) y, DATASET($.M_Types.MatRecord) a) := FUNCTION//calculates delta for the last layer 
+ SHARED LastLayerDelta (DATASET($.M_Types.MatRecord) y, DATASET($.M_Types.MatRecord) a) := FUNCTION
 
 y_a := ML.Mat.Sub(y,a);
 R := Ml.Mat.Each.Mul (y_a,SigGrad(a));
@@ -26,22 +26,56 @@ RETURN Result1;
 END;
 
 
- SHARED HiddenLayerDelta (DATASET($.M_Types.MatRecord) w,DATASET($.M_Types.MatRecord) delta, DATASET($.M_Types.MatRecord) a) := FUNCTION//calculate delta for hidden layer 
+
+ //hidden layer for sparse autoencoder
+  SHARED HiddenLayerDelta (DATASET($.M_Types.MatRecord) w,DATASET($.M_Types.MatRecord) delta, DATASET($.M_Types.MatRecord) a) := FUNCTION
+
+/*
+rhohat=mean(a2,2);
+
+
+sparsity_delta=((-sparsityParam./rhohat)+((1-sparsityParam)./(1.-rhohat)));
+
+d2=((W2'*d3)+beta*repmat(sparsity_delta,1,m)).*(a2.*(1-a2));
+*/
+
+rhohat := ML.Mat.has(a).MeanRow;
+
+ 
+
+sparsityParam_  := -1*sparsityParam;
+sparsityParam_1 := 1-sparsityParam;
+
+term1    := ML.Mat.Each.Reciprocal(rhohat, sparsityParam_); 
+rhohat_1 := ML.Mat.Each.Add(ML.Mat.Each.ScalarMul(rhohat,-1),1);
+term2    := ML.Mat.Each.Reciprocal(rhohat_1, sparsityParam_1); 
+
+sparsity_delta := ML.Mat.Add(term1, term2);
+
+
 
 wTd    := Ml.Mat.Mul(Ml.Mat.Trans(w),delta);
-Result := Ml.Mat.Each.Mul(wTd,SigGrad(a)); 
+
+mm := Max (Desired, Desired.y);
+sparsity_delta_1_m := ML.Mat.Repmat(sparsity_delta,1,mm);
+beta_sparsity_delta_1_m := ML.mat.Each.ScalarMul(sparsity_delta_1_m, BETA);
+
+term := ML.Mat.Add(wTd, beta_sparsity_delta_1_m );
+Result := Ml.Mat.Each.Mul(term,SigGrad(a)); 
  
 RETURN Result;
  
  END;
- 
- 
 
-  
+
+
 
 
 SHARED M := Max (Desired, Desired.y); // number of samples (each colomn of Desired is related to one sample)
 SHARED M_1 := 1/M;
+
+
+
 
 EXPORT Delta := FUNCTION
 
@@ -74,16 +108,6 @@ DD := PROJECT(MySet1,TDelta(LEFT)) ;
 RETURN DD;
 
 END;
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -155,7 +179,7 @@ GradB_final := PROJECT (DELTA, PBgrd(LEFT));
 RETURN GradB_final;
 END;
 
-//to be implemented later
+//to be completed later
 EXPORT Cost := FUNCTION
 
 

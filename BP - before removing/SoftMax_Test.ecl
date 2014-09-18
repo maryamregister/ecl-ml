@@ -104,8 +104,8 @@ OUTPUT  (UpTHETA,  NAMED ('UpTHETA'));
 
 //test phase
 
-Prediction := $.SoftMaxPredict(sample_table_in_numeric_field_format, UpTHETA  );
-
+ Test_Prob := $.SoftMaxPredict( sample_table_in_numeric_field_format, UpTHETA );
+ OUTPUT  (Test_Prob, ALL, NAMED ('Test_Prob'));
 
 
 
