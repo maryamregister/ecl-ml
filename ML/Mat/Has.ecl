@@ -36,4 +36,84 @@ END;
 // MeanCol is a row vector containing the mean value of each column.
 EXPORT MeanCol := TABLE(d,r,d.y);
 
+
+r := RECORD
+  Types.t_Index x := d.x ;
+	Types.t_Index y := 1;
+	Types.t_Value value := MAX(GROUP,d.value);
+END;
+
+// MaxRow is a column vector containing the max value of each row.
+EXPORT MaxRow := TABLE(d,r,d.x);
+
+
+
+r := RECORD
+  Types.t_Index x := 1 ;
+	Types.t_Index y := d.y;
+	Types.t_Value value := MAX(GROUP,d.value);
+END;
+
+// MaxCol is a row vector containing the max value of each column.
+EXPORT MaxCol := TABLE(d,r,d.y);
+
+
+r := RECORD
+  Types.t_Index x := d.x ;
+	Types.t_Index y := 1;
+	Types.t_Value value := SUM(GROUP,d.value);
+END;
+
+// SumRow is a column vector containing the sum value of each row.
+EXPORT SumRow := TABLE(d,r,d.x);
+
+
+r := RECORD
+  Types.t_Index x := 1 ;
+	Types.t_Index y := d.y;
+	Types.t_Value value := SUM(GROUP,d.value);
+END;
+
+// SumCol is a row vector containing the sum value of each column.
+EXPORT SumCol := TABLE(d,r,d.y);
+
+
+
+//return the index of the maximun value in each colomn
+EXPORT MaxColIndex := FUNCTION
+
+numrow := MAX (d,d.x);
+S := SORT (d, y,value);
+
+SequencedS := RECORD
+  Types.Element;
+  INTEGER8 Sequence := 0;
+END;
+
+SequencedS AddSequence(S l, INTEGER c) := TRANSFORM
+  SELF.Sequence := c%numrow;
+  SELF := l;
+END;
+
+SequencedSRecs := PROJECT(S,
+          AddSequence(LEFT,COUNTER));
+					
+
+out := SequencedSRecs (SequencedSRecs.Sequence=0);
+
+
+
+Types.Element makematrix(SequencedS l) := TRANSFORM
+  SELF.x := 1;
+	SELF.value :=  l.x;
+  SELF.y := l.y;
+END;
+
+final_result := PROJECT (out, makematrix(LEFT));
+
+RETURN final_result;
+
+END;
+
+
 END;
