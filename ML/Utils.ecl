@@ -423,17 +423,7 @@ Result := JOIN (scratch_mat, Y, LEFT.y=RIGHT.id , ToGT(LEFT,RIGHT));
 
 RETURN Result;
 
-END;
+END; // END ToGroundTruth
 
-
-
-
-
-
-
-
-
-	
-	
 	
 END;

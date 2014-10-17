@@ -708,18 +708,20 @@ EXPORT Logistic(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2 MaxIte
 	EXPORT SoftMax_Sparse(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100) := MODULE(DEFAULT)
 
 
-		Soft(DATASET(Types.NumericField) X,DATASET(Types.NumericField) Y) := MODULE
-		
+	Soft(DATASET(Types.NumericField) X,DATASET(Types.NumericField) Y) := MODULE
+
 		//Convert the input data to matrix
 		//the reason matrix transform is done after ocnverting the input data to the matrix is that 
 		//in this implementation it is assumed that the  input matrix shows the samples in column-wise format
 		//in other words each sample is shown in one column. that's why after converting the input to matrix we apply
 		//matrix tranform to refletc samples in column-wise format
-		SHARED dTmp := Types.ToMatrix (X);
+		dt := Types.ToMatrix (X);
+
+		SHARED dTmp := Mat.InsertColumn(dt,1,1.0);
 		SHARED d := Mat.Trans(dTmp);
 		SHARED groundTruth:= Utils.ToGroundTruth (Y); 
 
-	
+
 
 		Step(DATASET(Mat.Types.Element) THETA) := FUNCTION
 			m := MAX (d, d.y); //number of samples
@@ -766,7 +768,8 @@ EXPORT Logistic(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2 MaxIte
 
 			RETURN UpdatedTHETA;
 
-		END;
+		END; // END Step
+		
 		Param := LOOP(IntTHETA, MaxIter, Step(ROWS(LEFT)));	
 		EXPORT Mod := Types.FromMatrix (Param);
 
@@ -780,71 +783,71 @@ EXPORT Logistic(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2 MaxIte
 	END;
 
 
- EXPORT ClassProbDistribC(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) mod) :=FUNCTION
+	EXPORT ClassProbDistribC(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) mod) :=FUNCTION
  
  
- // the steps taken here are the same steps taken above in ste fucntion to calculate Prob
- param := Model (mod); 
+		 // the steps taken here are the same steps taken above in ste fucntion to calculate Prob
+		 param := Model (mod); 
 
 
- dTmp := Types.ToMatrix (Indep);
- 
- x := Mat.Trans(dTmp);
- 
- tx := Mat.Mul (param, x);
+		 dTmp := Types.ToMatrix (Indep);
+		 
+		 x := Mat.Trans(dTmp);
+		 
+		 tx := Mat.Mul (param, x);
 
- MaxCol_tx := Mat.Has(tx).MaxCol;
+		 MaxCol_tx := Mat.Has(tx).MaxCol;
 
-Mat.Types.Element DoMinus(tx le,MaxCol_tx ri) := TRANSFORM
-    SELF.x := le.x;
-    SELF.y := le.y;
-	  SELF.value := le.value - ri.value; 
-  END;
-	
+		Mat.Types.Element DoMinus(tx le,MaxCol_tx ri) := TRANSFORM
+				SELF.x := le.x;
+				SELF.y := le.y;
+				SELF.value := le.value - ri.value; 
+			END;
+			
 
-tx_M :=  JOIN(tx, MaxCol_tx, LEFT.y=RIGHT.y, DoMinus(LEFT,RIGHT)); 
-
-
-
-exp_tx_M := Mat.Each.Exp(tx_M);
-
-SumCol_exp_tx_M := Mat.Has(exp_tx_M).SumCol;
+		tx_M :=  JOIN(tx, MaxCol_tx, LEFT.y=RIGHT.y, DoMinus(LEFT,RIGHT)); 
 
 
-Mat.Types.Element DoDiv(exp_tx_M le,SumCol_exp_tx_M ri) := TRANSFORM
-    SELF.x := le.x;
-    SELF.y := le.y;
-	  SELF.value := le.value / ri.value; 
-  END;
-	
-	
-Prob :=  JOIN(exp_tx_M, SumCol_exp_tx_M, LEFT.y=RIGHT.y, DoDiv(LEFT,RIGHT)); // each column of the Prob matrix includes the probabilities of the corresponding sampel for each of calsses
+
+		exp_tx_M := Mat.Each.Exp(tx_M);
+
+		SumCol_exp_tx_M := Mat.Has(exp_tx_M).SumCol;
 
 
-Types.l_result tr(Mat.Types.Element le) := TRANSFORM
-	SELF.value := le.x;
-	SELF.id := le.y;
-	SELF.number := 1; //number of class
-	SELF.conf := le.value;
-	SELF.closest_conf := 0;
-END;
+		Mat.Types.Element DoDiv(exp_tx_M le,SumCol_exp_tx_M ri) := TRANSFORM
+				SELF.x := le.x;
+				SELF.y := le.y;
+				SELF.value := le.value / ri.value; 
+			END;
+			
+			
+		Prob :=  JOIN(exp_tx_M, SumCol_exp_tx_M, LEFT.y=RIGHT.y, DoDiv(LEFT,RIGHT)); // each column of the Prob matrix includes the probabilities of the corresponding sampel for each of calsses
 
 
-RETURN PROJECT (Prob, tr(LEFT));
+		Types.l_result tr(Mat.Types.Element le) := TRANSFORM
+			SELF.value := le.x;
+			SELF.id := le.y;
+			SELF.number := 1; //number of class
+			SELF.conf := le.value;
+			SELF.closest_conf := 0;
+		END;
 
-END;
+
+		RETURN PROJECT (Prob, tr(LEFT));
+
+	END; // ClassProbDistribC
 
 
-EXPORT ClassifyC(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) mod) := FUNCTION
-	Dist := ClassProbDistribC(Indep, mod);
+	EXPORT ClassifyC(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) mod) := FUNCTION
+		Dist := ClassProbDistribC(Indep, mod);
 
-	numrow := MAX (Dist,Dist.value);
+		numrow := MAX (Dist,Dist.value);
 
-	S:= SORT(Dist,id,conf);
+		S:= SORT(Dist,id,conf);
 
-	SeqRec := RECORD
-	l_result;
-	INTEGER8 Sequence := 0;
+		SeqRec := RECORD
+		l_result;
+		INTEGER8 Sequence := 0;
 	END;
 
 	//add seq field to S
@@ -859,7 +862,7 @@ EXPORT ClassifyC(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) m
 
 
 	RETURN PROJECT(classified,l_result);
-END;
+END; // END ClassifyC
  
  
  	
