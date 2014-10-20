@@ -716,19 +716,16 @@ EXPORT Logistic(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2 MaxIte
 		//in other words each sample is shown in one column. that's why after converting the input to matrix we apply
 		//matrix tranform to refletc samples in column-wise format
 		dt := Types.ToMatrix (X);
-
 		SHARED dTmp := Mat.InsertColumn(dt,1,1.0);
 		SHARED d := Mat.Trans(dTmp);
 		SHARED groundTruth:= Utils.ToGroundTruth (Y); 
-
-
 
 		Step(DATASET(Mat.Types.Element) THETA) := FUNCTION
 			m := MAX (d, d.y); //number of samples
 			
 			// tx=(theta*d);
 			tx := Mat.Mul (THETA, d);
-			
+
 			// tx_M = bsxfun(@minus, tx, max(tx, [], 1));
 			MaxCol_tx := Mat.Has(tx).MaxCol;
 			Mat.Types.Element DoMinus(tx le,MaxCol_tx ri) := TRANSFORM
@@ -750,8 +747,6 @@ EXPORT Logistic(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2 MaxIte
 					SELF.value := le.value / ri.value; 
 				END;
 			Prob :=  JOIN(exp_tx_M, SumCol_exp_tx_M, LEFT.y=RIGHT.y, DoDiv(LEFT,RIGHT)); 
-
-
 
 			//thetagrad=((-1/m)*(groundTruth-M)*x')+lambda*theta;
 			second_term := Mat.Scale (THETA, LAMBDA);
@@ -784,18 +779,11 @@ EXPORT Logistic(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2 MaxIte
 
 
 	EXPORT ClassProbDistribC(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) mod) :=FUNCTION
- 
- 
-		 // the steps taken here are the same steps taken above in ste fucntion to calculate Prob
+		 // the steps taken here are the same steps taken above in step fucntion to calculate Prob
 		 param := Model (mod); 
-
-
 		 dTmp := Types.ToMatrix (Indep);
-		 
 		 x := Mat.Trans(dTmp);
-		 
 		 tx := Mat.Mul (param, x);
-
 		 MaxCol_tx := Mat.Has(tx).MaxCol;
 
 		Mat.Types.Element DoMinus(tx le,MaxCol_tx ri) := TRANSFORM
@@ -803,26 +791,16 @@ EXPORT Logistic(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2 MaxIte
 				SELF.y := le.y;
 				SELF.value := le.value - ri.value; 
 			END;
-			
-
 		tx_M :=  JOIN(tx, MaxCol_tx, LEFT.y=RIGHT.y, DoMinus(LEFT,RIGHT)); 
-
-
-
 		exp_tx_M := Mat.Each.Exp(tx_M);
-
 		SumCol_exp_tx_M := Mat.Has(exp_tx_M).SumCol;
-
-
+		
 		Mat.Types.Element DoDiv(exp_tx_M le,SumCol_exp_tx_M ri) := TRANSFORM
 				SELF.x := le.x;
 				SELF.y := le.y;
 				SELF.value := le.value / ri.value; 
 			END;
-			
-			
 		Prob :=  JOIN(exp_tx_M, SumCol_exp_tx_M, LEFT.y=RIGHT.y, DoDiv(LEFT,RIGHT)); // each column of the Prob matrix includes the probabilities of the corresponding sampel for each of calsses
-
 
 		Types.l_result tr(Mat.Types.Element le) := TRANSFORM
 			SELF.value := le.x;
@@ -831,8 +809,7 @@ EXPORT Logistic(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2 MaxIte
 			SELF.conf := le.value;
 			SELF.closest_conf := 0;
 		END;
-
-
+		
 		RETURN PROJECT (Prob, tr(LEFT));
 
 	END; // ClassProbDistribC
@@ -840,11 +817,8 @@ EXPORT Logistic(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2 MaxIte
 
 	EXPORT ClassifyC(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) mod) := FUNCTION
 		Dist := ClassProbDistribC(Indep, mod);
-
 		numrow := MAX (Dist,Dist.value);
-
 		S:= SORT(Dist,id,conf);
-
 		SeqRec := RECORD
 		l_result;
 		INTEGER8 Sequence := 0;
@@ -855,11 +829,8 @@ EXPORT Logistic(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2 MaxIte
 		SELF.Sequence := c%numrow;
 		SELF := l;
 	END;
-
-	Sseq := PROJECT(S, AddS(LEFT,COUNTER));
-						
+	Sseq := PROJECT(S, AddS(LEFT,COUNTER));				
 	classified := Sseq (Sseq.Sequence=0);
-
 
 	RETURN PROJECT(classified,l_result);
 END; // END ClassifyC
