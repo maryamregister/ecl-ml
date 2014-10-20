@@ -1,4 +1,4 @@
-// Element-wise matrix operations
+﻿// Element-wise matrix operations
 IMPORT ML.Mat.Types;
 EXPORT Each := MODULE
 
@@ -9,7 +9,6 @@ EXPORT Sqrt(DATASET(Types.Element) d) := FUNCTION
 	END;
 	RETURN PROJECT(d,fn(LEFT));
 END;
-	
 EXPORT Exp(DATASET(Types.Element) d) := FUNCTION
   Types.Element fn(d le) := TRANSFORM
 	  SELF.value := exp(le.value);
@@ -36,7 +35,6 @@ Types.Element Multiply(l le,r ri) := TRANSFORM
 	RETURN JOIN(l,r,LEFT.x=RIGHT.x AND LEFT.y=RIGHT.y,Multiply(LEFT,RIGHT));
 END;
 
-
 // matrix .+ scalar
 EXPORT Add(DATASET(Types.Element) d,Types.t_Value scalar) := FUNCTION
   Types.Element add(d le) := TRANSFORM
@@ -56,5 +54,22 @@ EXPORT Reciprocal(DATASET(Types.Element) d, Types.t_Value factor=1) := FUNCTION
 	END;
 	RETURN PROJECT(d,divide(LEFT));
  END;
-
+//sigmoid function
+  EXPORT sigmoid(DATASET(Types.Element) l) := FUNCTION
+    Types.Element sig(l le) := TRANSFORM
+      SELF.value := 1 / (1 + EXP(le.value * -1));
+      SELF := le;
+      END;
+    P := PROJECT(l, sig(LEFT)); //perfomr sigmoid function on each record
+    RETURN P;
+  END;
+//logarithm
+  EXPORT Logarithm(DATASET(Types.Element) l) := FUNCTION //apply Logarithm on each element of matrix
+  Types.Element DoL(l le) := TRANSFORM
+    SELF.value := LOG (le.value);
+    SELF := le;
+  END;
+  R := PROJECT(l, DoL(LEFT));
+  RETURN R;
+  END;
 END;
