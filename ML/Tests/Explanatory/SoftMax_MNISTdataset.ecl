@@ -1629,7 +1629,8 @@ mX_m := mXstats.YMax;
 OUTPUT  (mX_n, ALL, NAMED ('mX_n'));
 OUTPUT  (mX_m, ALL, NAMED ('mX_m'));
 //test phase
-// dist := trainer.ClassProbDistribC(indepDataC,Model );
-// classified := trainer.ClassifyC(indepDataC,Model);
-// OUTPUT  (dist, NAMED ('dist'));
-// OUTPUT  (classified, NAMED ('classified'));
+Model := Parameters;
+dist := trainer.ClassProbDistribC(indepDataC,Model );
+classified := trainer.ClassifyC(indepDataC,Model);
+OUTPUT  (dist, NAMED ('dist'));
+OUTPUT  (classified, NAMED ('classified'));
