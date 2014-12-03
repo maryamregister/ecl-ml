@@ -1140,10 +1140,10 @@ EXPORT Logistic_sparse(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2
   RETURN PROJECT(classified,l_result);
 END; // END ClassifyC
 END; //END SoftMax_Sparse
-// Implementation of SoftMax classifier
+// Implementation of SoftMax classifier using PBblas Library
 //SoftMax classifier generalizes logistic regression classifier for cases when we have more than two target classes
 //The implemenataion is based on Stanford Deep Learning tutorial availabe at http://ufldl.stanford.edu/wiki/index.php/Softmax_Regression
-//this implementation is based on using ML.Mat library
+//this implementation is based on using PBblas library
 //
 //parameters:
 //LAMBDA : wight decay parameter in calculating SoftMax costfunction
@@ -1160,7 +1160,8 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
   dt := Types.ToMatrix (X);
   SHARED dTmp := Mat.InsertColumn(dt,1,1.0); // add the intercept column
   SHARED d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample in presented in one column
-  SHARED groundTruth:= Utils.ToGroundTruth (Y);
+  SHARED groundTruth:= Utils.ToGroundTruth (Y);//Instead of working with label matrix we work with groundTruth matrix
+  //groundTruth is a Numclass*NumSamples matrix. groundTruth(i,j)=1 if label of the jth sample is i, otherwise groundTruth(i,j)=0
   SHARED NumClass := Mat.Has(groundTruth).Stats.XMax;
   SHARED sizeRec := RECORD
     PBblas.Types.dimension_t m_rows;
@@ -1202,9 +1203,8 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
       // tx=(theta*d);
       tx := PBblas.PB_dgemm(FALSE, FALSE, 1.0, THETAmap, THETA, dmap, ddist, txmap);
       // tx_M = bsxfun(@minus, tx, max(tx, [], 1));
-      //first convert matrix from partitioned fromat to MAT element format
+      //first convert matrix from partitioned fromat to MAT element format and then do the operation
       tx_mat := DMat.Converted.FromPart2Elm(tx);
-      // tx_M = bsxfun(@minus, tx, max(tx, [], 1));
       MaxCol_tx_mat := Mat.Has(tx_mat).MaxCol;
       Mat.Types.Element DoMinus(tx_mat le,MaxCol_tx_mat ri) := TRANSFORM
         SELF.x := le.x;
@@ -1215,19 +1215,8 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
       tx_M := DMAT.Converted.FromElement(tx_mat_M, txmap);
       //exp_tx_M=exp(tx_M);
       exp_tx_M := PBblas.Apply2Elements(txmap, tx_M, e);
-      //New Matrix Generator
-      // Layout_Cell gen(UNSIGNED4 c, UNSIGNED4 NumRows, REAL8 v) := TRANSFORM
-        // SELF.y := ((c-1) % NumRows) + 1;
-        // SELF.x := ((c-1) DIV NumRows) + 1;
-        // SELF.v := v;
-      // END;
-      //Create ones matrix
-      // Ones := DATASET(NumClass, gen(COUNTER, NumClass, 1.0),DISTRIBUTED);
-      // OnesMap := PBblas.Matrix_Map(1, NumClass, 1, NumClass);
-      // Onesdist := ML.DMAT.Converted.FromCells(OnesMap, Ones);
-      //Col summations
-      // SumCol_exp_tx_M := PBblas.PB_dgemm(FALSE, FALSE, 1.0, OnesMap, Onesdist, txmap, exp_tx_M, SumColMap);
-      // SumCol_exp_tx_M_R := PBblas.Apply2Elements(SumColMap, SumCol_exp_tx_M, reci);
+      //Prob = bsxfun(@rdivide, exp_tx_M, sum(exp_tx_M));
+      //first convert matrix from partitioned fromat to MAT element format and then do the operation
       exp_tx_M_mat := DMat.Converted.FromPart2Elm(exp_tx_M);
       SumCol_exp_tx_M_mat := Mat.Has(exp_tx_M_mat).SumCol;
       Mat.Types.Element DoDiv(exp_tx_M_mat le,SumCol_exp_tx_M_mat ri) := TRANSFORM
@@ -1237,30 +1226,15 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
       END;
       Prob_mat :=  JOIN(exp_tx_M_mat, SumCol_exp_tx_M_mat, LEFT.y=RIGHT.y, DoDiv(LEFT,RIGHT));
       Prob := DMAT.Converted.FromElement(Prob_mat, txmap);
-     /*//thetagrad=((-1/m)*(groundTruth-Prob)*x')+lambda*theta;
-      second_term := PBblas.PB_dscal(LAMBDA, THETA);
-      groundTruth_Prob := PBblas.PB_daxpy(1.0,groundTruthdist,PBblas.PB_dscal(-1, Prob));
-      groundTruth_Prob_x := PBblas.PB_dgemm(FALSE, True, 1.0, txmap, groundTruth_Prob, dmap, ddist, THETAmap);
-      first_term := PBblas.PB_dscal(m_1, groundTruth_Prob_x);
-      //THETAGrad := Mat.Add (first_term, second_term);
-      THETAGrad := PBblas.PB_daxpy(1.0, first_term, second_term);
-      //new_THETA = THETA - ALPHA*THETAGrad
-      ALPHA_1 := -1*ALPHA;
-     UpdatedTHETA := PBblas.PB_daxpy(1.0,THETA,PBblas.PB_dscal(ALPHA_1, THETAGrad)); // does not work
-    // UpdatedTHETAA := PBblas.PB_daxpy(1.0, second_term, THETA);
-     UpdatedTHETA_mat := DMat.Converted.FromPart2Elm(UpdatedTHETA);
-     */
-      //thetagrad=((-1/m)*(groundTruth-Prob)*x')+lambda*theta;
       second_term := PBblas.PB_dscal((1-ALPHA*LAMBDA), THETA);
       groundTruth_Prob := PBblas.PB_daxpy(1.0,groundTruthdist,PBblas.PB_dscal(-1, Prob));
       groundTruth_Prob_x := PBblas.PB_dgemm(FALSE, True, 1.0, txmap, groundTruth_Prob, dmap, ddist, THETAmap);
       first_term := PBblas.PB_dscal((-1*ALPHA*m_1), groundTruth_Prob_x);
-      //THETAGrad := Mat.Add (first_term, second_term);
       UpdatedTHETA := PBblas.PB_daxpy(1.0, first_term, second_term);
       RETURN UpdatedTHETA;
     END; // END step
     param := LOOP(IntTHETAdist, COUNTER <= MaxIter, Step(ROWS(LEFT)));
-    //EXPORT Mod := Types.FromMatrix (DMat.Converted.FromPart2Elm(param));
+    //param := LOOP(IntTHETAdist, MaxIter, Step(ROWS(LEFT))); // does not work
     EXPORT Mod := ML.DMat.Converted.FromPart2DS (param);
   END; //END Soft
   EXPORT LearnC(DATASET(Types.NumericField) Indep, DATASET(Types.DiscreteField) Dep) := Soft(Indep,PROJECT(Dep,Types.NumericField)).mod;
