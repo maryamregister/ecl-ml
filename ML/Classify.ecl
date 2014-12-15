@@ -590,7 +590,6 @@ END;
 			RETURN t2;
 		END;
 	END;
-
 /*
 	Logistic Regression implementation base on the iteratively-reweighted least squares (IRLS) algorithm:
   http://www.cs.cmu.edu/~ggordon/IRLS-example

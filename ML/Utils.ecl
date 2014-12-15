@@ -433,8 +433,6 @@ END;
 RETURN TABLE(LOOP(Init,K,Permutate(ROWS(LEFT))), {Kperm});
 
 END;
-	
 
-	
-	
+
 END;
