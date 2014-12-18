@@ -590,6 +590,121 @@ END;
 			RETURN t2;
 		END;
 	END;
+  /*
+  implementation based on stanford deep learning toturi al (http://ufldl.stanford.edu/wiki/index.php/Neural_Networks)
+  X is input data
+  w and b represent the structure of neural network
+  w represnts weight matrices : matrix with id=L means thw weight matrix between layer L and layer L+1
+  w(i,j) with id=L represents the weight between unit i of layer L+1 and unit j of layer L
+  b represent bias matrices
+  b with id = L shows the bias value for the layer L+1
+  b(i) with id= L show sthe bias value goes to uni i of layer L
+  */
+  EXPORT BackPropagation (DATASET(Types.DiscreteField) net, DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=10,
+  UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE(DEFAULT)
+  // back propagation algorithm
+  BP(DATASET(Types.NumericField) X,DATASET(Types.NumericField) Y) := MODULE
+    dt := Types.ToMatrix (X);
+    SHARED dTmp := Mat.InsertColumn(dt,1,1.0); // add the intercept column
+    SHARED d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
+    SHARED m := MAX (d, d.y); //number of samples
+    SHARED sizeRec := RECORD
+      PBblas.Types.dimension_t m_rows;
+      PBblas.Types.dimension_t m_cols;
+      PBblas.Types.dimension_t f_b_rows;
+      PBblas.Types.dimension_t f_b_cols;
+    END;
+   //Map for Matrix d.
+    SHARED havemaxrow := maxrows > 0;
+    SHARED havemaxcol := maxcols > 0;
+    SHARED havemaxrowcol := havemaxrow and havemaxcol;
+    SHARED dstats := Mat.Has(d).Stats;
+    SHARED d_n := dstats.XMax;
+    SHARED d_m := dstats.YMax;
+    derivemap := IF(havemaxrowcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows, maxcols),
+                   IF(havemaxrow, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows),
+                      IF(havemaxcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,,maxcols),
+                      PBblas.AutoBVMap(d_n, d_m,prows,pcols))));
+    SHARED sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derivemap.part_rows(1),derivemap.part_cols(1)}], sizeRec);
+    //Create block matrix d
+    dmap := PBblas.Matrix_Map(sizeTable[1].m_rows,sizeTable[1].m_cols,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+    ddist := DMAT.Converted.FromElement(d,dmap);
+    //Creat block matrices for weights
+    w1_mat := Mat.MU.From(IntW,1);
+    w1_mat_x := Mat.Has(w1_mat).Stats.Xmax;
+    w1_mat_y := Mat.Has(w1_mat).Stats.Ymax;
+    w1map := PBblas.Matrix_Map(w1_mat_x, w1_mat_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
+    w1dist := DMAT.Converted.FromElement(w1_mat,w1map);
+    w1no := PBblas.MU.TO(w1dist,1);
+    //loopbody to creat the rest of weight blocks
+    CreatWeightBlock(DATASET(PBblas.Types.MUElement) inputWno, INTEGER coun) := FUNCTION
+      L := coun+1; //creat the weight block for weight between layers L and L+1
+      w_mat := Mat.MU.From(IntW,L);
+      w_mat_x := Mat.Has(w_mat).Stats.Xmax;
+      w_mat_y := Mat.Has(w_mat).Stats.Ymax;
+      wmap := PBblas.Matrix_Map(w_mat_x, w_mat_y, sizeTable[1].f_b_rows , sizeTable[1].f_b_rows);
+      wdist := DMAT.Converted.FromElement(w_mat,wmap);
+      wno := PBblas.MU.TO(wdist,L);
+      RETURN inputWno+wno;
+    END;
+    iterations := MAX(IntW,no)-1;
+    weightsdistno := LOOP(w1no, COUNTER <= iterations, CreatWeightBlock(ROWS(LEFT),COUNTER));
+    //Creat block matrices for Bias
+    b1_mat := Mat.MU.From(Intb,1);
+    b1_mat_x := Mat.Has(b1_mat).Stats.Xmax;
+    b1_mat_rep := Mat.Repmat(b1_mat, 1, m); // Bias vector is repeated in m columns to make the future calculations easier
+    b1map := PBblas.Matrix_Map(b1_mat_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+    b1dist := DMAT.Converted.FromElement(b1_mat_rep,b1map);
+    b1no := PBblas.MU.TO(b1dist,1);
+    //loopbody to creat the rest of bias blocks
+    CreatBiasBlock(DATASET(PBblas.Types.MUElement) inputb, INTEGER coun) := FUNCTION
+      L := coun+1; //creat the weight block for weight between layers L and L+1
+      b_mat := Mat.MU.From(Intb,L);
+      b_mat_x := Mat.Has(b_mat).Stats.Xmax;
+      b_mat_rep := Mat.Repmat(b_mat, 1, m); // Bias vector is repeated in m columns to make the future calculations easier
+      bmap := PBblas.Matrix_Map(b_mat_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+      bdist := DMAT.Converted.FromElement(b_mat_rep,bmap);
+      bno := PBblas.MU.TO(bdist,L);
+      RETURN inputb+bno;
+    END;
+    biasdistno := LOOP(b1no, COUNTER <= iterations, CreatBiasBlock(ROWS(LEFT),COUNTER));
+    //functions used
+    PBblas.Types.value_t sigmoid(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := 1/(1+exp(-1*v));
+    FF(DATASET(PBblas.Types.MUElement) w, DATASET(PBblas.Types.MUElement) b ):= FUNCTION
+      w1 := PBblas.MU.From(W, 1); // weight matrix between layer 1 and layer 2 of the neural network
+      b1 := PBblas.MU.From(b, 1); //bias entered to the layer 2 of the neural network
+      //z2 = w1*X+b1;
+      z2 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w1map, W1, dmap, ddist, b1map,b1, 1.0  );
+      //a2 = sigmoid (z2);
+      a2 := PBblas.Apply2Elements(b1map, z2, sigmoid);
+      a2no := PBblas.MU.To(a2,2);
+
+      FF_Step(DATASET(PBblas.Types.MUElement) InputA, INTEGER coun) := FUNCTION
+        L := coun+1;
+        wL := PBblas.MU.From(w, L); // weight matrix between layer L and layer L+1 of the neural network
+        wL_x := net(id=(L+1))[1].value;;
+        wL_y := net(id=(L))[1].value;;
+        bL := PBblas.MU.From(b, L); //bias entered to the layer L of the neural network
+        bL_x := net(id=(L+1))[1].value;;
+        aL := PBblas.MU.From(InputA, L); //output of layer L
+        aL_x := net(id=(L))[1].value;;
+        wLmap := PBblas.Matrix_Map(wL_x, wL_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
+        bLmap := PBblas.Matrix_Map(bL_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+        aLmap := PBblas.Matrix_Map(aL_x,m,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+        //z(L+1) = wL*aL+bL;
+        zL_1 := PBblas.PB_dgemm(FALSE, FALSE,1.0,wLmap, wL, aLmap, aL, bLmap,bL, 1.0  );
+        //aL_1 = sigmoid (zL_1);
+        aL_1 := PBblas.Apply2Elements(bLmap, zL_1, sigmoid);
+        aL_1no := PBblas.MU.To(aL_1,L+1);
+        RETURN InputA+aL_1no;
+      END;//end FF_step
+      final_A := LOOP(a2no, COUNTER <= iterations, FF_Step(ROWS(LEFT),COUNTER));
+      return final_A;
+    END;//end FF
+   EXPORT Afrom := FF (weightsdistno,biasdistno);
+  END;// END BP
+  EXPORT testit(DATASET(Types.NumericField) Indep, DATASET(Types.DiscreteField) Dep) := BP(Indep,PROJECT(Dep,Types.NumericField)).Afrom;
+  END;// END BackPropagation
 /*
 	Logistic Regression implementation base on the iteratively-reweighted least squares (IRLS) algorithm:
   http://www.cs.cmu.edu/~ggordon/IRLS-example
@@ -680,7 +795,6 @@ EXPORT Logistic_sparse(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2
 		  SELF.id := le.x;
 			SELF.number := le.y;
 			SELF.conf := ABS(le.value-0.5);
-			SELF.closest_conf := 0;
 		END;
 		RETURN PROJECT(sigmoid,tr(LEFT));
 	END;

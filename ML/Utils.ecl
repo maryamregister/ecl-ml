@@ -1,6 +1,8 @@
 ﻿// Utilities for the implementation of ML (rather than the interface to it)
 IMPORT * FROM $;
 IMPORT Std.Str;
+IMPORT PBblas;
+Layout_Cell := PBblas.Types.Layout_Cell;
 EXPORT Utils := MODULE
 
 EXPORT Pi := 3.1415926535897932384626433;
@@ -433,6 +435,73 @@ END;
 RETURN TABLE(LOOP(Init,K,Permutate(ROWS(LEFT))), {Kperm});
 
 END;
-
-
+//initialize the weights in a neural network
+//the output is in ML.Mat.Types.MUElement format that each wight matrix has its own id, "no" value assigned to each wight marix represents the wight matrix belongs to the weight between layer no and layer no+1
+//the size of the wight matrix with "no" value is i*j which i is the number of nodes in layer no+1 and j is the number of nodes in layer no
+//the structure of the neural network is shown in the net record set
+//in the net record set each id shows the layer numebr and the corresponding value shows number of nodes in that layer
+//for example net:=DATASET ([{1,1,4},{2,1,2},{3,1,5}],Types.NumericField) shows a network that layer 1 has 4 nodes, layer 2 has 2 nodes and layer 3 has 5
+EXPORT IntWeights (DATASET(Types.DiscreteField) net) := FUNCTION
+  //Generate a random number
+  Produce_Random () := FUNCTION
+    G := 1000000;
+    R := (RANDOM()%G) / (REAL8)G;
+    RETURN R;
+  END;
+  //New Randome Matrix Generator
+  Mat.Types.Element RandGen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
+    SELF.x := ((c-1) % NumRows) + 1;
+    SELF.y := ((c-1) DIV NumRows) + 1;
+    SELF.value := Produce_Random();
+  END;
+  //Creat the first weight matrix with no=1 (weight matrix between layer 1 and layer 2)
+  w1rows := net(id=2)[1].value;
+  w1cols := net(id=1)[1].value;
+  w1size := w1rows*w1cols;
+  w1 := DATASET(w1size, RandGen(COUNTER, w1rows),DISTRIBUTED);
+  w1no := Mat.MU.To(w1, 1);
+  //step function for initialize the rest of the weight matrices
+  Step(DATASET(Mat.Types.MUElement) InputWeight, INTEGER coun) := FUNCTION
+    L := coun+1; //creat the weight between layers L and L+1
+    wrows := net(id=(L+1))[1].value;
+    wcols := net(id=L)[1].value;
+    wsize := wrows*wcols;
+    w := DATASET(wsize, RandGen(COUNTER, wrows),DISTRIBUTED);
+    wno := Mat.MU.To(w, L);
+    RETURN InputWeight+wno;
+  END;
+  LoopNum := MAX(net,id)-2;
+  initialized_weights := LOOP(w1no, COUNTER <= LoopNum, Step(ROWS(LEFT),COUNTER));
+RETURN initialized_weights;
+END;
+//initialize bias values in the neural network
+//each bias matrix is a vector
+//bias with no=L means the bias that goes to the layer L+1 so its size is equal to number of nodes in layer L+1
+EXPORT IntBias (DATASET(Types.DiscreteField) net) := FUNCTION
+  //New Randome Matrix Generator
+  Mat.Types.Element RandGen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
+    SELF.x := ((c-1) % NumRows) + 1;
+    SELF.y := ((c-1) DIV NumRows) + 1;
+    SELF.value := 1;
+  END;
+  //Creat the first weight matrix with no=1 (weight matrix between layer 1 and layer 2)
+  b1rows := net(id=(2))[1].value;
+  b1cols := 1;
+  b1size := b1rows*b1cols;
+  b1 := DATASET(b1size, RandGen(COUNTER, b1rows),DISTRIBUTED);
+  b1no := Mat.MU.To(b1, 1);
+  //step function for initialize the rest of the weight matrices
+  Step(DATASET(Mat.Types.MUElement) InputBias, INTEGER coun) := FUNCTION
+    L := coun+1; //creat the weight between layers L and L+1
+    brows := net(id=(L+1))[1].value;
+    bcols := 1;
+    bsize := brows*bcols;
+    b := DATASET(bsize, RandGen(COUNTER, brows),DISTRIBUTED);
+    bno := Mat.MU.To(b, L);
+    RETURN InputBias+bno;
+  END;
+  LoopNum := MAX(net,id)-2;
+  initialized_Bias := LOOP(b1no, COUNTER <= LoopNum, Step(ROWS(LEFT),COUNTER));
+RETURN initialized_Bias;
+END;
 END;
