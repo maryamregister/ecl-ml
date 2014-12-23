@@ -608,6 +608,8 @@ END;
     SHARED dTmp := Mat.InsertColumn(dt,1,1.0); // add the intercept column
     SHARED d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
     SHARED m := MAX (d, d.y); //number of samples
+    yt := Types.ToMatrix (Y);
+    SHARED Ytmp := Mat.Trans(yt);
     SHARED sizeRec := RECORD
       PBblas.Types.dimension_t m_rows;
       PBblas.Types.dimension_t m_cols;
@@ -621,6 +623,8 @@ END;
     SHARED dstats := Mat.Has(d).Stats;
     SHARED d_n := dstats.XMax;
     SHARED d_m := dstats.YMax;
+    SHARED Ystats := Mat.Has(Ytmp).Stats;
+    SHARED output_num := Ystats.XMax;
     derivemap := IF(havemaxrowcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows, maxcols),
                    IF(havemaxrow, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows),
                       IF(havemaxcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,,maxcols),
@@ -629,6 +633,9 @@ END;
     //Create block matrix d
     dmap := PBblas.Matrix_Map(sizeTable[1].m_rows,sizeTable[1].m_cols,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
     ddist := DMAT.Converted.FromElement(d,dmap);
+    //Create block matrix Ytmp
+    Ymap := PBblas.Matrix_Map(output_num,sizeTable[1].m_cols,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+    Ydist := DMAT.Converted.FromElement(Ytmp,Ymap);
     //Creat block matrices for weights
     w1_mat := Mat.MU.From(IntW,1);
     w1_mat_x := Mat.Has(w1_mat).Stats.Xmax;
@@ -701,9 +708,42 @@ END;
       final_A := LOOP(a2no, COUNTER <= iterations, FF_Step(ROWS(LEFT),COUNTER));
       return final_A;
     END;//end FF
-   EXPORT Afrom := FF (weightsdistno,biasdistno);
+    Delta(DATASET(PBblas.Types.MUElement) w, DATASET(PBblas.Types.MUElement) b, DATASET(PBblas.Types.MUElement) A ):= FUNCTION
+      NumLayers := MAX (A,no);
+      PBblas.Types.value_t siggrad(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := v*(1-v);
+      A_end := PBblas.MU.From(A,NumLayers);
+      siggrad_A_end := PBblas.Apply2Elements(Ymap, A_end, siggrad);
+      a_y := PBblas.PB_daxpy(-1, Ydist, A_end);//-1 * (y-a) = a-y
+      Delta_End := PBblas.HadamardProduct(Ymap, a_y, siggrad_A_end);
+      Delta_End_no := PBblas.MU.To(Delta_End,NumLayers);
+      Delta_Step(DATASET(PBblas.Types.MUElement) InputD, INTEGER coun) := FUNCTION
+        L := NumLayers - coun ;
+        DL_1 := PBblas.MU.From(InputD, L+1);//Delta for layer L+1:DL_1
+        DL_1_x := net(id=(L+1))[1].value;
+        DL_1_y := m;
+        wL := PBblas.MU.From(w, L); // weight matrix between layer L and layer L+1 of the neural network
+        wL_x := net(id=(L+1))[1].value;
+        wL_y := net(id=(L))[1].value;
+        aL := PBblas.MU.From(A, L);//output of layer L
+        aL_x := net(id=(L))[1].value;
+        aL_y := m;
+        DL_1map := PBblas.Matrix_Map(DL_1_x,m,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+        wLmap := PBblas.Matrix_Map(wL_x, wL_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
+        aLmap := PBblas.Matrix_Map(aL_x,m,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+        siggrad_aL := PBblas.Apply2Elements(aLmap, aL, siggrad);
+        //wLtDL_1=wL(transpose)*DL_1
+        wLtDL_1 := PBblas.PB_dgemm (TRUE, FALSE, 1.0, wLmap, wL, DL_1map, DL_1, aLmap);
+        //calculated delta = delta_L = wLtDL_1 .* siggrad_aL
+        Delta_L := PBblas.HadamardProduct(aLmap, wLtDL_1, siggrad_aL);
+        Delta_L_no := PBblas.MU.To(Delta_L,L);
+        RETURN InputD+Delta_L_no;
+      END;//END Delta_Step
+      final_Delta := LOOP(Delta_End_no, COUNTER <= iterations, Delta_Step(ROWS(LEFT),COUNTER));
+      RETURN final_Delta;
+    END;//END Delta
+   EXPORT Afrom := DELTA (weightsdistno,biasdistno,FF (weightsdistno,biasdistno));
   END;// END BP
-  EXPORT testit(DATASET(Types.NumericField) Indep, DATASET(Types.DiscreteField) Dep) := BP(Indep,PROJECT(Dep,Types.NumericField)).Afrom;
+  EXPORT testit(DATASET(Types.NumericField) Indep, DATASET(Types.NumericField) Dep) := BP(Indep,Dep).Afrom;
   END;// END BackPropagation
 /*
 	Logistic Regression implementation base on the iteratively-reweighted least squares (IRLS) algorithm:

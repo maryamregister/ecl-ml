@@ -4,27 +4,39 @@ IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
 net := DATASET([
 {1, 1, 4},
-{2,1,2},
-{3,1,3},
-{4,1,5}],
+{2,1,3},
+{3,1,4},
+{4,1,2}],
 Types.DiscreteField);
 //pay attention intersect is added so first layer should have number of features+1 nodes
 //input data
+label_record := RECORD
+unsigned  id;
+  real  f1;
+  real  f2;
+END;
 value_record := RECORD
   unsigned  id;
   real  f1;
   real  f2;
   real  f3;
-  integer1  label;
 END;
 input_data := DATASET([
-{1, 0.1, 0.2, 0.2,1},
-{2, 0.8, 0.9,0.4, 2},
-{3, 0.5, 0.9,0.5, 3},
-{4, 0.8, 0.7, 0.8, 3},
-{5, 0.9,0.1,0.1, 2},
-{6, 0.1, 0.3,0.7, 1}],
+{1, 0.1, 0.2, 0.2},
+{2, 0.8, 0.9,0.4},
+{3, 0.5, 0.9,0.5},
+{4, 0.8, 0.7, 0.8},
+{5, 0.9,0.1,0.1},
+{6, 0.1, 0.3,0.7}],
  value_record);
+ label := DATASET([
+{1, 0.1, 0.2},
+{2, 0.8,0.4},
+{3, 0.5, 0.9},
+{4,  0.7, 0.8},
+{5, 0.9,0.1},
+{6, 0.1, 0.3}],
+ label_record);
 OUTPUT  (input_data, ALL, NAMED ('input_data'));
 //convert input data to two datset: samples dataset and labels dataset
 Sampledata_Format := RECORD
@@ -35,18 +47,13 @@ Sampledata_Format := RECORD
 END;
 sample_table := TABLE(input_data,Sampledata_Format);
 OUTPUT  (sample_table, ALL, NAMED ('sample_table'));
-labeldata_Format := RECORD
-  input_data.id;
-  input_data.label;
-END;
-label_table := TABLE(input_data,labeldata_Format);
-OUTPUT  (label_table, ALL, NAMED ('label_table'));
+OUTPUT  (label, ALL, NAMED ('label'));
+
 ML.ToField(sample_table, indepDataC);
 OUTPUT  (indepDataC, ALL, NAMED ('indepDataC'));
-ML.ToField(label_table, depDataC);
+
+ML.ToField(label, depDataC);
 OUTPUT  (depDataC, ALL, NAMED ('depDataC'));
-label := PROJECT(depDataC,Types.DiscreteField);
-OUTPUT  (label, ALL, NAMED ('label'));
 IntW := utils.IntWeights(net);
 Intb := utils.IntBias(net);
 output(IntW,ALL, named ('IntW'));
@@ -59,5 +66,10 @@ UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
 UNSIGNED4 Maxcols:=0;
 trainer:= ML.Classify.BackPropagation(net,IntW, Intb,  LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
-model := trainer.testit(indepDataC, label);
+model := trainer.testit(indepDataC, depDataC);
 OUTPUT  (Model, ALL, NAMED ('Model'));
+output (MAX (model,no));
+
+output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 2)), ALL, named('delta2'));
+output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 3)), ALL, named('delta3'));
+output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 4)), ALL, named('delta4'));
