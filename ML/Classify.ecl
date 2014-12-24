@@ -608,6 +608,7 @@ END;
     SHARED dTmp := Mat.InsertColumn(dt,1,1.0); // add the intercept column
     SHARED d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
     SHARED m := MAX (d, d.y); //number of samples
+    SHARED m_1 := 1/m;
     yt := Types.ToMatrix (Y);
     SHARED Ytmp := Mat.Trans(yt);
     SHARED sizeRec := RECORD
@@ -675,6 +676,15 @@ END;
       RETURN inputb+bno;
     END;
     biasdistno := LOOP(b1no, COUNTER <= iterations, CreatBiasBlock(ROWS(LEFT),COUNTER));
+    // creat one vector for calculating bias gradients
+    Layout_Cell gen(UNSIGNED4 c, UNSIGNED4 NumRows, REAL8 v) := TRANSFORM
+      SELF.x := ((c-1) % NumRows) + 1;
+      SELF.y := ((c-1) DIV NumRows) + 1;
+      SELF.v := v;
+     END;
+     onesmap := PBblas.Matrix_Map(m, 1, sizeTable[1].f_b_cols, 1);
+     ones := DATASET(m, gen(COUNTER, m, 1.0),DISTRIBUTED);
+     onesdist := DMAT.Converted.FromCells(onesmap, ones);
     //functions used
     PBblas.Types.value_t sigmoid(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := 1/(1+exp(-1*v));
     FF(DATASET(PBblas.Types.MUElement) w, DATASET(PBblas.Types.MUElement) b ):= FUNCTION
@@ -741,7 +751,74 @@ END;
       final_Delta := LOOP(Delta_End_no, COUNTER <= iterations, Delta_Step(ROWS(LEFT),COUNTER));
       RETURN final_Delta;
     END;//END Delta
-   EXPORT Afrom := DELTA (weightsdistno,biasdistno,FF (weightsdistno,biasdistno));
+    WeightGrad(DATASET(PBblas.Types.MUElement) w, DATASET(PBblas.Types.MUElement) A, DATASET(PBblas.Types.MUElement) Del ):= FUNCTION
+      //calculate update term for wights (1/m*(DELTAw) + LAMBDA*w)
+      //w1_g1=d2*a1'
+      D2 := PBblas.MU.From(Del, 2);
+      D2_x := net(id=(2))[1].value;
+      D2_y := m;
+      D2_map := PBblas.Matrix_Map(D2_x,m,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+      w1_g1_map := PBblas.Matrix_Map(net(id=(2))[1].value,net(id=(1))[1].value,sizeTable[1].f_b_rows,sizeTable[1].f_b_rows);
+      w1_g1 := PBblas.PB_dgemm(FALSE, TRUE,1.0,D2_map, D2, dmap, ddist, w1_g1_map );
+      //wight decay term :lambda* w1;
+      w1 := PBblas.MU.From(w, 1);
+      w1_g2 := PBblas.PB_dscal(LAMBDA, w1);
+      //w1_g := 1/m*w1_g1 + w1_g2
+      w1_g := PBblas.PB_daxpy(m_1, w1_g1, w1_g2);
+      w1_g_no := PBblas.MU.To(w1_g,1);
+      WeightGrad_Step(DATASET(PBblas.Types.MUElement) InputWG, INTEGER coun) := FUNCTION
+        L := coun+1;
+        //calculate update term for wights (1/m*(DELTAw) + LAMBDA*w)
+        //w1_g1=d2*a1'
+        DL_1 := PBblas.MU.From(Del, L+1);
+        DL_1_x := net(id=(L+1))[1].value;
+        DL_1_y := m;
+        DL_1_map := PBblas.Matrix_Map(DL_1_x,m,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+        aL := PBblas.MU.From(A, L);//output of layer L
+        aL_x := net(id=(L))[1].value;
+        aL_y := m;
+        aLmap := PBblas.Matrix_Map(aL_x,m,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+        wL_g1_map := PBblas.Matrix_Map(net(id=(L+1))[1].value,net(id=(L))[1].value,sizeTable[1].f_b_rows,sizeTable[1].f_b_rows);
+        wL_g1 := PBblas.PB_dgemm(FALSE, TRUE,1.0,DL_1_map, DL_1, aLmap, aL, wL_g1_map );
+        //wight decay term :lambda* w1;
+        wL := PBblas.MU.From(w, L);
+        wL_g2 := PBblas.PB_dscal(LAMBDA, wL);
+        //w1_g := 1/m*w1_g1 + w1_g2
+        wL_g := PBblas.PB_daxpy(m_1, wL_g1, wL_g2);
+        wL_g_no := PBblas.MU.To(wL_g,L);
+        RETURN InputWG+wL_g_no;
+      END;//WeightGrad_Step
+      final_WG := LOOP(w1_g_no, COUNTER <= iterations, WeightGrad_Step(ROWS(LEFT),COUNTER));
+      RETURN final_WG;
+    END;//END WeightGrad
+    BiasGrad (DATASET(PBblas.Types.MUElement) Del ):= FUNCTION
+      D2 := PBblas.MU.From(Del, 2);
+      D2_x := net(id=(2))[1].value;
+      D2_y := m;
+      D2_map := PBblas.Matrix_Map(D2_x,m,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+      b1_g_map := PBblas.Matrix_Map(D2_x,1,sizeTable[1].f_b_rows,1);
+      b1_g_tmp := PBblas.PB_dgemm(FALSE, FALSE,1.0,D2_map, D2, onesmap, onesdist, b1_g_map);
+      b1_g := PBblas.PB_dscal(m_1, b1_g_tmp);
+      b1_g_no := PBblas.MU.To(b1_g,1);
+      BiasGrad_Step(DATASET(PBblas.Types.MUElement) InputBG, INTEGER coun) := FUNCTION
+        L := coun +1 ;
+        DL_1 := PBblas.MU.From(Del, L+1);
+        DL_1_x := net(id=(L+1))[1].value;
+        DL_1_y := m;
+        DL_1_map := PBblas.Matrix_Map(DL_1_x,m,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+        bL_g_map := PBblas.Matrix_Map(DL_1_x,1,sizeTable[1].f_b_rows,1);
+        bL_g_tmp := PBblas.PB_dgemm(FALSE, FALSE,1.0,DL_1_map, DL_1, onesmap, onesdist, bL_g_map);
+        bL_g := PBblas.PB_dscal(m_1, bL_g_tmp);
+        bL_g_no := PBblas.MU.To(bL_g,L);
+        RETURN InputBG+bL_g_no;
+      END;
+      final_bg := LOOP(b1_g_no, COUNTER <= iterations, BiasGrad_Step(ROWS(LEFT),COUNTER));
+      RETURN final_bg;
+    END;//End BiasGrad
+    AA := FF (weightsdistno,biasdistno);
+    DD := DELTA (weightsdistno,biasdistno,AA);
+    //EXPORT Afrom := WeightGrad( weightsdistno, AA,  DD );
+    EXPORT Afrom :=BiasGrad (DD );
   END;// END BP
   EXPORT testit(DATASET(Types.NumericField) Indep, DATASET(Types.NumericField) Dep) := BP(Indep,Dep).Afrom;
   END;// END BackPropagation

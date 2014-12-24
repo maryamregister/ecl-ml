@@ -67,9 +67,10 @@ UNSIGNED4 Maxrows:=0;
 UNSIGNED4 Maxcols:=0;
 trainer:= ML.Classify.BackPropagation(net,IntW, Intb,  LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
 model := trainer.testit(indepDataC, depDataC);
+
 OUTPUT  (Model, ALL, NAMED ('Model'));
 output (MAX (model,no));
 
-output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 2)), ALL, named('delta2'));
-output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 3)), ALL, named('delta3'));
-output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 4)), ALL, named('delta4'));
+output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 1)), ALL, named('wg1'));
+output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 2)), ALL, named('wg2'));
+output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 3)), ALL, named('wg3'));
