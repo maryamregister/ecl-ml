@@ -657,7 +657,29 @@ END;
     END;
     iterations := MAX(IntW,no)-1;
     weightsdistno := LOOP(w1no, COUNTER <= iterations, CreatWeightBlock(ROWS(LEFT),COUNTER));
-    //Creat block matrices for Bias
+    //two kind of Bias blocks are calculated
+    //1- each bias vector is converted to block format
+    //2-each Bias vector is repeated first to m columns, then the final repreated bias matrix is converted to block format
+    //the second kind of bias is calculated to make the next calculations easier, the first vector bias format is used just when we
+    //want to update the bias vectors
+    //Creat block vectors for Bias (above case 1)
+    b1vec := Mat.MU.From(Intb,1);
+    b1vec_x := Mat.Has(b1vec).Stats.Xmax;
+    b1vecmap := PBblas.Matrix_Map(b1vec_x, 1, sizeTable[1].f_b_rows, 1);
+    b1vecdist := DMAT.Converted.FromElement(b1vec,b1vecmap);
+    b1vecno := PBblas.MU.TO(b1vecdist,1);
+    //loopbody to creat the rest of bias vector blocks
+    CreatBiasVecBlock(DATASET(PBblas.Types.MUElement) inputb, INTEGER coun) := FUNCTION
+      L := coun+1; //creat the weight block for weight between layers L and L+1
+      b_mat := Mat.MU.From(Intb,L);
+      b_mat_x := Mat.Has(b_mat).Stats.Xmax;
+      bmap := PBblas.Matrix_Map(b_mat_x, 1, sizeTable[1].f_b_rows, 1);
+      bdist := DMAT.Converted.FromElement(b_mat,bmap);
+      bno := PBblas.MU.TO(bdist,L);
+      RETURN inputb+bno;
+    END;
+    biasVecdistno := LOOP(b1vecno, COUNTER <= iterations, CreatBiasVecBlock(ROWS(LEFT),COUNTER));
+    //Creat block matrices for Bias (repeat each bias vector to a matrix with m columns) (above case 2)
     b1_mat := Mat.MU.From(Intb,1);
     b1_mat_x := Mat.Has(b1_mat).Stats.Xmax;
     b1_mat_rep := Mat.Repmat(b1_mat, 1, m); // Bias vector is repeated in m columns to make the future calculations easier
@@ -675,8 +697,8 @@ END;
       bno := PBblas.MU.TO(bdist,L);
       RETURN inputb+bno;
     END;
-    biasdistno := LOOP(b1no, COUNTER <= iterations, CreatBiasBlock(ROWS(LEFT),COUNTER));
-    // creat one vector for calculating bias gradients
+    biasMatdistno := LOOP(b1no, COUNTER <= iterations, CreatBiasBlock(ROWS(LEFT),COUNTER));
+    // creat ones vector for calculating bias gradients
     Layout_Cell gen(UNSIGNED4 c, UNSIGNED4 NumRows, REAL8 v) := TRANSFORM
       SELF.x := ((c-1) % NumRows) + 1;
       SELF.y := ((c-1) DIV NumRows) + 1;
@@ -687,6 +709,20 @@ END;
      onesdist := DMAT.Converted.FromCells(onesmap, ones);
     //functions used
     PBblas.Types.value_t sigmoid(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := 1/(1+exp(-1*v));
+    //make parameters
+    NumLayers := MAX (net, id);
+    //define the Trasnfroms to add and decrease the Numlayers
+    PBblas.Types.MUElement Addno (PBblas.Types.MUElement l) := TRANSFORM
+      SELF.no := l.no+NumLayers;
+      SELF := l;
+    END;
+    PBblas.Types.MUElement Subno (PBblas.Types.MUElement l) := TRANSFORM
+      SELF.no := l.no-NumLayers;
+      SELF := l;
+    END;
+    //creat the parameters to be passed to the main gradient descent loop
+    biasVecdistno_added := PROJECT (biasVecdistno,Addno(LEFT));
+    param_tobe_passed := weightsdistno + biasVecdistno_added;
     FF(DATASET(PBblas.Types.MUElement) w, DATASET(PBblas.Types.MUElement) b ):= FUNCTION
       w1 := PBblas.MU.From(W, 1); // weight matrix between layer 1 and layer 2 of the neural network
       b1 := PBblas.MU.From(b, 1); //bias entered to the layer 2 of the neural network
@@ -719,7 +755,6 @@ END;
       return final_A;
     END;//end FF
     Delta(DATASET(PBblas.Types.MUElement) w, DATASET(PBblas.Types.MUElement) b, DATASET(PBblas.Types.MUElement) A ):= FUNCTION
-      NumLayers := MAX (A,no);
       PBblas.Types.value_t siggrad(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := v*(1-v);
       A_end := PBblas.MU.From(A,NumLayers);
       siggrad_A_end := PBblas.Apply2Elements(Ymap, A_end, siggrad);
@@ -811,14 +846,88 @@ END;
         bL_g := PBblas.PB_dscal(m_1, bL_g_tmp);
         bL_g_no := PBblas.MU.To(bL_g,L);
         RETURN InputBG+bL_g_no;
-      END;
+      END;//END BiasGrad_Step
       final_bg := LOOP(b1_g_no, COUNTER <= iterations, BiasGrad_Step(ROWS(LEFT),COUNTER));
       RETURN final_bg;
     END;//End BiasGrad
-    AA := FF (weightsdistno,biasdistno);
-    DD := DELTA (weightsdistno,biasdistno,AA);
+    GradDesUpdate (DATASET(PBblas.Types.MUElement) tobeUpdated, DATASET(PBblas.Types.MUElement) GradDesTerm ):= FUNCTION
+      tmp1 := PBblas.MU.From(tobeUpdated, 1);
+      gterm1 := PBblas.MU.From(GradDesTerm, 1);
+      tmp1_updated := PBblas.PB_daxpy(-1, PBblas.PB_dscal(ALPHA, gterm1), tmp1);
+      tmp1_updated_no := PBblas.MU.To(tmp1_updated,1);
+      GradDesUpdate_Step(DATASET(PBblas.Types.MUElement) Inputtmp, INTEGER coun) := FUNCTION
+        L := coun + 1;
+        tmpL := PBblas.MU.From(tobeUpdated, L);
+        gtermL := PBblas.MU.From(GradDesTerm, L);
+        tmpL_updated := PBblas.PB_daxpy(-1, PBblas.PB_dscal(ALPHA, gtermL), tmpL);
+        tmpL_updated_no := PBblas.MU.To(tmpL_updated,L);
+        RETURN Inputtmp+tmpL_updated_no;
+      END;//End GradDesUpdate_Step
+      final_updated := LOOP(tmp1_updated_no,  iterations, GradDesUpdate_Step(ROWS(LEFT),COUNTER));
+      RETURN final_updated;
+    END;//End GradDesUpdate
+    //main Loop ieteration in back propagation algorithm that does the gradient descent and weight and bias updates
+    GradDesLoop (DATASET(PBblas.Types.MUElement) Intparams ):= FUNCTION
+      GradDesLoop_Step (DATASET(PBblas.Types.MUElement) Inputparams) := FUNCTION
+        w_in := Inputparams (no<NumLayers);//input weight parameter in PBblas.Types.MUElement format
+        b_in_tmp := Inputparams (no>NumLayers);
+        b_in := PROJECT (b_in_tmp,Subno(LEFT));//input bias parameter in PBblas.Types.MUElement format
+        //creat matrix of each bias vector by repeating each bias vector in m columns (to make the following calculations easier)
+        b_in1 := PBblas.MU.From(b_in,1);
+        b_in1_mat := ML.DMat.Converted.FromPart2Elm (b_in1);
+        b_in1_mat_x := Mat.Has(b_in1_mat).Stats.Xmax;
+        b_in1_mat_rep := Mat.Repmat(b_in1_mat, 1, m); // Bias vector is repeated in m columns to make the future calculations easier
+        b_in1map := PBblas.Matrix_Map(b_in1_mat_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+        b_in1dist := DMAT.Converted.FromElement(b_in1_mat_rep,b_in1map);
+        b_in1no := PBblas.MU.TO(b_in1dist,1);//first bias vector is converted to a matrix, now convert the rest of bias vectors into teh matrix
+        //loopbody to creat the rest of bias matrix blocks
+        Creat_BiasBlock(DATASET(PBblas.Types.MUElement) inputb, INTEGER coun) := FUNCTION
+          L := coun+1; //creat the weight block for weight between layers L and L+1
+          b_inL := PBblas.MU.From(b_in,L);
+          b_inL_mat := ML.DMat.Converted.FromPart2Elm (b_inL);
+          b_inL_mat_x := Mat.Has(b_inL_mat).Stats.Xmax;
+          b_inL_mat_rep := Mat.Repmat(b_inL_mat, 1, m); // Bias vector is repeated in m columns to make the future calculations easier
+          b_inLmap := PBblas.Matrix_Map(b_inL_mat_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+          b_inLdist := DMAT.Converted.FromElement(b_inL_mat_rep, b_inLmap);
+          b_inLno := PBblas.MU.TO(b_inLdist,L);
+          //RETURN inputb+bno;
+          RETURN b_inLno+inputb;
+        END;
+        //b_in_rep := LOOP(b_in1no, COUNTER <= iterations, Creat_BiasBlock(ROWS(LEFT),COUNTER));//matrices of converted bias vectors
+        b_in_rep := LOOP(b_in1no, iterations, Creat_BiasBlock(ROWS(LEFT),COUNTER));//matrices of converted bias vectors
+        //w_in , b_in and b_in_repno are three block matrices we are going to work with
+        //w_in : weight matrices
+        //b_in : bias matrices
+        //b_in_rep : each bias vector is repeated m columns to make the calculations easier
+        //in all the calculations and defined functions (FF, DELTA) the repeated bias matrices are used, the only time
+        //that the bias vector is used is when we update the bias in "GradDesUpdate".
+        //1- apply the Feed Forward pass
+        A_ffpass :=  FF (w_in,b_in_rep);
+        //2-apply the back propagation step to update the parameters
+        D_delta := DELTA (w_in, b_in_rep, A_ffpass);
+        Weight_GD := WeightGrad(w_in, A_ffpass,  D_delta);
+        Bias_GD := BiasGrad (D_delta);
+        NewWeight := GradDesUpdate (w_in, Weight_GD);
+        NewBias := GradDesUpdate (b_in, Bias_GD);
+        NewBias_added := PROJECT (NewBias,Addno(LEFT));
+        Updated_Params := NewWeight + NewBias_added;
+        RETURN Updated_Params;
+      END;//END GradDesLoop_Step
+      Final_Updated_Params := LOOP(Intparams, COUNTER <= 1, GradDesLoop_Step(ROWS(LEFT)));
+      RETURN Final_Updated_Params;
+    END;//END GradDesLoop
+    // EXPORT Afrom := GradDesLoop (param_tobe_passed) +  PROJECT (FF (weightsdistno,biasMatdistno),Addno(LEFT));
+    // EXPORT Afrom := GradDesLoop (param_tobe_passed) +  PROJECT (biasVecdistno,Addno(LEFT));
+    EXPORT Afrom := GradDesLoop (param_tobe_passed) ;
+    // AA := FF (weightsdistno,biasMatdistno);
+    // DD := DELTA (weightsdistno,biasMatdistno,AA);
+    // GT := WeightGrad( weightsdistno, AA,  DD );
+    // GTB := BiasGrad (DD );
+    //EXPORT Afrom := GradDesUpdate (weightsdistno, GT);
+   //EXPORT Afrom := biasVecdistno;
     //EXPORT Afrom := WeightGrad( weightsdistno, AA,  DD );
-    EXPORT Afrom :=BiasGrad (DD );
+    //EXPORT Afrom :=BiasGrad (DD );
+   // EXPORT Afrom := GradDesUpdate (biasVecdistno, GTB );
   END;// END BP
   EXPORT testit(DATASET(Types.NumericField) Indep, DATASET(Types.NumericField) Dep) := BP(Indep,Dep).Afrom;
   END;// END BackPropagation
