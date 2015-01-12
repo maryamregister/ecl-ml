@@ -600,7 +600,7 @@ END;
   b with id = L shows the bias value for the layer L+1
   b(i) with id= L show sthe bias value goes to uni i of layer L
   */
-  EXPORT BackPropagation (DATASET(Types.DiscreteField) net, DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=10,
+  EXPORT BackPropagation (DATASET(Types.DiscreteField) net, DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
   UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE(DEFAULT)
   // back propagation algorithm
   BP(DATASET(Types.NumericField) X,DATASET(Types.NumericField) Y) := MODULE
@@ -735,10 +735,10 @@ END;
       FF_Step(DATASET(PBblas.Types.MUElement) InputA, INTEGER coun) := FUNCTION
         L := coun+1;
         wL := PBblas.MU.From(w, L); // weight matrix between layer L and layer L+1 of the neural network
-        wL_x := net(id=(L+1))[1].value;;
+        wL_x := net(id=(L+1))[1].value;
         wL_y := net(id=(L))[1].value;;
         bL := PBblas.MU.From(b, L); //bias entered to the layer L of the neural network
-        bL_x := net(id=(L+1))[1].value;;
+        bL_x := net(id=(L+1))[1].value;
         aL := PBblas.MU.From(InputA, L); //output of layer L
         aL_x := net(id=(L))[1].value;;
         wLmap := PBblas.Matrix_Map(wL_x, wL_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
@@ -913,24 +913,36 @@ END;
         Updated_Params := NewWeight + NewBias_added;
         RETURN Updated_Params;
       END;//END GradDesLoop_Step
-      Final_Updated_Params := LOOP(Intparams, COUNTER <= 1, GradDesLoop_Step(ROWS(LEFT)));
+      Final_Updated_Params := LOOP(Intparams, COUNTER <= MaxIter, GradDesLoop_Step(ROWS(LEFT)));
       RETURN Final_Updated_Params;
     END;//END GradDesLoop
-    // EXPORT Afrom := GradDesLoop (param_tobe_passed) +  PROJECT (FF (weightsdistno,biasMatdistno),Addno(LEFT));
-    // EXPORT Afrom := GradDesLoop (param_tobe_passed) +  PROJECT (biasVecdistno,Addno(LEFT));
-    EXPORT Afrom := GradDesLoop (param_tobe_passed) ;
-    // AA := FF (weightsdistno,biasMatdistno);
-    // DD := DELTA (weightsdistno,biasMatdistno,AA);
-    // GT := WeightGrad( weightsdistno, AA,  DD );
-    // GTB := BiasGrad (DD );
-    //EXPORT Afrom := GradDesUpdate (weightsdistno, GT);
-   //EXPORT Afrom := biasVecdistno;
-    //EXPORT Afrom := WeightGrad( weightsdistno, AA,  DD );
-    //EXPORT Afrom :=BiasGrad (DD );
-   // EXPORT Afrom := GradDesUpdate (biasVecdistno, GTB );
+    EXPORT NNparams := GradDesLoop (param_tobe_passed);// NNparams is in PBblas.Types.MUElement format
+    //convert NNparams to Numeric Field format
+    nnparam1 := PBblas.MU.From(NNparams,1);
+    nnparam1_mat := DMat.Converted.FromPart2Elm (nnparam1);
+    nnparam1_mat_no := Mat.MU.TO(nnparam1_mat,1);
+    NL := MAX (net, id);
+    Mu_convert(DATASET(Mat.Types.MUElement) inputMU, INTEGER coun) := FUNCTION
+      L := IF(coun < NL-1, coun+1, coun+2);
+      nnparamL := PBblas.MU.From(NNparams,L);
+      nnparamL_mat := DMat.Converted.FromPart2Elm (nnparamL);
+      nnparamL_mat_no := Mat.MU.TO(nnparamL_mat,L);
+      RETURN inputMU+nnparamL_mat_no;
+    END;
+    EXPORT NNparams_MUE := LOOP(nnparam1_mat_no, 2*NL-3, Mu_convert(ROWS(LEFT),COUNTER));
+    AppendID(NNparams_MUE, id, NNparams_MUE_id)
+    ToField (NNparams_MUE_id, NNparams_MUE_out, id, 'x,y,value,no');
+    EXPORT Mod := NNparams_MUE_out;
+    //EXPORT alaki := biasVecdistno_added;
   END;// END BP
-  EXPORT testit(DATASET(Types.NumericField) Indep, DATASET(Types.NumericField) Dep) := BP(Indep,Dep).Afrom;
-  END;// END BackPropagation
+  EXPORT LearnBP(DATASET(Types.NumericField) Indep, DATASET(Types.NumericField) Dep) := BP(Indep,Dep).mod;
+  EXPORT Model(DATASET(Types.NumericField) mod) := FUNCTION
+  modelD_Map :=	DATASET([{'id','ID'},{'x','1'},{'y','2'},{'value','3'},{'no','4'}], {STRING orig_name; STRING assigned_name;});
+    FromField(mod,Mat.Types.MUElement,dOut,modelD_Map);
+    RETURN dOut;
+  END;
+  END;
+  // END BackPropagation
 /*
 	Logistic Regression implementation base on the iteratively-reweighted least squares (IRLS) algorithm:
   http://www.cs.cmu.edu/~ggordon/IRLS-example
