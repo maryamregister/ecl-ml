@@ -75,13 +75,25 @@ output(IntW,ALL, named ('IntW'));
 output(IntB,ALL, named ('IntB'));
 trainer :=NNtrainer.BackPropagation(IntW, Intb,  LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
 //trainer:= ML.Classify.BackPropagation(net,IntW, Intb,  LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
-Learntmodel := trainer.LearnBP(indepDataC, depDataC);
+Learntmodel := trainer.NNLearn(indepDataC, depDataC);
 
 OUTPUT  (Learntmodel, ALL, NAMED ('Learntmodel'));
 Mod := trainer.Model(Learntmodel);
 OUTPUT  (mod, ALL, NAMED ('mod'));
-// output (MAX (model,no));
 
+
+FW := trainer.ExtractWeights(Learntmodel);
+OUTPUT  (FW, ALL, NAMED ('FW'));
+
+FB := trainer.ExtractBias(Learntmodel);
+OUTPUT  (FB, ALL, NAMED ('FB'));
+
+AEnd :=trainer.NNoutput(indepDataC,Learntmodel);
+OUTPUT  (AEnd, ALL, NAMED ('AEnd'));
+
+Class := trainer.NNClassify(indepDataC,Learntmodel);
+OUTPUT  (Class, ALL, NAMED ('Class'));
+//output(ML.DMat.Converted.FromPart2Elm(AEnd), ALL, named('AEnd_mat'));
 // output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 2)), ALL, named('wg2'));
 // output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 3)), ALL, named('wg3'));
 // output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 1)), ALL, named('wg1'));
