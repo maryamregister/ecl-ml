@@ -67,31 +67,32 @@ UNSIGNED4 prows:=0;
 UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
 UNSIGNED4 Maxcols:=0;
-NNtrainer := NeuralNetworks(net);
+NN := NeuralNetworks(net);
 //initialize weight and bias values for the Back Propagation algorithm
-IntW := NNtrainer.IntWeights;
-Intb := NNtrainer.IntBias;
+IntW := NN.IntWeights;
+Intb := NN.IntBias;
 output(IntW,ALL, named ('IntW'));
 output(IntB,ALL, named ('IntB'));
-trainer :=NNtrainer.BackPropagation(IntW, Intb,  LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
+trainer :=NN.Train(IntW, Intb,  LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
 //trainer:= ML.Classify.BackPropagation(net,IntW, Intb,  LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
 Learntmodel := trainer.NNLearn(indepDataC, depDataC);
 
 OUTPUT  (Learntmodel, ALL, NAMED ('Learntmodel'));
-Mod := trainer.Model(Learntmodel);
+Mod := NN.Model(Learntmodel);
 OUTPUT  (mod, ALL, NAMED ('mod'));
 
 
-FW := trainer.ExtractWeights(Learntmodel);
+FW := NN.ExtractWeights(Learntmodel);
 OUTPUT  (FW, ALL, NAMED ('FW'));
 
-FB := trainer.ExtractBias(Learntmodel);
+FB := NN.ExtractBias(Learntmodel);
 OUTPUT  (FB, ALL, NAMED ('FB'));
 
-AEnd :=trainer.NNoutput(indepDataC,Learntmodel);
+tester := NN.test(prows, pcols, Maxrows,  Maxcols);
+AEnd :=tester.NNOutput(indepDataC,Learntmodel);
 OUTPUT  (AEnd, ALL, NAMED ('AEnd'));
 
-Class := trainer.NNClassify(indepDataC,Learntmodel);
+Class := tester.NNClassify(indepDataC,Learntmodel);
 OUTPUT  (Class, ALL, NAMED ('Class'));
 //output(ML.DMat.Converted.FromPart2Elm(AEnd), ALL, named('AEnd_mat'));
 // output(ML.DMat.Converted.FromPart2Elm(PBblas.MU.From(model, 2)), ALL, named('wg2'));
