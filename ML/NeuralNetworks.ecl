@@ -440,9 +440,9 @@ EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net) := MODULE
       RETURN inputMU+nnparamL_mat_no;
     END;
     NNparams_MUE := LOOP(nnparam1_mat_no, 2*NL-3, Mu_convert(ROWS(LEFT),COUNTER));
-    AppendID(NNparams_MUE, id, NNparams_MUE_id)
+    AppendID(NNparams_MUE, id, NNparams_MUE_id);
     ToField (NNparams_MUE_id, NNparams_MUE_out, id, 'x,y,value,no');
-    EXPORT Mod := NNparams_MUE_out;
+    EXPORT Mod := NNparams_MUE_out;//mod is in NumericField format
     //EXPORT alaki := biasVecdistno_added;
   END;// END BP
   EXPORT NNLearn(DATASET(Types.NumericField) Indep, DATASET(Types.NumericField) Dep) := BP(Indep,Dep).mod;
