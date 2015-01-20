@@ -1029,7 +1029,6 @@ EXPORT Logistic_sparse(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2
 //SoftMax classifier generalizes logistic regression classifier for cases when we have more than two target classes
 //The implemenataion is based on Stanford Deep Learning tutorial availabe at http://ufldl.stanford.edu/wiki/index.php/Softmax_Regression
 //this implementation is based on using PBblas library
-//
 //parameters:
 //LAMBDA : wight decay parameter in calculating SoftMax costfunction
 //ALPHA : learning rate for updating softmax parameters
