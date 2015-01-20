@@ -1612,7 +1612,7 @@ OUTPUT  (label, NAMED ('label'));
 //LAMBDA is weight decay rate
 REAL8 ALPHA := 0.1;
 REAL8 LAMBDA :=0.1;
-UNSIGNED2 MaxIter :=1;
+UNSIGNED2 MaxIter :=10;
 UNSIGNED4 prows:=0;
 UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
