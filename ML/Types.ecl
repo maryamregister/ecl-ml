@@ -31,7 +31,7 @@ EXPORT DiscreteField := RECORD
 
 EXPORT l_result := RECORD(DiscreteField)
   REAL8 conf;  // Confidence - high is good
-  REAL8 closest_conf;
+  REAL8 closest_conf:=0;
   END;
 
 EXPORT ItemElement := RECORD

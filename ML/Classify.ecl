@@ -1186,7 +1186,6 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
       SELF.id := le.y;
       SELF.number := 1; //number of class
       SELF.conf := le.value;
-      SELF.closest_conf := 0;
     END;
     RETURN PROJECT (Prob_mat, tr(LEFT));
   END; // END ClassProbDistribC Function
