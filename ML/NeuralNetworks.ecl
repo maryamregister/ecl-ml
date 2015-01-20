@@ -115,7 +115,8 @@ EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net) := MODULE
   // back propagation algorithm
   BP(DATASET(Types.NumericField) X,DATASET(Types.NumericField) Y) := MODULE
     dt := Types.ToMatrix (X);
-    SHARED dTmp := Mat.InsertColumn(dt,1,1.0); // add the intercept column
+    //SHARED dTmp := Mat.InsertColumn(dt,1,1.0); // add the intercept column
+    dTmp := dt;
     SHARED d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
     SHARED m := MAX (d, d.y); //number of samples
     SHARED m_1 := 1/m;
@@ -453,7 +454,8 @@ EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net) := MODULE
       //used fucntion
       PBblas.Types.value_t sigmoid(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := 1/(1+exp(-1*v));
       dt := Types.ToMatrix (Indep);
-      dTmp := Mat.InsertColumn(dt,1,1.0); // add the intercept column
+      //dTmp := Mat.InsertColumn(dt,1,1.0); // add the intercept column
+      dTmp := dt;
       d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
       m := MAX (d, d.y); //number of samples
       m_1 := 1/m;

@@ -4,10 +4,10 @@ IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
 //net is the structure of the Back Propagation Network that shows number of neurons in each layer
 //net is in NumericFiled format {id, number, value}, "value" is the number of nodes in the "id"th layer
-//basically in the first layer number of neurons is : number of features + 1 (1 is added for the intersect term)
+//basically in the first layer number of neurons is : number of features
 //Number of neurons in the last layer is number of output assigned to each sample
 net := DATASET([
-{1, 1, 4},
+{1, 1, 3},
 {2,1,3},
 {3,1,4},
 {4,1,2}],

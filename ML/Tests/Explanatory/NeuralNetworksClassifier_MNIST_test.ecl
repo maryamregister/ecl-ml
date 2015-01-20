@@ -2,10 +2,10 @@
 IMPORT * FROM $;
 IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
-//number of neurons in the first layer = number of features +1
+//number of neurons in the first layer = number of features
 //number of neurons in the last layer = number of classes
 net := DATASET([
-{1, 1, 785},
+{1, 1, 784},
 {2,1,10},
 {3,1,10}],
 Types.DiscreteField);
@@ -1612,7 +1612,7 @@ OUTPUT  (label, NAMED ('label'));
 //LAMBDA is weight decay rate
 REAL8 ALPHA := 0.1;
 REAL8 LAMBDA :=0.1;
-UNSIGNED2 MaxIter :=200;
+UNSIGNED2 MaxIter :=1;
 UNSIGNED4 prows:=0;
 UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
