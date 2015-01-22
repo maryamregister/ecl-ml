@@ -1065,6 +1065,16 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
                       IF(havemaxcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,,maxcols),
                       PBblas.AutoBVMap(d_n, d_m,prows,pcols))));
     SHARED sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derivemap.part_rows(1),derivemap.part_cols(1)}], sizeRec);
+    Ones_VecMap := PBblas.Matrix_Map(1, NumClass, 1, NumClass);
+    //New Vector Generator
+    Layout_Cell gen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
+      SELF.y := ((c-1) % NumRows) + 1;
+      SELF.x := ((c-1) DIV NumRows) + 1;
+      SELF.v := 1;
+    END;
+    //Create Ones Vector for the calculations in the step fucntion
+    Ones_Vec := DATASET(NumClass, gen(COUNTER, NumClass),DISTRIBUTED);
+    Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
     //Create block matrix d
     dmap := PBblas.Matrix_Map(sizeTable[1].m_rows,sizeTable[1].m_cols,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
     ddist := DMAT.Converted.FromElement(d,dmap);
@@ -1075,7 +1085,8 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
     IntTHETAmap := PBblas.Matrix_Map(NumClass, sizeTable[1].m_rows, NumClass, sizeTable[1].f_b_rows);
     IntTHETAdist := DMAT.Converted.FromElement(IntTHETA, IntTHETAmap);
     //Maps used in step fucntion
-    THETAmap := PBblas.Matrix_Map(NumClass, sizeTable[1].m_rows, NumClass, sizeTable[1].f_b_rows);;
+    col_col_map := PBblas.Matrix_Map(sizeTable[1].m_cols, sizeTable[1].m_cols, sizeTable[1].f_b_cols, sizeTable[1].f_b_cols);
+    THETAmap := PBblas.Matrix_Map(NumClass, sizeTable[1].m_rows, NumClass, sizeTable[1].f_b_rows);
     txmap := groundTruthmap;
     SumColMap := PBblas.Matrix_Map(1, sizeTable[1].m_cols, 1, sizeTable[1].f_b_cols);
     //functions used in step fucntion
@@ -1095,21 +1106,15 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
         SELF.y := le.y;
         SELF.value := le.value - ri.value;
       END;
-      tx_mat_M :=  JOIN(tx_mat, MaxCol_tx_mat, LEFT.y=RIGHT.y, DoMinus(LEFT,RIGHT));
+      tx_mat_M :=  JOIN(tx_mat, MaxCol_tx_mat, LEFT.y=RIGHT.y, DoMinus(LEFT,RIGHT),LOOKUP);
       tx_M := DMAT.Converted.FromElement(tx_mat_M, txmap);
       //exp_tx_M=exp(tx_M);
       exp_tx_M := PBblas.Apply2Elements(txmap, tx_M, e);
       //Prob = bsxfun(@rdivide, exp_tx_M, sum(exp_tx_M));
-      //first convert matrix from partitioned fromat to MAT element format and then do the operation
-      exp_tx_M_mat := DMat.Converted.FromPart2Elm(exp_tx_M);
-      SumCol_exp_tx_M_mat := Mat.Has(exp_tx_M_mat).SumCol;
-      Mat.Types.Element DoDiv(exp_tx_M_mat le,SumCol_exp_tx_M_mat ri) := TRANSFORM
-        SELF.x := le.x;
-        SELF.y := le.y;
-        SELF.value := le.value / ri.value;
-      END;
-      Prob_mat :=  JOIN(exp_tx_M_mat, SumCol_exp_tx_M_mat, LEFT.y=RIGHT.y, DoDiv(LEFT,RIGHT));
-      Prob := DMAT.Converted.FromElement(Prob_mat, txmap);
+      SumCol_exp_tx_M := PBblas.PB_dgemm(FALSE, FALSE, 1.0, Ones_VecMap, Ones_Vecdist, txmap, exp_tx_M, SumColMap);
+      SumCol_exp_tx_M_rcip := PBblas.Apply2Elements(SumColMap, SumCol_exp_tx_M, Reci);
+      SumCol_exp_tx_M_rcip_diag := PBblas.Vector2Diag(SumColMap, SumCol_exp_tx_M_rcip, col_col_map);
+      Prob := PBblas.PB_dgemm(FALSE, FALSE, 1.0, txmap, exp_tx_M, col_col_map, SumCol_exp_tx_M_rcip_diag, txmap);
       second_term := PBblas.PB_dscal((1-ALPHA*LAMBDA), THETA);
       groundTruth_Prob := PBblas.PB_daxpy(1.0,groundTruthdist,PBblas.PB_dscal(-1, Prob));
       groundTruth_Prob_x := PBblas.PB_dgemm(FALSE, True, 1.0, txmap, groundTruth_Prob, dmap, ddist, THETAmap);
@@ -1155,9 +1160,22 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
     ddist := DMAT.Converted.FromElement(d,dmap);
     param := Model (mod);
     NumClass := Mat.Has(param).Stats.XMax;
+    Ones_VecMap := PBblas.Matrix_Map(1, NumClass, 1, NumClass);
+    //New Vector Generator
+    Layout_Cell gen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
+      SELF.y := ((c-1) % NumRows) + 1;
+      SELF.x := ((c-1) DIV NumRows) + 1;
+      SELF.v := 1;
+    END;
+    //Create Ones Vector for the calculations in the step fucntion
+    Ones_Vec := DATASET(NumClass, gen(COUNTER, NumClass),DISTRIBUTED);
+    Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
     THETAmap := PBblas.Matrix_Map(NumClass, sizeTable[1].m_rows, NumClass, sizeTable[1].f_b_rows);
     THETA := DMAT.Converted.FromElement(param, THETAmap);
     txmap := PBblas.Matrix_Map(NumClass, sizeTable[1].m_cols, NumClass, sizeTable[1].f_b_cols);
+    SumColMap := PBblas.Matrix_Map(1, sizeTable[1].m_cols, 1, sizeTable[1].f_b_cols);
+    col_col_map := PBblas.Matrix_Map(sizeTable[1].m_cols, sizeTable[1].m_cols, sizeTable[1].f_b_cols, sizeTable[1].f_b_cols);
+    PBblas.Types.value_t reci(PBblas.Types.value_t v,PBblas.Types.dimension_t r,PBblas.Types.dimension_t c) := 1/v;
     tx := PBblas.PB_dgemm(FALSE, FALSE, 1.0, THETAmap, THETA, dmap, ddist, txmap);
     // tx_M = bsxfun(@minus, tx, max(tx, [], 1));
     tx_mat := DMat.Converted.FromPart2Elm(tx);
@@ -1167,20 +1185,17 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
       SELF.y := le.y;
       SELF.value := le.value - ri.value;
     END;
-    tx_mat_M :=  JOIN(tx_mat, MaxCol_tx_mat, LEFT.y=RIGHT.y, DoMinus(LEFT,RIGHT));
+    tx_mat_M :=  JOIN(tx_mat, MaxCol_tx_mat, LEFT.y=RIGHT.y, DoMinus(LEFT,RIGHT),LOOKUP);
     tx_M := DMAT.Converted.FromElement(tx_mat_M, txmap);
     //exp_tx_M=exp(tx_M);
     PBblas.Types.value_t e(PBblas.Types.value_t v,PBblas.Types.dimension_t r,PBblas.Types.dimension_t c) := exp(v);
+    //Prob = bsxfun(@rdivide, exp_tx_M, sum(exp_tx_M));
     exp_tx_M := PBblas.Apply2Elements(txmap, tx_M, e);
-    exp_tx_M_mat := DMat.Converted.FromPart2Elm(exp_tx_M);
-    SumCol_exp_tx_M_mat := Mat.Has(exp_tx_M_mat).SumCol;
-    Mat.Types.Element DoDiv(exp_tx_M_mat le,SumCol_exp_tx_M_mat ri) := TRANSFORM
-      SELF.x := le.x;
-      SELF.y := le.y;
-      SELF.value := le.value / ri.value;
-    END;
-    Prob_mat :=  JOIN(exp_tx_M_mat, SumCol_exp_tx_M_mat, LEFT.y=RIGHT.y, DoDiv(LEFT,RIGHT));
-    //Prob := DMAT.Converted.FromElement(Prob_mat, txmap);
+    SumCol_exp_tx_M := PBblas.PB_dgemm(FALSE, FALSE, 1.0, Ones_VecMap, Ones_Vecdist, txmap, exp_tx_M, SumColMap);
+    SumCol_exp_tx_M_rcip := PBblas.Apply2Elements(SumColMap, SumCol_exp_tx_M, Reci);
+    SumCol_exp_tx_M_rcip_diag := PBblas.Vector2Diag(SumColMap, SumCol_exp_tx_M_rcip, col_col_map);
+    Prob := PBblas.PB_dgemm(FALSE, FALSE, 1.0, txmap, exp_tx_M, col_col_map, SumCol_exp_tx_M_rcip_diag, txmap);
+    Prob_mat := DMAT.Converted.FromPart2Elm (Prob);
     Types.l_result tr(Mat.Types.Element le) := TRANSFORM
       SELF.value := le.x;
       SELF.id := le.y;
@@ -1207,7 +1222,6 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
     RETURN PROJECT(classified,l_result);
   END; // END ClassifyC Function
 END; //END SoftMax
-    
 /* From Wikipedia: 
 http://en.wikipedia.org/wiki/Decision_tree_learning#General
 "... Decision tree learning is a method commonly used in data mining.

@@ -2,9 +2,9 @@
 IMPORT * FROM $;
 
 //Set Parameters
-LoopNum := 1; // Number of iterations in softmax algortihm
+LoopNum := 100; // Number of iterations in softmax algortihm
 LAMBDA := 0.0001; // weight decay parameter in  claculation of SoftMax Cost fucntion
-ALPHA := 0.1; // //Learning Rate for updating SoftMax parameters
+ALPHA := 0.01; // //Learning Rate for updating SoftMax parameters
 
 //input data
 value_record := RECORD
@@ -71,11 +71,13 @@ UNSIGNED4 prows:=0;
 trainer:= ML.Classify.SoftMax(IntTHETA, LAMBDA, ALPHA, LoopNum, prows, pcols, Maxrows,  Maxcols);
 
 //Learning Phase
- Model := trainer.LearnC(indepDataC, label);
- OUTPUT  (Model, ALL, NAMED ('Model'));
-
+ Mod := trainer.LearnC(indepDataC, label);
+ OUTPUT  (Mod, ALL, NAMED ('Mod'));
+//Model Matrix
+LearntModel := trainer.Model(mod);
+OUTPUT  (LearntModel, ALL, NAMED ('LearntModel'));
 //test phase
- dist := trainer.ClassProbDistribC(indepDataC,Model );
- classified := trainer.ClassifyC(indepDataC,Model);
+dist := trainer.ClassProbDistribC(indepDataC,Mod );
+classified := trainer.ClassifyC(indepDataC,Mod);
 OUTPUT  (dist, ALL, NAMED ('dist'));
- OUTPUT  (classified, ALL, NAMED ('classified'));
+OUTPUT  (classified, ALL, NAMED ('classified'));

@@ -1,5 +1,7 @@
 ﻿IMPORT * FROM ML;
 IMPORT * FROM $;
+IMPORT PBblas;
+Layout_Cell := PBblas.Types.Layout_Cell;
 
 //Set Parameters
 LoopNum := 1; // Number of iterations in softmax algortihm
