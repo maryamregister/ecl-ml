@@ -1098,16 +1098,17 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
       // tx=(theta*d);
       tx := PBblas.PB_dgemm(FALSE, FALSE, 1.0, THETAmap, THETA, dmap, ddist, txmap);
       // tx_M = bsxfun(@minus, tx, max(tx, [], 1));
-      //first convert matrix from partitioned fromat to MAT element format and then do the operation
       tx_mat := DMat.Converted.FromPart2Elm(tx);
       MaxCol_tx_mat := Mat.Has(tx_mat).MaxCol;
-      Mat.Types.Element DoMinus(tx_mat le,MaxCol_tx_mat ri) := TRANSFORM
-        SELF.x := le.x;
-        SELF.y := le.y;
-        SELF.value := le.value - ri.value;
-      END;
-      tx_mat_M :=  JOIN(tx_mat, MaxCol_tx_mat, LEFT.y=RIGHT.y, DoMinus(LEFT,RIGHT),LOOKUP);
-      tx_M := DMAT.Converted.FromElement(tx_mat_M, txmap);
+      MaxCol_tx := DMAT.Converted.FromElement(MaxCol_tx_mat, SumColMap);
+      tx_M := PBblas.PB_dgemm(TRUE, FALSE, -1.0, Ones_VecMap, Ones_Vecdist, SumColMap, MaxCol_tx, txmap, tx, 1.0);
+      // Mat.Types.Element DoMinus(tx_mat le,MaxCol_tx_mat ri) := TRANSFORM
+        // SELF.x := le.x;
+        // SELF.y := le.y;
+        // SELF.value := le.value - ri.value;
+      // END;
+      // tx_mat_M :=  JOIN(tx_mat, MaxCol_tx_mat, LEFT.y=RIGHT.y, DoMinus(LEFT,RIGHT),LOOKUP);
+      // tx_M := DMAT.Converted.FromElement(tx_mat_M, txmap);
       //exp_tx_M=exp(tx_M);
       exp_tx_M := PBblas.Apply2Elements(txmap, tx_M, e);
       //Prob = bsxfun(@rdivide, exp_tx_M, sum(exp_tx_M));
@@ -1180,13 +1181,8 @@ EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 A
     // tx_M = bsxfun(@minus, tx, max(tx, [], 1));
     tx_mat := DMat.Converted.FromPart2Elm(tx);
     MaxCol_tx_mat := Mat.Has(tx_mat).MaxCol;
-    Mat.Types.Element DoMinus(tx_mat le,MaxCol_tx_mat ri) := TRANSFORM
-      SELF.x := le.x;
-      SELF.y := le.y;
-      SELF.value := le.value - ri.value;
-    END;
-    tx_mat_M :=  JOIN(tx_mat, MaxCol_tx_mat, LEFT.y=RIGHT.y, DoMinus(LEFT,RIGHT),LOOKUP);
-    tx_M := DMAT.Converted.FromElement(tx_mat_M, txmap);
+    MaxCol_tx := DMAT.Converted.FromElement(MaxCol_tx_mat, SumColMap);
+    tx_M := PBblas.PB_dgemm(TRUE, FALSE, -1.0, Ones_VecMap, Ones_Vecdist, SumColMap, MaxCol_tx, txmap, tx, 1.0);
     //exp_tx_M=exp(tx_M);
     PBblas.Types.value_t e(PBblas.Types.value_t v,PBblas.Types.dimension_t r,PBblas.Types.dimension_t c) := exp(v);
     //Prob = bsxfun(@rdivide, exp_tx_M, sum(exp_tx_M));

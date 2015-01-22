@@ -4,7 +4,7 @@ IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
 
 //Set Parameters
-LoopNum := 1; // Number of iterations in softmax algortihm
+LoopNum := 2; // Number of iterations in softmax algortihm
 OUTPUT(LoopNum,NAMED ('LoopNum'));
 LAMBDA := 0.0001; // weight decay parameter in  claculation of SoftMax Cost fucntion
 ALPHA := 0.1; // //Learning Rate for updating SoftMax parameters
