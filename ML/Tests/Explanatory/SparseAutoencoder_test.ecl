@@ -8,7 +8,7 @@ Layout_Cell := PBblas.Types.Layout_Cell;
 //Number of neurons in the last layer is number of output assigned to each sample
 net := DATASET([
 {1, 1, 3},
-{2,1,3},
+{2,1,2},
 {3,1,3}],
 Types.DiscreteField);
 
@@ -37,13 +37,16 @@ OUTPUT  (indepDataC, ALL, NAMED ('indepDataC'));
 //define the parameters for the back propagation algorithm
 //ALPHA is learning rate
 //LAMBDA is weight decay rate
+REAL8 sparsityParam  := 0.1;
+REAL8 BETA := 0.1;
 REAL8 ALPHA := 0.1;
 REAL8 LAMBDA :=0.1;
-UNSIGNED2 MaxIter :=3;
+UNSIGNED2 MaxIter :=1;
 UNSIGNED4 prows:=0;
 UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
 UNSIGNED4 Maxcols:=0;
+
 
 
 //define the Neural Network Module to initialize the sparse autoencoder network
@@ -54,10 +57,18 @@ Intb := NN.IntBias;
 output(IntW,ALL, named ('IntW'));
 output(IntB,ALL, named ('IntB'));
 //trainer module
-trainer :=DeepLearning.Sparse_Autoencoder(IntW, Intb,  LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
+trainer :=DeepLearning.Sparse_Autoencoder(IntW, Intb,BETA, sparsityParam, LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
 
 testsds := trainer.testit(indepDataC);
-output(testsds, named ('testsds'));
+ // output(testsds, named ('testsds'));
+
+// output(ML.DMat.Converted.FromPart2Elm(testsds), named ('testsds'));
+
+t1 := ML.DMat.Converted.FromPart2Elm( PBblas.MU.From(testsds,1));
+output(t1, named ('t1'));
+
+t4 := ML.DMat.Converted.FromPart2Elm( PBblas.MU.From(testsds,4));
+output(t4, named ('t4'));
 
 t2 := ML.DMat.Converted.FromPart2Elm( PBblas.MU.From(testsds,2));
 output(t2, named ('t2'));

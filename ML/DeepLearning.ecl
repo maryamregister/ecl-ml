@@ -8,7 +8,9 @@ Layout_Part := PBblas.Types.Layout_Part;
 
 EXPORT DeepLearning := MODULE
 //Implementation of the Sparse Autoencoder based on the stanford Deep Learning tutorial
-EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
+//beta: weight of sparsity penalty term
+//sparsityParam: The desired average activation for the hidden units
+EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb,REAL8 BETA, REAL8 sparsityParam , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
   UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
   //this is a un-supervised learning algorithm, no need for the labled data
   SA(DATASET(Types.NumericField) X) := MODULE
@@ -17,6 +19,8 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
     SHARED d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
     SHARED m := MAX (d, d.y); //number of samples
     SHARED m_1 := 1/m;
+    SHARED sparsityParam_ := -1*sparsityParam;
+    SHARED sparsityParam_1 := 1-sparsityParam;
     SHARED sizeRec := RECORD
       PBblas.Types.dimension_t m_rows;
       PBblas.Types.dimension_t m_cols;
@@ -48,64 +52,48 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
     w1_mat_y := Mat.Has(w1_mat).Stats.Ymax;
     w1map := PBblas.Matrix_Map(w1_mat_x, w1_mat_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
     w1dist := DMAT.Converted.FromElement(w1_mat,w1map);
-    //w1no := PBblas.MU.TO(w1dist,1);
     
     w2_mat := Mat.MU.From(IntW,2);
     w2_mat_x := w1_mat_y;
     w2_mat_y := w1_mat_x;
     w2map := PBblas.Matrix_Map(w2_mat_x, w2_mat_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
     w2dist := DMAT.Converted.FromElement(w2_mat,w2map);
-    //w2no := PBblas.MU.TO(w1dist,1);
-
-    //two kind of Bias blocks are calculated
-    //1- each bias vector is converted to block format
-    //2-each Bias vector is repeated first to m columns, then the final repreated bias matrix is converted to block format
-    //the second kind of bias is calculated to make the next calculations easier, the first vector bias format is used just when we
-    //want to update the bias vectors
-    //Creat block vectors for Bias (above case 1)
+    //each bias vector is converted to block format
     b1vec := Mat.MU.From(Intb,1);
     b1vec_x := Mat.Has(b1vec).Stats.Xmax;
     b1vecmap := PBblas.Matrix_Map(b1vec_x, 1, sizeTable[1].f_b_rows, 1);
     b1vecdist := DMAT.Converted.FromElement(b1vec,b1vecmap);
-    //b1vecno := PBblas.MU.TO(b1vecdist,1);
    
     b2vec := Mat.MU.From(Intb,2);
     b2vec_x := Mat.Has(b2vec).Stats.Xmax;
     b2vecmap := PBblas.Matrix_Map(b2vec_x, 1, sizeTable[1].f_b_rows, 1);
     b2vecdist := DMAT.Converted.FromElement(b2vec,b2vecmap);
-    //b2vecno := PBblas.MU.TO(b1vecdist,1);
-    //Creat block matrices for Bias (repeat each bias vector to a matrix with m columns) (above case 2)
-    b1_mat := Mat.MU.From(Intb,1);
-    b1_mat_x := Mat.Has(b1_mat).Stats.Xmax;
-    b1_mat_rep := Mat.Repmat(b1_mat, 1, m); // Bias vector is repeated in m columns to make the future calculations easier
-    b1map := PBblas.Matrix_Map(b1_mat_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
-    b1dist := DMAT.Converted.FromElement(b1_mat_rep,b1map);
-    //b1no := PBblas.MU.TO(b1dist,1);
-    
-    b2_mat := Mat.MU.From(Intb,2);
-    b2_mat_x := Mat.Has(b2_mat).Stats.Xmax;
-    b2_mat_rep := Mat.Repmat(b2_mat, 1, m); // Bias vector is repeated in m columns to make the future calculations easier
-    b2map := PBblas.Matrix_Map(b2_mat_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
-    b2dist := DMAT.Converted.FromElement(b2_mat_rep,b2map);
-    //b2no := PBblas.MU.TO(b2dist,1);
-    //by now we have converted all our parameters to the partition format
-    //weight parameters: w1dist,w2dist
-    //bias vector parameters: b1vecdist, b2vecdist
-    //matrix of bias vectors for making future calculations easier b1dist, b2dist
-    // creat ones vector for calculating bias gradients
-    Layout_Cell gen(UNSIGNED4 c, UNSIGNED4 NumRows, REAL8 v) := TRANSFORM
-      SELF.x := ((c-1) % NumRows) + 1;
-      SELF.y := ((c-1) DIV NumRows) + 1;
-      SELF.v := v;
-     END;
-     onesmap := PBblas.Matrix_Map(m, 1, sizeTable[1].f_b_cols, 1);
-     ones := DATASET(m, gen(COUNTER, m, 1.0),DISTRIBUTED);
-     onesdist := DMAT.Converted.FromCells(onesmap, ones);
+
     //functions used
+    PBblas.Types.value_t sp_reci(PBblas.Types.value_t v,PBblas.Types.dimension_t r,PBblas.Types.dimension_t c) := sparsityParam_/v;
+    PBblas.Types.value_t sp_1_reci(PBblas.Types.value_t v,PBblas.Types.dimension_t r,PBblas.Types.dimension_t c) := sparsityParam_1/(1-v);
+    //sparsity_delta=((-sparsityParam./rhohat)+((1-sparsityParam)./(1.-rhohat)));
+    PBblas.Types.value_t sp_delta(PBblas.Types.value_t v,PBblas.Types.dimension_t r,PBblas.Types.dimension_t c) := (sparsityParam_/v)+(sparsityParam_1/(1-v));
+    PBblas.Types.value_t siggrad(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := v*(1.0-v);
     PBblas.Types.value_t sigmoid(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := 1/(1+exp(-1*v));
     //maps used
+    b1map := PBblas.Matrix_Map(b1vec_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+    b2map := PBblas.Matrix_Map(b2vec_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+    a2map := b1map;
+    a3map := b2map;
     HL_nodes := w1_mat_x;//number of nodes in the hidden layer
-    a2map := PBblas.Matrix_Map(HL_nodes,sizeTable[1].m_cols,HL_nodes,sizeTable[1].f_b_cols);
+    Hiddmap := b1vecmap;
+    //onevec for calculating rhohat
+    Ones_VecMap := PBblas.Matrix_Map(m, 1, sizeTable[1].f_b_cols, 1);
+    //New Vector Generator
+    Layout_Cell gen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
+      SELF.x := ((c-1) % NumRows) + 1;
+      SELF.y := ((c-1) DIV NumRows) + 1;
+      SELF.v := 1;
+    END;
+    //Create Ones Vector for the calculations in the step fucntion
+    Ones_Vec := DATASET(m, gen(COUNTER, m),DISTRIBUTED);
+    Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
     FF(DATASET(Layout_Part) w1,  DATASET(Layout_Part) w2,DATASET(Layout_Part) b1, DATASET(Layout_Part) b2 ):= FUNCTION
       //z2 = w1*X+b1;
       z2 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w1map, w1, dmap, ddist, b1map,b1, 1.0);
@@ -115,55 +103,149 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
       //z3 = w2*a2+b2;
       z3 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2, a2map, a2, b2map,b2, 1.0);
       //a3 = sigmoid (z3)
-      a3 := PBblas.Apply2Elements(b1map, z3, sigmoid);
+      a3 := PBblas.Apply2Elements(b2map, z3, sigmoid);
       a3_no := PBblas.MU.To(a3,3);
       RETURN a2_no+a3_no;
     END;//END FF
-    EXPORT alaki := FF(w1dist,w2dist,b1dist,b2dist);
-    // w1_no := PBblas.MU.To(w1dist,1);
-    // w2_no := PBblas.MU.To(w2dist,2);
-    // wparam := w1_no+w2_no;
-    // b1_no := PBblas.MU.To(b1dist,1);
-    // b2_no := PBblas.MU.To(b2dist,2);
-    // bparam := b1_no+b2_no;
- // FF2(DATASET(PBblas.Types.MUElement) w, DATASET(PBblas.Types.MUElement) b ):= FUNCTION
-// net := DATASET([
-// {1, 1, 3},
-// {2,1,3},
-// {3,1,3}],
-// Types.DiscreteField);
-// iterations :=1; 
-      // w1 := PBblas.MU.From(W, 1); // weight matrix between layer 1 and layer 2 of the neural network
-      // b1 := PBblas.MU.From(b, 1); //bias entered to the layer 2 of the neural network
-      // z2 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w1map, W1, dmap, ddist, b1map,b1, 1.0  );
+    //FF2 returns a2
+    FF2(DATASET(Layout_Part) w1, DATASET(Layout_Part) b1v):= FUNCTION
+      //b1m = repmat(b1v,1,m)
+      b1m := PBblas.PB_dgemm(FALSE, TRUE, 1.0,b1vecmap, b1v, Ones_VecMap, Ones_Vecdist, b1map);
+      //z2 = w1*X+b1;
+      z2 := PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1, dmap, ddist, b1map, b1m, 1.0);
       //a2 = sigmoid (z2);
-      // a2 := PBblas.Apply2Elements(b1map, z2, sigmoid);
-      // a2no := PBblas.MU.To(a2,2);
-
-      // FF_Step(DATASET(PBblas.Types.MUElement) InputA, INTEGER coun) := FUNCTION
-        // L := coun+1;
-        // wL := PBblas.MU.From(w, L); // weight matrix between layer L and layer L+1 of the neural network
-        // wL_x := net(id=(L+1))[1].value;
-        // wL_y := net(id=(L))[1].value;;
-        // bL := PBblas.MU.From(b, L); //bias entered to the layer L+1 of the neural network
-        // bL_x := net(id=(L+1))[1].value;
-        // aL := PBblas.MU.From(InputA, L); //output of layer L
-        // aL_x := net(id=(L))[1].value;;
-        // wLmap := PBblas.Matrix_Map(wL_x, wL_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
-        // bLmap := PBblas.Matrix_Map(bL_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
-        // aLmap := PBblas.Matrix_Map(aL_x,m,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
-        //z(L+1) = wL*aL+bL;
-        // zL_1 := PBblas.PB_dgemm(FALSE, FALSE,1.0,wLmap, wL, aLmap, aL, bLmap,bL, 1.0  );
-        //aL_1 = sigmoid (zL_1);
-        // aL_1 := PBblas.Apply2Elements(bLmap, zL_1, sigmoid);
-        // aL_1no := PBblas.MU.To(aL_1,L+1);
-        // RETURN InputA+aL_1no;
-      // END;//end FF_step
-      // final_A := LOOP(a2no, COUNTER <= iterations, FF_Step(ROWS(LEFT),COUNTER));
-      // return final_A;
-    // END;//end FF2
-     // alaki2 := FF2(wparam,bparam);
-     // EXPORT alaki3 := alaki+alaki2;
+      a2 := PBblas.Apply2Elements(b1map, z2, sigmoid);
+      RETURN a2;
+    END;//END FF2
+    //FF3 returns a3
+    FF3(DATASET(Layout_Part) w2,DATASET(Layout_Part) b2v, DATASET(Layout_Part) a2 ):= FUNCTION
+      //b2m = repmat(b2v,1,m)
+      b2m := PBblas.PB_dgemm(FALSE, TRUE, 1.0,b2vecmap, b2v, Ones_VecMap, Ones_Vecdist, b2map);
+      //z3 = w2*a2+b2;
+      z3 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2, a2map, a2, b2map,b2m, 1.0);
+      //a3 = sigmoid (z3)
+      a3 := PBblas.Apply2Elements(b2map, z3, sigmoid);
+      RETURN a3;
+    END;//END FF3
+    DELTA (DATASET(Layout_Part) w1,  DATASET(Layout_Part) w2,DATASET(PBblas.Types.MUElement) a ) := FUNCTION
+      a2 := PBblas.MU.From(a, 2);
+      a3 := PBblas.MU.From(a, 3);
+      //calculate delta for the last layer (3rd layer)
+      //y=X;
+      //d3=-(y-a3).*(a3.*(1-a3));
+      siggrad_a3 := PBblas.Apply2Elements(a3map, a3, siggrad);
+      a3_y := PBblas.PB_daxpy(-1, ddist, a3);
+      d3 := PBblas.HadamardProduct(a3map, a3_y, siggrad_a3);
+      d3_no := PBblas.MU.To(d3,3);
+      //calculate delta for 2nd layer
+      //rhohat=mean(a2,2);
+      //sparsity_delta=((-sparsityParam./rhohat)+((1-sparsityParam)./(1.-rhohat)));
+      //d2=((W2'*d3)+beta*repmat(sparsity_delta,1,m)).*(a2.*(1-a2));
+      rhohat := PBblas.PB_dgemm(FALSE, FALSE, m_1,  a2map, a2, Ones_VecMap, Ones_Vecdist, Hiddmap);
+      sparsity_delta := PBblas.Apply2Elements(Hiddmap, rhohat, sp_delta);
+      siggrad_a2 := PBblas.Apply2Elements(a2map, a2, siggrad);
+      repmat_sparsity_delta := PBblas.PB_dgemm(FALSE, TRUE, 1.0,  Hiddmap, sparsity_delta, Ones_VecMap, Ones_Vecdist, a2map);
+      //d2_firstterm = (W2'*d3)+beta*repmat(sparsity_delta,1,m);
+      d2_firstterm := PBblas.PB_dgemm(TRUE, FALSE, 1.0, w2map, w2dist, a3map, d3, a2map, repmat_sparsity_delta, BETA);
+      d2 := PBblas.HadamardProduct(a2map, d2_firstterm, siggrad_a2);
+      d2_no := PBblas.MU.To(d2,2);
+      RETURN d2_no + d3_no ;
+    END;
+    //DELTA3 returns d3
+    DELTA3 (DATASET(Layout_Part) a3 ) := FUNCTION
+      //calculate delta for the last layer (3rd layer)
+      //y=X;
+      //d3=-(y-a3).*(a3.*(1-a3));
+      siggrad_a3 := PBblas.Apply2Elements(a3map, a3, siggrad);
+      a3_y := PBblas.PB_daxpy(-1, ddist, a3);
+      d3 := PBblas.HadamardProduct(a3map, a3_y, siggrad_a3);
+      RETURN d3 ;
+    END;//END DELTA3
+    //DELTA2 retunrs d2
+    DELTA2 (DATASET(Layout_Part) w2, DATASET(Layout_Part) a2, DATASET(Layout_Part) d3) := FUNCTION
+      //calculate delta for 2nd layer
+      //rhohat=mean(a2,2);
+      //sparsity_delta=((-sparsityParam./rhohat)+((1-sparsityParam)./(1.-rhohat)));
+      //d2=((W2'*d3)+beta*repmat(sparsity_delta,1,m)).*(a2.*(1-a2));
+      rhohat := PBblas.PB_dgemm(FALSE, FALSE, m_1,  a2map, a2, Ones_VecMap, Ones_Vecdist, Hiddmap);
+      sparsity_delta := PBblas.Apply2Elements(Hiddmap, rhohat, sp_delta);
+      siggrad_a2 := PBblas.Apply2Elements(a2map, a2, siggrad);
+      repmat_sparsity_delta := PBblas.PB_dgemm(FALSE, TRUE, 1.0,  Hiddmap, sparsity_delta, Ones_VecMap, Ones_Vecdist, a2map);
+      //d2_firstterm = (W2'*d3)+beta*repmat(sparsity_delta,1,m);
+      d2_firstterm := PBblas.PB_dgemm(TRUE, FALSE, 1.0, w2map, w2, a3map, d3, a2map, repmat_sparsity_delta, BETA);
+      d2 := PBblas.HadamardProduct(a2map, d2_firstterm, siggrad_a2);
+      RETURN d2 ;
+    END;
+    //WeightGrad1 returns gradient for w1
+    WeightGrad1 (DATASET(Layout_Part) w1, DATASET(Layout_Part) d2) := FUNCTION
+      w1_g := PBblas.PB_dgemm(FALSE, TRUE, m_1, a2map, d2, dmap, ddist, w1map, w1 ,LAMBDA );
+      RETURN w1_g;
+    END;
+    //WeightGrad2 returns gradient for w2
+    WeightGrad2 (DATASET(Layout_Part) w2, DATASET(Layout_Part) d3, DATASET(Layout_Part) a2) := FUNCTION
+      w2_g := PBblas.PB_dgemm(FALSE, TRUE, m_1, a3map, d3, a2map, a2, w2map, w2 ,LAMBDA );
+      RETURN w2_g;
+    END;
+    //BiasGrad1 calculates the bias gradients for b1
+    BiasGrad1 (DATASET(Layout_Part) d2) := FUNCTION
+      b1_g := PBblas.PB_dgemm(FALSE, FALSE, m_1,  a2map, d2, Ones_VecMap, Ones_Vecdist, b1vecmap);
+      RETURN b1_g;
+    END;
+    //BiasGrad2 calculates the bias gradients for b2
+    BiasGrad2 (DATASET(Layout_Part) d3) := FUNCTION
+      b2_g := PBblas.PB_dgemm(FALSE, FALSE, m_1,  a3map, d3, Ones_VecMap, Ones_Vecdist, b2vecmap);
+      RETURN b2_g;
+    END;
+    GradDesUpdate (DATASET(Layout_Part) tobeUpdated, DATASET(Layout_Part) GradDesTerm):= FUNCTION
+      tmp_updated := PBblas.PB_daxpy(-1, PBblas.PB_dscal(ALPHA, GradDesTerm), tobeUpdated);
+      RETURN tmp_updated;
+    END;
+    GradDesLoop (DATASET(Layout_Part) w1in, DATASET(Layout_Part) w2in, DATASET(Layout_Part) bvec1in, DATASET(Layout_Part) bvec2in):= FUNCTION
+      w1inno := PBblas.MU.TO(w1in, 1);
+      w2inno := PBblas.MU.TO(w2in, 2);
+      bvec1inno := PBblas.MU.TO(bvec1in, 3);
+      bvec2inno := PBblas.MU.TO(bvec2in, 4);
+      prm := w1inno + w2inno + bvec1inno + bvec2inno;
+      GradDesLoop_Step (DATASET(PBblas.Types.MUElement) Inputprm, INTEGER coun) := FUNCTION
+        w1m := PBblas.MU.FROM (Inputprm, 1);
+        w2m := PBblas.MU.FROM (Inputprm, 2);
+        b1v := PBblas.MU.FROM (Inputprm, 3);
+        b2v := PBblas.MU.FROM (Inputprm, 4);
+        a2 := FF2 (w1m, b1v);
+        a3 := FF3 (w2m, b2v, a2);
+        d3 := DELTA3 (a3);
+        d2 := DELTA2 (w2m, a2, d3);
+        wg1 := WeightGrad1 (w1m, d2);
+        wg2 := WeightGrad2 (w2m, d3, a2);
+        bg1 := BiasGrad1 (d2);
+        bg2 := BiasGrad2 (d3);
+        w1u := GradDesUpdate (w1m, wg1);
+        w2u := GradDesUpdate (w2m, wg2);
+        b1u := GradDesUpdate (b1v, bg1);
+        b2u := GradDesUpdate (b2v, bg2);
+        w1uno := PBblas.MU.TO (w1u, 1);
+        w2uno := PBblas.MU.TO (w2u, 2);
+        b1uno := PBblas.MU.TO (b1u, 3);
+        b2uno := PBblas.MU.TO (b2u, 4);
+        // prmu := IF (coun=1, w1uno + w2uno + b1uno + b2uno,PBblas.MU.TO (a2, 2)+PBblas.MU.TO (w2m, 1)+PBblas.MU.TO (d3, 3)+PBblas.MU.TO (d2, 4));
+        prmu := w1uno + w2uno + b1uno + b2uno;
+        RETURN prmu;
+      END;
+      //finalprm := GradDesLoop_Step (prm);
+      finalprm := LOOP(prm, COUNTER <= 2, GradDesLoop_Step(ROWS(LEFT),COUNTER));
+      RETURN finalprm;
+    END;//END GradDesLoop
+    f2 := FF2 ( w1dist,b1vecdist);
+    f3 := FF3 ( w2dist,b2vecdist,FF2 ( w1dist,b1vecdist));
+    fd3 := DELTA3 ( f3);
+    fd2 := DELTA2(w1dist, f2, fd3);
+    fwg1 := WeightGrad1 (w1dist, fd2);
+    fwg2 := WeightGrad2 (w2dist, fd3, f2);
+    fbg1 := BiasGrad1 (fd2);
+    fb2 := BiasGrad2(fd3);
+    fwu1 := GradDesUpdate (w1dist, fwg1);
+    kol := GradDesLoop (w1dist, w2dist, b1vecdist, b2vecdist);
+    EXPORT alaki := kol;
   END;//END SA
   EXPORT testit(DATASET(Types.NumericField) Indep) := SA(Indep).alaki;
 END;//END Sparse_Autoencoder
