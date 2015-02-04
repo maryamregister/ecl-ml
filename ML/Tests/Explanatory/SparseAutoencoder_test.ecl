@@ -41,37 +41,25 @@ REAL8 sparsityParam  := 0.1;
 REAL8 BETA := 0.1;
 REAL8 ALPHA := 0.1;
 REAL8 LAMBDA :=0.1;
-UNSIGNED2 MaxIter :=1;
+UNSIGNED2 MaxIter :=10;
 UNSIGNED4 prows:=0;
 UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
 UNSIGNED4 Maxcols:=0;
-
-
-
-//define the Neural Network Module to initialize the sparse autoencoder network
-NN := NeuralNetworks(net);
 //initialize weight and bias values for the Back Propagation algorithm
-IntW := NN.IntWeights;
-Intb := NN.IntBias;
+IntW := DeepLearning.Sparse_Autoencoder_IntWeights(3,2);
+Intb := DeepLearning.Sparse_Autoencoder_IntBias(3,2);
 output(IntW,ALL, named ('IntW'));
 output(IntB,ALL, named ('IntB'));
 //trainer module
-trainer :=DeepLearning.Sparse_Autoencoder(IntW, Intb,BETA, sparsityParam, LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
+SA :=DeepLearning.Sparse_Autoencoder(IntW, Intb,BETA, sparsityParam, LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
 
-testsds := trainer.testit(indepDataC);
- // output(testsds, named ('testsds'));
+LearnModel := SA.LearnC(indepDataC);
+output(LearnModel, named ('LearnModel'));
 
-// output(ML.DMat.Converted.FromPart2Elm(testsds), named ('testsds'));
+MatrixModel := SA.Model (LearnModel);
+output(MatrixModel, named ('MatrixModel'));
 
-t1 := ML.DMat.Converted.FromPart2Elm( PBblas.MU.From(testsds,1));
-output(t1, named ('t1'));
-
-t4 := ML.DMat.Converted.FromPart2Elm( PBblas.MU.From(testsds,4));
-output(t4, named ('t4'));
-
-t2 := ML.DMat.Converted.FromPart2Elm( PBblas.MU.From(testsds,2));
-output(t2, named ('t2'));
-
-t3 := ML.DMat.Converted.FromPart2Elm( PBblas.MU.From(testsds,3));
-output(t3, named ('t3'));
+SAoutput_layer := SA.SAoutput (indepDataC, LearnModel);
+//output(ML.DMat.Converted.FromPart2Elm( out), named ('out'));
+output(SAoutput_layer, named ('SAoutput_layer'));

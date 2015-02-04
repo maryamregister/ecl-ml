@@ -7,6 +7,22 @@ Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
 
 EXPORT DeepLearning := MODULE
+EXPORT Sparse_Autoencoder_IntWeights (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLayerNods) := FUNCTION
+  net := DATASET([
+  {1, 1, NumberofFeatures},
+  {2,1,NumberofHiddenLayerNods},
+  {3,1,NumberofFeatures}],
+  Types.DiscreteField);
+  RETURN NeuralNetworks(net).IntWeights;
+END;
+EXPORT Sparse_Autoencoder_IntBias (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLayerNods) := FUNCTION
+  net := DATASET([
+  {1, 1, NumberofFeatures},
+  {2,1,NumberofHiddenLayerNods},
+  {3,1,NumberofFeatures}],
+  Types.DiscreteField);
+  RETURN NeuralNetworks(net).IntBias;
+END;
 //Implementation of the Sparse Autoencoder based on the stanford Deep Learning tutorial
 //beta: weight of sparsity penalty term
 //sparsityParam: The desired average activation for the hidden units
@@ -52,7 +68,6 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
     w1_mat_y := Mat.Has(w1_mat).Stats.Ymax;
     w1map := PBblas.Matrix_Map(w1_mat_x, w1_mat_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
     w1dist := DMAT.Converted.FromElement(w1_mat,w1map);
-    
     w2_mat := Mat.MU.From(IntW,2);
     w2_mat_x := w1_mat_y;
     w2_mat_y := w1_mat_x;
@@ -63,7 +78,6 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
     b1vec_x := Mat.Has(b1vec).Stats.Xmax;
     b1vecmap := PBblas.Matrix_Map(b1vec_x, 1, sizeTable[1].f_b_rows, 1);
     b1vecdist := DMAT.Converted.FromElement(b1vec,b1vecmap);
-   
     b2vec := Mat.MU.From(Intb,2);
     b2vec_x := Mat.Has(b2vec).Stats.Xmax;
     b2vecmap := PBblas.Matrix_Map(b2vec_x, 1, sizeTable[1].f_b_rows, 1);
@@ -94,19 +108,6 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
     //Create Ones Vector for the calculations in the step fucntion
     Ones_Vec := DATASET(m, gen(COUNTER, m),DISTRIBUTED);
     Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
-    FF(DATASET(Layout_Part) w1,  DATASET(Layout_Part) w2,DATASET(Layout_Part) b1, DATASET(Layout_Part) b2 ):= FUNCTION
-      //z2 = w1*X+b1;
-      z2 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w1map, w1, dmap, ddist, b1map,b1, 1.0);
-      //a2 = sigmoid (z2);
-      a2 := PBblas.Apply2Elements(b1map, z2, sigmoid);
-      a2_no := PBblas.MU.To(a2,2);
-      //z3 = w2*a2+b2;
-      z3 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2, a2map, a2, b2map,b2, 1.0);
-      //a3 = sigmoid (z3)
-      a3 := PBblas.Apply2Elements(b2map, z3, sigmoid);
-      a3_no := PBblas.MU.To(a3,3);
-      RETURN a2_no+a3_no;
-    END;//END FF
     //FF2 returns a2
     FF2(DATASET(Layout_Part) w1, DATASET(Layout_Part) b1v):= FUNCTION
       //b1m = repmat(b1v,1,m)
@@ -127,30 +128,6 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
       a3 := PBblas.Apply2Elements(b2map, z3, sigmoid);
       RETURN a3;
     END;//END FF3
-    DELTA (DATASET(Layout_Part) w1,  DATASET(Layout_Part) w2,DATASET(PBblas.Types.MUElement) a ) := FUNCTION
-      a2 := PBblas.MU.From(a, 2);
-      a3 := PBblas.MU.From(a, 3);
-      //calculate delta for the last layer (3rd layer)
-      //y=X;
-      //d3=-(y-a3).*(a3.*(1-a3));
-      siggrad_a3 := PBblas.Apply2Elements(a3map, a3, siggrad);
-      a3_y := PBblas.PB_daxpy(-1, ddist, a3);
-      d3 := PBblas.HadamardProduct(a3map, a3_y, siggrad_a3);
-      d3_no := PBblas.MU.To(d3,3);
-      //calculate delta for 2nd layer
-      //rhohat=mean(a2,2);
-      //sparsity_delta=((-sparsityParam./rhohat)+((1-sparsityParam)./(1.-rhohat)));
-      //d2=((W2'*d3)+beta*repmat(sparsity_delta,1,m)).*(a2.*(1-a2));
-      rhohat := PBblas.PB_dgemm(FALSE, FALSE, m_1,  a2map, a2, Ones_VecMap, Ones_Vecdist, Hiddmap);
-      sparsity_delta := PBblas.Apply2Elements(Hiddmap, rhohat, sp_delta);
-      siggrad_a2 := PBblas.Apply2Elements(a2map, a2, siggrad);
-      repmat_sparsity_delta := PBblas.PB_dgemm(FALSE, TRUE, 1.0,  Hiddmap, sparsity_delta, Ones_VecMap, Ones_Vecdist, a2map);
-      //d2_firstterm = (W2'*d3)+beta*repmat(sparsity_delta,1,m);
-      d2_firstterm := PBblas.PB_dgemm(TRUE, FALSE, 1.0, w2map, w2dist, a3map, d3, a2map, repmat_sparsity_delta, BETA);
-      d2 := PBblas.HadamardProduct(a2map, d2_firstterm, siggrad_a2);
-      d2_no := PBblas.MU.To(d2,2);
-      RETURN d2_no + d3_no ;
-    END;
     //DELTA3 returns d3
     DELTA3 (DATASET(Layout_Part) a3 ) := FUNCTION
       //calculate delta for the last layer (3rd layer)
@@ -232,21 +209,123 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
         RETURN prmu;
       END;
       //finalprm := GradDesLoop_Step (prm);
-      finalprm := LOOP(prm, COUNTER <= 2, GradDesLoop_Step(ROWS(LEFT),COUNTER));
+      finalprm := LOOP(prm, COUNTER <= MaxIter, GradDesLoop_Step(ROWS(LEFT),COUNTER));
       RETURN finalprm;
     END;//END GradDesLoop
-    f2 := FF2 ( w1dist,b1vecdist);
-    f3 := FF3 ( w2dist,b2vecdist,FF2 ( w1dist,b1vecdist));
-    fd3 := DELTA3 ( f3);
-    fd2 := DELTA2(w1dist, f2, fd3);
-    fwg1 := WeightGrad1 (w1dist, fd2);
-    fwg2 := WeightGrad2 (w2dist, fd3, f2);
-    fbg1 := BiasGrad1 (fd2);
-    fb2 := BiasGrad2(fd3);
-    fwu1 := GradDesUpdate (w1dist, fwg1);
-    kol := GradDesLoop (w1dist, w2dist, b1vecdist, b2vecdist);
-    EXPORT alaki := kol;
+    SAprm := GradDesLoop (w1dist, w2dist, b1vecdist, b2vecdist);// SA is in PBblas.Types.MUElement format convert it to
+    //numericfield format
+    SAprm1 := PBblas.MU.From (SAprm,1);
+    SAprm2 := PBblas.MU.From (SAprm,2);
+    SAprm3 := PBblas.MU.From (SAprm,3);
+    SAprm4 := PBblas.MU.From (SAprm,4);
+    SAprm1_mat := DMat.Converted.FromPart2Elm (SAprm1);
+    SAprm2_mat := DMat.Converted.FromPart2Elm (SAprm2);
+    SAprm3_mat := DMat.Converted.FromPart2Elm (SAprm3);
+    SAprm4_mat := DMat.Converted.FromPart2Elm (SAprm4);
+    SAprm1_mat_no := Mat.MU.TO(SAprm1_mat,1);
+    SAprm2_mat_no := Mat.MU.TO(SAprm2_mat,2);
+    SAprm3_mat_no := Mat.MU.TO(SAprm3_mat,3);
+    SAprm4_mat_no := Mat.MU.TO(SAprm4_mat,4);
+    SAprm_MUE := SAprm1_mat_no + SAprm2_mat_no + SAprm3_mat_no + SAprm4_mat_no;
+    AppendID(SAprm_MUE, id, SAprm_MUE_id);
+    ToField (SAprm_MUE_id, SAprm_MUE_out, id, 'x,y,value,no');
+    EXPORT Mod := SAprm_MUE_out;
   END;//END SA
-  EXPORT testit(DATASET(Types.NumericField) Indep) := SA(Indep).alaki;
+  EXPORT LearnC (DATASET(Types.NumericField) Indep) := SA(Indep).mod;
+  EXPORT Model(DATASET(Types.NumericField) mod) := FUNCTION
+    modelD_Map :=	DATASET([{'id','ID'},{'x','1'},{'y','2'},{'value','3'},{'no','4'}], {STRING orig_name; STRING assigned_name;});
+    FromField(mod,Mat.Types.MUElement,dOut,modelD_Map);
+    RETURN dOut;
+  END;//END Model
+  EXPORT SAOutput(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) mod) :=FUNCTION
+    //Take the same steps in the FeedForward fucntions to calculate the output of the SparseAutoencoder
+    X := Indep;
+    Inputmod:= Model (mod);
+    dt := Types.ToMatrix (X);
+    dTmp := dt;
+    d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
+    m := MAX (d, d.y); //number of samples
+    sizeRec := RECORD
+      PBblas.Types.dimension_t m_rows;
+      PBblas.Types.dimension_t m_cols;
+      PBblas.Types.dimension_t f_b_rows;
+      PBblas.Types.dimension_t f_b_cols;
+    END;
+   //Map for Matrix d.
+    havemaxrow := maxrows > 0;
+    havemaxcol := maxcols > 0;
+    havemaxrowcol := havemaxrow and havemaxcol;
+    dstats := Mat.Has(d).Stats;
+    d_n := dstats.XMax;
+    d_m := dstats.YMax;
+    derivemap := IF(havemaxrowcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows, maxcols),
+                   IF(havemaxrow, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows),
+                      IF(havemaxcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,,maxcols),
+                      PBblas.AutoBVMap(d_n, d_m,prows,pcols))));
+    sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derivemap.part_rows(1),derivemap.part_cols(1)}], sizeRec);
+    //Create block matrix d
+    dmap := PBblas.Matrix_Map(sizeTable[1].m_rows,sizeTable[1].m_cols,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+    ddist := DMAT.Converted.FromElement(d,dmap);
+    //Creat block matrices for weights
+    w1_mat := Mat.MU.From(Inputmod,1);
+    w1_mat_x := Mat.Has(w1_mat).Stats.Xmax;
+    w1_mat_y := Mat.Has(w1_mat).Stats.Ymax;
+    w1map := PBblas.Matrix_Map(w1_mat_x, w1_mat_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
+    w1dist := DMAT.Converted.FromElement(w1_mat,w1map);
+    w2_mat := Mat.MU.From(Inputmod,2);
+    w2_mat_x := w1_mat_y;
+    w2_mat_y := w1_mat_x;
+    w2map := PBblas.Matrix_Map(w2_mat_x, w2_mat_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
+    w2dist := DMAT.Converted.FromElement(w2_mat,w2map);
+    //each bias vector is converted to block format
+    b1vec := Mat.MU.From(Inputmod,3);
+    b1vec_x := Mat.Has(b1vec).Stats.Xmax;
+    b1vecmap := PBblas.Matrix_Map(b1vec_x, 1, sizeTable[1].f_b_rows, 1);
+    b1vecdist := DMAT.Converted.FromElement(b1vec,b1vecmap);
+    b2vec := Mat.MU.From(Inputmod,4);
+    b2vec_x := Mat.Has(b2vec).Stats.Xmax;
+    b2vecmap := PBblas.Matrix_Map(b2vec_x, 1, sizeTable[1].f_b_rows, 1);
+    b2vecdist := DMAT.Converted.FromElement(b2vec,b2vecmap);
+    //functions used
+    PBblas.Types.value_t sigmoid(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := 1/(1+exp(-1*v));
+    //maps used
+    b1map := PBblas.Matrix_Map(b1vec_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+    b2map := PBblas.Matrix_Map(b2vec_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+    a2map := b1map;
+    a3map := b2map;
+    HL_nodes := w1_mat_x;//number of nodes in the hidden layer
+    Hiddmap := b1vecmap;
+    //onevec for calculating rhohat
+    Ones_VecMap := PBblas.Matrix_Map(m, 1, sizeTable[1].f_b_cols, 1);
+    //New Vector Generator
+    Layout_Cell gen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
+      SELF.x := ((c-1) % NumRows) + 1;
+      SELF.y := ((c-1) DIV NumRows) + 1;
+      SELF.v := 1;
+    END;
+    //Create Ones Vector for the calculations in the step fucntion
+    Ones_Vec := DATASET(m, gen(COUNTER, m),DISTRIBUTED);
+    Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
+    //b1m = repmat(b1v,1,m)
+    b1m := PBblas.PB_dgemm(FALSE, TRUE, 1.0,b1vecmap, b1vecdist, Ones_VecMap, Ones_Vecdist, b1map);
+    //z2 = w1*X+b1;
+    z2 := PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1dist, dmap, ddist, b1map, b1m, 1.0);
+    //a2 = sigmoid (z2);
+    a2 := PBblas.Apply2Elements(b1map, z2, sigmoid);
+    //b2m = repmat(b2v,1,m)
+    b2m := PBblas.PB_dgemm(FALSE, TRUE, 1.0,b2vecmap, b2vecdist, Ones_VecMap, Ones_Vecdist, b2map);
+    //z3 = w2*a2+b2;
+    z3 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2dist, a2map, a2, b2map, b2m, 1.0);
+    //a3 = sigmoid (z3)
+    a3 := PBblas.Apply2Elements(b2map, z3, sigmoid);
+    a3_mat := DMat.Converted.FromPart2Elm(a3);
+    Types.l_result tr(Mat.Types.Element le) := TRANSFORM
+      SELF.value := le.x;
+      SELF.id := le.y;
+      SELF.number := 1; //number of class
+      SELF.conf := le.value;
+    END;
+    RETURN PROJECT (a3_mat, tr(LEFT));
+  END;//END SAOutput
 END;//END Sparse_Autoencoder
 END;//END DeepLearning
