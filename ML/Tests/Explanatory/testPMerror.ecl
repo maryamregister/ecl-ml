@@ -2,15 +2,15 @@
 IMPORT * FROM $;
 IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
-//number of neurons in the first layer = number of features
-//number of neurons in the last layer = number of classes
-net := DATASET([
-{1, 1, 784},
-{2,1,10},
-{3,1,10}],
-Types.DiscreteField);
+IMPORT PBblas;
+
+Layout_Part := PBblas.Types.Layout_Part;
+//Number of neurons in the last layer is number of output assigned to each sample
+INTEGER4 hl := 10;//number of nodes in the hiddenlayer
+INTEGER4 f := 784;//number of input features
 
 //input data
+
 value_record := RECORD
 real	f1	;
 real	f2	;
@@ -798,10 +798,11 @@ real	f783	;
 real	f784	;
 INTEGER Label  ;
 END;
+
 input_data_tmp := DATASET('~online::maryam::mytest::MNIST_60000sa', value_record, CSV);
 ML.AppendID(input_data_tmp, id, input_data);
 OUTPUT  (input_data, NAMED ('input_data'));
-//convert input data to two datset: samples dataset and labels dataset
+
 Sampledata_Format := RECORD
 input_data.id;
 input_data.f1	;
@@ -1589,27 +1590,19 @@ input_data.f782	;
 input_data.f783	;
 input_data.f784	;
 END;
+
 sample_table := TABLE(input_data,Sampledata_Format);
 OUTPUT  (sample_table, NAMED ('sample_table'));
 
-labeldata_Format := RECORD
-  input_data.id;
-  input_data.label;
-END;
-
-label_table := TABLE(input_data,labeldata_Format);
-OUTPUT  (label_table, NAMED ('label_table'));
-
 ML.ToField(sample_table, indepDataC);
 OUTPUT  (indepDataC, NAMED ('indepDataC'));
-ML.ToField(label_table, depDataC);
-OUTPUT  (depDataC, NAMED ('depDataC'));
-label := PROJECT(depDataC,Types.DiscreteField);
-OUTPUT  (label, NAMED ('label'));
 
-//define the parameters for the back propagation algorithm
+
+//define the parameters for the Sparse Autoencoder
 //ALPHA is learning rate
 //LAMBDA is weight decay rate
+REAL8 sparsityParam  := 0.1;
+REAL8 BETA := 0.1;
 REAL8 ALPHA := 0.1;
 REAL8 LAMBDA :=0.1;
 UNSIGNED2 MaxIter :=1;
@@ -1618,20 +1611,63 @@ UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
 UNSIGNED4 Maxcols:=0;
 //initialize weight and bias values for the Back Propagation algorithm
-IntW := NeuralNetworks(net).IntWeights;
-Intb := NeuralNetworks(net).IntBias;
-output(IntW, named ('IntW'));
+IntW := DeepLearning.Sparse_Autoencoder_IntWeights(f,hl);
+Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
 output(IntB, named ('IntB'));
-//define the Neural Network Module
-NNClassifier := ML.Classify.NeuralNetworksClassifier(net, IntW, Intb,  LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows, Maxcols);
 
-//training phase
-Learntmodel := NNClassifier.LearnC(indepDataC, label);
-OUTPUT  (Learntmodel,  NAMED ('Learntmodel'));
-NNModel := NNClassifier.Model(Learntmodel);
-OUTPUT  (NNModel, NAMED ('NNModel'));
-//testing phase
-AEnd := NNClassifier.ClassProbDistribC(indepDataC, Learntmodel);
-OUTPUT  (AEnd, NAMED ('AEnd'));
-Class := NNClassifier.ClassifyC(indepDataC, Learntmodel);
-OUTPUT  (Class, NAMED ('Class'));
+
+X:= indepDataC;
+
+    dt := Types.ToMatrix (X);
+    dTmp := dt;
+    d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
+    m := MAX (d, d.y); //number of samples
+   sizeRec := RECORD
+      PBblas.Types.dimension_t m_rows;
+      PBblas.Types.dimension_t m_cols;
+      PBblas.Types.dimension_t f_b_rows;
+      PBblas.Types.dimension_t f_b_cols;
+    END;
+   //Map for Matrix d.
+     havemaxrow := maxrows > 0;
+     havemaxcol := maxcols > 0;
+     havemaxrowcol := havemaxrow and havemaxcol;
+     dstats := Mat.Has(d).Stats;
+     d_n := dstats.XMax;
+     d_m := dstats.YMax;
+     output_num := d_n;
+    derivemap := PBblas.AutoBVMap(d_n, d_m,prows,pcols);
+     sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derivemap.part_rows(1),derivemap.part_cols(1)}], sizeRec);
+    
+    //each bias vector is converted to block format
+    b2vec := Mat.MU.From(Intb,2);
+    b2vec_x := Mat.Has(b2vec).Stats.Xmax;
+    b2vecmap := PBblas.Matrix_Map(b2vec_x, 1, sizeTable[1].f_b_rows, 1);
+    b2vecdist := DMAT.Converted.FromElement(b2vec,b2vecmap);
+
+    b2map := PBblas.Matrix_Map(b2vec_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+    
+    //onevec for calculating rhohat
+    Ones_VecMap := PBblas.Matrix_Map(m, 1, sizeTable[1].f_b_cols, 1);
+    //New Vector Generator
+    Layout_Cell gen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
+      SELF.x := ((c-1) % NumRows) + 1;
+      SELF.y := ((c-1) DIV NumRows) + 1;
+      SELF.v := 1;
+    END;
+    //Create Ones Vector for the calculations in the step fucntion
+    Ones_Vec := DATASET(m, gen(COUNTER, m),DISTRIBUTED);
+    Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
+    b2m := PBblas.PB_dgemm(FALSE, TRUE, 1.0,b2vecmap, b2vecdist, Ones_VecMap, Ones_Vecdist, b2map);
+    ma := DMat.Converted.FromPart2Elm(b2m);
+    output(ma);
+    
+    
+    
+    w2_mat := Mat.MU.From(IntW,2);
+    w2_mat_x := Mat.Has(w2_mat).Stats.Xmax;
+    w2_mat_y := Mat.Has(w2_mat).Stats.Ymax;
+    w2map := PBblas.Matrix_Map(w2_mat_x, w2_mat_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
+     w2dist := DMAT.Converted.FromElement(w2_mat,w2map);
+    
+    // z3 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2dist, a2map, a2, b2map,b2m, 1.0);

@@ -7,18 +7,18 @@ Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
 
 EXPORT DeepLearning := MODULE
-EXPORT Sparse_Autoencoder_IntWeights (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLayerNods) := FUNCTION
+EXPORT Sparse_Autoencoder_IntWeights (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLayerNodes) := FUNCTION
   net := DATASET([
   {1, 1, NumberofFeatures},
-  {2,1,NumberofHiddenLayerNods},
+  {2,1,NumberofHiddenLayerNodes},
   {3,1,NumberofFeatures}],
   Types.DiscreteField);
   RETURN NeuralNetworks(net).IntWeights;
 END;
-EXPORT Sparse_Autoencoder_IntBias (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLayerNods) := FUNCTION
+EXPORT Sparse_Autoencoder_IntBias (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLayerNodes) := FUNCTION
   net := DATASET([
   {1, 1, NumberofFeatures},
-  {2,1,NumberofHiddenLayerNods},
+  {2,1,NumberofHiddenLayerNodes},
   {3,1,NumberofFeatures}],
   Types.DiscreteField);
   RETURN NeuralNetworks(net).IntBias;
@@ -29,7 +29,7 @@ END;
 EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb,REAL8 BETA, REAL8 sparsityParam , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
   UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
   //this is a un-supervised learning algorithm, no need for the labled data
-  SA(DATASET(Types.NumericField) X) := MODULE
+  SHARED SA(DATASET(Types.NumericField) X) := MODULE
     dt := Types.ToMatrix (X);
     dTmp := dt;
     SHARED d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
@@ -183,7 +183,7 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
       bvec1inno := PBblas.MU.TO(bvec1in, 3);
       bvec2inno := PBblas.MU.TO(bvec2in, 4);
       prm := w1inno + w2inno + bvec1inno + bvec2inno;
-      GradDesLoop_Step (DATASET(PBblas.Types.MUElement) Inputprm, INTEGER coun) := FUNCTION
+      GradDesLoop_Step (DATASET(PBblas.Types.MUElement) Inputprm) := FUNCTION
         w1m := PBblas.MU.FROM (Inputprm, 1);
         w2m := PBblas.MU.FROM (Inputprm, 2);
         b1v := PBblas.MU.FROM (Inputprm, 3);
@@ -208,11 +208,11 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
         prmu := w1uno + w2uno + b1uno + b2uno;
         RETURN prmu;
       END;
-      //finalprm := GradDesLoop_Step (prm);
-      finalprm := LOOP(prm, COUNTER <= MaxIter, GradDesLoop_Step(ROWS(LEFT),COUNTER));
+      finalprm := GradDesLoop_Step (prm);
+      //finalprm := LOOP(prm, COUNTER <= MaxIter, GradDesLoop_Step(ROWS(LEFT)));
       RETURN finalprm;
     END;//END GradDesLoop
-    SAprm := GradDesLoop (w1dist, w2dist, b1vecdist, b2vecdist);// SA is in PBblas.Types.MUElement format convert it to
+    SAprm := GradDesLoop (w1dist, w2dist, b1vecdist, b2vecdist);// SAprm is in PBblas.Types.MUElement format convert it to
     //numericfield format
     SAprm1 := PBblas.MU.From (SAprm,1);
     SAprm2 := PBblas.MU.From (SAprm,2);

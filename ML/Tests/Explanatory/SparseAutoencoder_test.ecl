@@ -2,15 +2,9 @@
 IMPORT * FROM $;
 IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
-//net is the structure of the Back Propagation Network that shows number of neurons in each layer
-//net is in NumericFiled format {id, number, value}, "value" is the number of nodes in the "id"th layer
-//basically in the first layer number of neurons is : number of features
 //Number of neurons in the last layer is number of output assigned to each sample
-net := DATASET([
-{1, 1, 3},
-{2,1,2},
-{3,1,3}],
-Types.DiscreteField);
+INTEGER4 hl := 2;//number of nodes in the hiddenlayer
+INTEGER4 f := 3;//number of input features
 
 //input data
 
@@ -47,8 +41,8 @@ UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
 UNSIGNED4 Maxcols:=0;
 //initialize weight and bias values for the Back Propagation algorithm
-IntW := DeepLearning.Sparse_Autoencoder_IntWeights(3,2);
-Intb := DeepLearning.Sparse_Autoencoder_IntBias(3,2);
+IntW := DeepLearning.Sparse_Autoencoder_IntWeights(f,hl);
+Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
 output(IntW,ALL, named ('IntW'));
 output(IntB,ALL, named ('IntB'));
 //trainer module
@@ -57,9 +51,7 @@ SA :=DeepLearning.Sparse_Autoencoder(IntW, Intb,BETA, sparsityParam, LAMBDA, ALP
 LearnModel := SA.LearnC(indepDataC);
 output(LearnModel, named ('LearnModel'));
 
+LearnModel2 := SA.LearnC2(indepDataC);
+output(LearnModel2, named ('LearnModel2'));
 MatrixModel := SA.Model (LearnModel);
 output(MatrixModel, named ('MatrixModel'));
-
-SAoutput_layer := SA.SAoutput (indepDataC, LearnModel);
-//output(ML.DMat.Converted.FromPart2Elm( out), named ('out'));
-output(SAoutput_layer, named ('SAoutput_layer'));
