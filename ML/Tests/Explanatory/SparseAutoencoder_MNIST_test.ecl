@@ -9,7 +9,7 @@ INTEGER4 f := 784;//number of input features
 //input data
 
 value_record := RECORD
-real	f1	;
+real	f1	;;
 real	f2	;
 real	f3	;
 real	f4	;
