@@ -123,7 +123,9 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
       //b2m = repmat(b2v,1,m)
       b2m := PBblas.PB_dgemm(FALSE, TRUE, 1.0,b2vecmap, b2v, Ones_VecMap, Ones_Vecdist, b2map);
       //z3 = w2*a2+b2;
-      z3 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2, a2map, a2, b2map,b2m, 1.0);
+      //z3 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2, a2map, a2, b2map,b2m, 1.0);
+      z3_tmp := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2, a2map, a2, b2map);
+      z3 := PBblas.PB_daxpy(1.0, z3_tmp, b2m);
       //a3 = sigmoid (z3)
       a3 := PBblas.Apply2Elements(b2map, z3, sigmoid);
       RETURN a3;
@@ -208,8 +210,8 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
         prmu := w1uno + w2uno + b1uno + b2uno;
         RETURN prmu;
       END;
-      finalprm := GradDesLoop_Step (prm);
-      //finalprm := LOOP(prm, COUNTER <= MaxIter, GradDesLoop_Step(ROWS(LEFT)));
+      //finalprm := GradDesLoop_Step (prm);
+      finalprm := LOOP(prm, COUNTER <= MaxIter, GradDesLoop_Step(ROWS(LEFT)));
       RETURN finalprm;
     END;//END GradDesLoop
     SAprm := GradDesLoop (w1dist, w2dist, b1vecdist, b2vecdist);// SAprm is in PBblas.Types.MUElement format convert it to
