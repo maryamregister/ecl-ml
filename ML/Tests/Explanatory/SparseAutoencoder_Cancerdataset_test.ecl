@@ -92,12 +92,3 @@ output(LearnModel, named ('LearnModel'));
 
 MatrixModel := SA.Model (LearnModel);
 output(MatrixModel, named ('MatrixModel'));
-
-// OUTPUT((DMat.Converted.FromPart2Elm(PBblas.MU.From(LearnModel2,1))));
-// OUTPUT((DMat.Converted.FromPart2Elm(PBblas.MU.From(LearnModel2,2))));
-// OUTPUT((DMat.Converted.FromPart2Elm(PBblas.MU.From(LearnModel2,3))));
-// OUTPUT((DMat.Converted.FromPart2Elm(PBblas.MU.From(LearnModel2,4))));
-
-// SAoutput_layer := SA.SAoutput (indepDataC, LearnModel);
-
-// output(SAoutput_layer, named ('SAoutput_layer'));
