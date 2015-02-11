@@ -26,6 +26,18 @@ END;
 //Implementation of the Sparse Autoencoder based on the stanford Deep Learning tutorial
 //beta: weight of sparsity penalty term
 //sparsityParam: The desired average activation for the hidden units
+//IntW : initial weights for the SparseAutoencoder Network
+//IntW includes two matrices of size Number_of_hidden_layer_nodes * Number_of_features and the size Number_of_features * Number_of_hidden_layer_nodes (with having no =1 1 and no =1 respectively)
+//IntB : Initial Bias for the SparseAutoencoder Network
+//IntB includes two matrices of size Number_of_hidden_layer_nodes*1 and Number_of_features*1 (with having no =1 1 and no =1 respectively)
+//LAMBDA : weight decay term
+//ALPHA : learning rate
+//MaxIter : Maximum number of iterations
+//prows, pcols, Maxrows, Maxcols for the Pbblas partitioning:
+// - prows: an optional parameter used to set the number of rows in partition blocks (Should be used in conjuction with pcols)
+// - pcols: an optional parameter used to set the number of cols in partition blocks (Should be used in conjuction with prows)
+// - Maxrows: an optional parameter used to set maximum rows allowed per block when using AutoBVMap
+// - Maxcols: an optional parameter used to set maximum cols allowed per block when using AutoBVMap
 EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb,REAL8 BETA, REAL8 sparsityParam , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
   UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
   //this is a un-supervised learning algorithm, no need for the labled data
