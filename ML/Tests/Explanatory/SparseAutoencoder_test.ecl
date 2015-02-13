@@ -51,7 +51,6 @@ SA :=DeepLearning.Sparse_Autoencoder(IntW, Intb,BETA, sparsityParam, LAMBDA, ALP
 LearnModel := SA.LearnC(indepDataC);
 output(LearnModel, named ('LearnModel'));
 
-LearnModel2 := SA.LearnC2(indepDataC);
-output(LearnModel2, named ('LearnModel2'));
+
 MatrixModel := SA.Model (LearnModel);
 output(MatrixModel, named ('MatrixModel'));
