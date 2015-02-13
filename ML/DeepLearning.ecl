@@ -23,6 +23,7 @@ EXPORT Sparse_Autoencoder_IntBias (INTEGER4 NumberofFeatures, INTEGER4 NumberofH
   Types.DiscreteField);
   RETURN NeuralNetworks(net).IntBias;
 END;
+
 //Implementation of the Sparse Autoencoder based on the stanford Deep Learning tutorial
 //beta: weight of sparsity penalty term
 //sparsityParam: The desired average activation for the hidden units
@@ -333,13 +334,31 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
     //a3 = sigmoid (z3)
     a3 := PBblas.Apply2Elements(b2map, z3, sigmoid);
     a3_mat := DMat.Converted.FromPart2Elm(a3);
-    Types.l_result tr(Mat.Types.Element le) := TRANSFORM
-      SELF.value := le.x;
+    // Types.l_result tr(Mat.Types.Element le) := TRANSFORM
+      // SELF.value := le.x;
+      // SELF.id := le.y;
+      // SELF.number := 1; //number of class
+      // SELF.conf := le.value;
+    // END;
+    NumericField tr (Mat.Types.Element le) := TRANSFORM
       SELF.id := le.y;
-      SELF.number := 1; //number of class
-      SELF.conf := le.value;
+      SELF.number := le.x;
+      SELF := le;
     END;
     RETURN PROJECT (a3_mat, tr(LEFT));
   END;//END SAOutput
+  EXPORT ExtractWeights (DATASET(Types.NumericField) mod) := FUNCTION
+    SAmod := Model (mod);
+    RETURN SAmod (no<3);
+  END;//END ExtractWeights
+  EXPORT ExtractBias (DATASET(Types.NumericField) mod) := FUNCTION
+    SAmod := Model (mod);
+    B := SAmod (no>2);
+    Mat.Types.MUElement Sno (Mat.Types.MUElement l) := TRANSFORM
+      SELF.no := l.no-2;
+      SELF := l;
+    END;
+    RETURN PROJECT (B,Sno(LEFT));
+  END;//END ExtractBias
 END;//END Sparse_Autoencoder
 END;//END DeepLearning

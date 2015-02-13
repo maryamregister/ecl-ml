@@ -43,14 +43,23 @@ UNSIGNED4 Maxcols:=0;
 //initialize weight and bias values for the Back Propagation algorithm
 IntW := DeepLearning.Sparse_Autoencoder_IntWeights(f,hl);
 Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
-output(IntW,ALL, named ('IntW'));
-output(IntB,ALL, named ('IntB'));
+OUTPUT(IntW,ALL, named ('IntW'));
+OUTPUT(IntB,ALL, named ('IntB'));
 //trainer module
 SA :=DeepLearning.Sparse_Autoencoder(IntW, Intb,BETA, sparsityParam, LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
 
-LearnModel := SA.LearnC(indepDataC);
-output(LearnModel, named ('LearnModel'));
+LearntModel := SA.LearnC(indepDataC);
+OUTPUT(LearntModel, named ('LearntModel'));
 
 
-MatrixModel := SA.Model (LearnModel);
-output(MatrixModel, named ('MatrixModel'));
+MatrixModel := SA.Model (LearntModel);
+OUTPUT(MatrixModel, named ('MatrixModel'));
+
+Out := SA.SAOutput (indepDataC, LearntModel);
+OUTPUT(Out, named ('Out'));
+
+Extractedweights := SA.ExtractWeights (LearntModel);
+OUTPUT(Extractedweights, named ('Extractedweights'));
+
+ExtractedBias := SA.ExtractBias (LearntModel);
+OUTPUT(ExtractedBias, named ('ExtractedBias'));

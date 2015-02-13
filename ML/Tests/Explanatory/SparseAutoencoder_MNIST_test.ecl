@@ -1619,7 +1619,10 @@ LearntModel := SA.LearnC(indepDataC);
 mout := max(LearntModel,id);
 output(LearntModel(id=1));
 
-// MatrixModel := SA.Model (LearnModel);
+// MatrixModel := SA.Model (LearntModel);
 // output(MatrixModel, named ('MatrixModel'));
+
+// Out := SA.SAOutput (indepDataC, LearntModel);
+// output(Out, named ('Out'));
 
 
