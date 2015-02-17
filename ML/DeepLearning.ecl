@@ -350,4 +350,61 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
     RETURN PROJECT (B,Sno(LEFT));
   END;//END ExtractBias
 END;//END Sparse_Autoencoder
+//this function stack ups NumLayers sparse autoencoders to make a Deep Network of Sparse Autoencoders
+//In this module we recive unsupervised data and pass it through NumLayers layers of sparseAutoencoders to initialize the weights in this network with a Greedy Layer-Wise manner
+//data is passed to the first SA (Sparse Autoencoder) and SA is trained, i.e. the weights are learnt, when it is trained the output of it is passed to the second SA as input, the second SA is trained with 
+//this data, then the output of this SA is passed as the input to the third SA, this continues until NumLayers of SAs are trained. At the end the end the end the whole network weighst are initialized
+//with this method
+//NumLayers : Number of layers in the Deep Network, basically it means number of sparseautoencoders that need to stack up to make the deep network
+//numHiddenNodes : number of hidden nodes in each Sparse Autoencoder
+EXPORT StackedSA (UNSIGNED4 NumLayers, DATASET(Types.DiscreteField) numHiddenNodes, REAL8 BETA, REAL8 sparsityParam , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
+  UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
+  //TRANFFORMs used
+  Mat.Types.MUElement Addno (Mat.Types.MUElement l, UNSIGNED v) := TRANSFORM
+    SELF.no := l.no+v;
+    SELF := l;
+  END;
+  SSA (DATASET(Types.NumericField) X) := MODULE
+    //number of features in the input independent data
+    NumFeatures := MAX (X,number);
+    //Define the first Sparse Autoencoder Module
+    hd1 := numHiddenNodes(id=(1))[1].value;//number of hidden nodes in the first SA
+    IntW1 := Sparse_Autoencoder_IntWeights(NumFeatures,hd1);//initialize weights
+    Intb1 := Sparse_Autoencoder_IntBias(NumFeatures,hd1);//initialize bias
+    SA1 := Sparse_Autoencoder (IntW1, Intb1, BETA, sparsityParam , LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows, Maxcols);//SA module for the first SA
+    //train the first Sparse Autoencoder
+    LearntModel1 := SA1.LearnC(X); //learnt model in NumericFiled format
+    Bias1 := SA1.ExtractBias (LearntModel1);
+    Weight1 := SA1.ExtractWeights (LearntModel1);
+    SAmodel1 := Weight1 (no=1) + PROJECT (Bias1 (no=1),Addno(LEFT,1)); // Only weight and bias related to the first layer and hidden layer are considered for each SA to stack them up
+    //produce the output of the first learnt Sparse Autoencoder
+    Output1 := SA1.SAOutput (X, LearntModel1);
+    MatrixOutput1 := ML.Types.ToMatrix (Output1);
+    MatrixOutput1No := Mat.MU.To(MatrixOutput1, 0);
+    StackedSA_Step(DATASET(Mat.Types.MUElement) MM, INTEGER coun) := FUNCTION
+      L := coun + 1;
+      lastOutput := Mat.MU.From(MM, 0);
+      lastOutputF := ML.Types.FromMatrix(lastOutput);
+      //Define the Lth SaprseAutoencoder
+      NFL := numHiddenNodes(id=(L-1))[1].value; //number of hidden layers of the last SA represents the number of input features for the next SA
+      hdL := numHiddenNodes(id=(L))[1].value;
+      IntWL := Sparse_Autoencoder_IntWeights(NFL,hdL);//initialize weights
+      IntbL := Sparse_Autoencoder_IntBias(NFL,hdL);//initialize bias
+      SAL := Sparse_Autoencoder (IntWL, IntbL, BETA, sparsityParam , LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows, Maxcols);//SA module for the Lth SA
+      //Train the Lth SaprseAutoencoder
+      LearntModelL := SAL.LearnC(lastOutputF);
+      BiasL := SaL.ExtractBias (LearntModelL);
+      WeightL := SAL.ExtractWeights (LearntModelL);
+      SAmodelL := WeightL (no=1) + PROJECT (BiasL (no=1),Addno(LEFT,1));
+      //produce the output of the Lth learnt Sparse Autoencoder
+      OutputL := SAL.SAOutput (lastOutputF, LearntModelL);
+      MatrixOutputL := ML.Types.ToMatrix (OutputL);
+      MatrixOutputLNo := Mat.MU.To(MatrixOutputL, 0);
+      RETURN SAmodelL + MatrixOutputLNo;
+    END;//END StackedSA_Step
+    EXPORT Mod := LOOP(SAmodel1 + MatrixOutput1No, COUNTER <= 1, StackedSA_Step(ROWS(LEFT),COUNTER));
+    //EXPORT Mod := StackedSA_Step(SAmodel1 + MatrixOutput1No,1);
+  END;//END SSA
+  EXPORT LearnC (DATASET(Types.NumericField) Indep) := SSA(Indep).Mod;
+END;//StackedSA
 END;//END DeepLearning
