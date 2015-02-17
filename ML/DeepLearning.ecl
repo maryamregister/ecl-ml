@@ -327,25 +327,14 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
     z2 := PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1dist, dmap, ddist, b1map, b1m, 1.0);
     //a2 = sigmoid (z2);
     a2 := PBblas.Apply2Elements(b1map, z2, sigmoid);
-    //b2m = repmat(b2v,1,m)
-    b2m := PBblas.PB_dgemm(FALSE, TRUE, 1.0,b2vecmap, b2vecdist, Ones_VecMap, Ones_Vecdist, b2map);
-    //z3 = w2*a2+b2;
-    z3 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2dist, a2map, a2, b2map, b2m, 1.0);
-    //a3 = sigmoid (z3)
-    a3 := PBblas.Apply2Elements(b2map, z3, sigmoid);
-    a3_mat := DMat.Converted.FromPart2Elm(a3);
-    // Types.l_result tr(Mat.Types.Element le) := TRANSFORM
-      // SELF.value := le.x;
-      // SELF.id := le.y;
-      // SELF.number := 1; //number of class
-      // SELF.conf := le.value;
-    // END;
+    a2_mat := DMat.Converted.FromPart2Elm(a2);
+
     NumericField tr (Mat.Types.Element le) := TRANSFORM
       SELF.id := le.y;
       SELF.number := le.x;
       SELF := le;
     END;
-    RETURN PROJECT (a3_mat, tr(LEFT));
+    RETURN PROJECT (a2_mat, tr(LEFT));
   END;//END SAOutput
   EXPORT ExtractWeights (DATASET(Types.NumericField) mod) := FUNCTION
     SAmod := Model (mod);
