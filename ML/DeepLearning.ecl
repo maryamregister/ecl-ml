@@ -383,6 +383,7 @@ EXPORT StackedSA (UNSIGNED4 NumLayers, DATASET(Types.DiscreteField) numHiddenNod
     MatrixOutput1No := Mat.MU.To(MatrixOutput1, 0);
     StackedSA_Step(DATASET(Mat.Types.MUElement) MM, INTEGER coun) := FUNCTION
       L := coun + 1;
+      //output of the previous SA which is gonna be the input of the next SA
       lastOutput := Mat.MU.From(MM, 0);
       lastOutputF := ML.Types.FromMatrix(lastOutput);
       //Define the Lth SaprseAutoencoder
@@ -391,18 +392,19 @@ EXPORT StackedSA (UNSIGNED4 NumLayers, DATASET(Types.DiscreteField) numHiddenNod
       IntWL := Sparse_Autoencoder_IntWeights(NFL,hdL);//initialize weights
       IntbL := Sparse_Autoencoder_IntBias(NFL,hdL);//initialize bias
       SAL := Sparse_Autoencoder (IntWL, IntbL, BETA, sparsityParam , LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows, Maxcols);//SA module for the Lth SA
-      //Train the Lth SaprseAutoencoder
+      //Train the Lth SaprseAutoencoder (output of the last SA is fed as the input to the next SA)
       LearntModelL := SAL.LearnC(lastOutputF);
-      BiasL := SaL.ExtractBias (LearntModelL);
+      BiasL := SAL.ExtractBias (LearntModelL);
       WeightL := SAL.ExtractWeights (LearntModelL);
-      SAmodelL := WeightL (no=1) + PROJECT (BiasL (no=1),Addno(LEFT,1));
+      VL := 2* coun;
+      SAmodelL := PROJECT (WeightL (no=1),Addno(LEFT,VL)) + PROJECT (BiasL (no=1),Addno(LEFT,1+VL));
       //produce the output of the Lth learnt Sparse Autoencoder
       OutputL := SAL.SAOutput (lastOutputF, LearntModelL);
       MatrixOutputL := ML.Types.ToMatrix (OutputL);
       MatrixOutputLNo := Mat.MU.To(MatrixOutputL, 0);
-      RETURN SAmodelL + MatrixOutputLNo;
+      RETURN SAmodelL + MatrixOutputLNo + MM (no > 0);
     END;//END StackedSA_Step
-    EXPORT Mod := LOOP(SAmodel1 + MatrixOutput1No, COUNTER <= 1, StackedSA_Step(ROWS(LEFT),COUNTER));
+    EXPORT Mod := LOOP(SAmodel1 + MatrixOutput1No, COUNTER <= NumLayers-1, StackedSA_Step(ROWS(LEFT),COUNTER));
     //EXPORT Mod := StackedSA_Step(SAmodel1 + MatrixOutput1No,1);
   END;//END SSA
   EXPORT LearnC (DATASET(Types.NumericField) Indep) := SSA(Indep).Mod;
