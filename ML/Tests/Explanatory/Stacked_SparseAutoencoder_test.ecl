@@ -40,10 +40,11 @@ UNSIGNED4 prows:=0;
 UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
 UNSIGNED4 Maxcols:=0;
-UNSIGNED NumLayers := 2;
+UNSIGNED NumLayers := 3;
 numHiddenNodes  := DATASET([
-{1, 1, 4},
-{2,1,2}],
+{1, 1,4},
+{2,1,2},
+{3,1,3}],
 Types.DiscreteField);
 
 //trainer module

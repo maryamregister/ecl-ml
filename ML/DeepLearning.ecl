@@ -403,10 +403,12 @@ EXPORT StackedSA (UNSIGNED4 NumLayers, DATASET(Types.DiscreteField) numHiddenNod
       MatrixOutputL := ML.Types.ToMatrix (OutputL);
       MatrixOutputLNo := Mat.MU.To(MatrixOutputL, 0);
       RETURN SAmodelL + MatrixOutputLNo + MM (no > 0);
+      //RETURN SAmodelL + MM + PROJECT (IntWL,Addno(LEFT,100)) + PROJECT (IntbL,Addno(LEFT,200));
     END;//END StackedSA_Step
-    EXPORT Mod := LOOP(SAmodel1 + MatrixOutput1No, COUNTER <= NumLayers-1, StackedSA_Step(ROWS(LEFT),COUNTER));
+    Mod := LOOP(SAmodel1 + MatrixOutput1No, COUNTER <= NumLayers-1, StackedSA_Step(ROWS(LEFT),COUNTER));
+    //Add SoftMax Classifier on top of the Stack of Sparse Autoencoders
     //EXPORT Mod := StackedSA_Step(SAmodel1 + MatrixOutput1No,1);
   END;//END SSA
-  EXPORT LearnC (DATASET(Types.NumericField) Indep) := SSA(Indep).Mod;
+  //EXPORT LearnC (DATASET(Types.NumericField) Indep) := SSA(Indep).Mod;
 END;//StackedSA
 END;//END DeepLearning
