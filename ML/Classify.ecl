@@ -1064,7 +1064,7 @@ EXPORT Logistic_sparse(REAL8 Ridge=0.00001, REAL8 Epsilon=0.000000001, UNSIGNED2
 //LAMBDA : wight decay parameter in calculating SoftMax costfunction
 //ALPHA : learning rate for updating softmax parameters
 //IntTHETA: Initialized parameters that is a matrix of size (number of classes) * (number of features)
-EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=10,
+EXPORT SoftMax(DATASET (MAT.Types.Element) IntTHETA, REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
   UNSIGNED4 prows=0, UNSIGNED4 pcols=0,UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE(DEFAULT)
   Soft(DATASET(Types.NumericField) X,DATASET(Types.NumericField) Y) := MODULE
   //Convert the input data to matrix

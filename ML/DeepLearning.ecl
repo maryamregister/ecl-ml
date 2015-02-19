@@ -349,6 +349,42 @@ EXPORT Sparse_Autoencoder (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.
     END;
     RETURN PROJECT (B,Sno(LEFT));
   END;//END ExtractBias
+  EXPORT ExtractW1 (DATASET(Types.NumericField) mod) := FUNCTION
+    w1mod := mod (number = 4 and value = 1);
+    Myid := RECORD
+      w1mod.id;
+    END;
+    w1modid := TABLE(w1mod,Myid);
+    w1r := JOIN (mod,w1modid,LEFT.id=RIGHT.id,TRANSFORM(LEFT) );
+    RETURN w1r;
+  END;
+  EXPORT ExtractW2 (DATASET(Types.NumericField) mod) := FUNCTION
+    w2mod := mod (number = 4 and value = 2);
+    Myid := RECORD
+      w2mod.id;
+    END;
+    w2modid := TABLE(w2mod,Myid);
+    w2r := JOIN (mod,w2modid,LEFT.id=RIGHT.id,TRANSFORM(LEFT) );
+    RETURN w2r;
+  END;
+  EXPORT Extractb1 (DATASET(Types.NumericField) mod) := FUNCTION
+    b1mod := mod (number = 4 and value = 3);
+    Myid := RECORD
+      b1mod.id;
+    END;
+    b1modid := TABLE(b1mod,Myid);
+    b1r := JOIN (mod,b1modid,LEFT.id=RIGHT.id,TRANSFORM(LEFT) );
+    RETURN b1r;
+  END;
+  EXPORT Extractb2 (DATASET(Types.NumericField) mod) := FUNCTION
+    b2mod := mod (number = 4 and value = 4);
+    Myid := RECORD
+      b2mod.id;
+    END;
+    b2modid := TABLE(b2mod,Myid);
+    b2r := JOIN (mod,b2modid,LEFT.id=RIGHT.id,TRANSFORM(LEFT) );
+    RETURN b2r;
+  END;
 END;//END Sparse_Autoencoder
 //this function stack ups NumLayers sparse autoencoders to make a Deep Network of Sparse Autoencoders
 //In this module we recive unsupervised data and pass it through NumLayers layers of sparseAutoencoders to initialize the weights in this network with a Greedy Layer-Wise manner
@@ -364,6 +400,11 @@ EXPORT StackedSA (UNSIGNED4 NumLayers, DATASET(Types.DiscreteField) numHiddenNod
     SELF.no := l.no+v;
     SELF := l;
   END;
+  Types.NumericField Add4f (Types.NumericField l, UNSIGNED v ) := TRANSFORM
+    SELF.value := IF (l.number=4,l.value+v,l.value);
+    SELF := l;
+  END;
+
   SSA (DATASET(Types.NumericField) X) := MODULE
     //number of features in the input independent data
     NumFeatures := MAX (X,number);
@@ -403,13 +444,32 @@ EXPORT StackedSA (UNSIGNED4 NumLayers, DATASET(Types.DiscreteField) numHiddenNod
       MatrixOutputL := ML.Types.ToMatrix (OutputL);
       MatrixOutputLNo := Mat.MU.To(MatrixOutputL, 0);
       RETURN SAmodelL + MatrixOutputLNo + MM (no > 0);
-      //RETURN SAmodelL + MM + PROJECT (IntWL,Addno(LEFT,100)) + PROJECT (IntbL,Addno(LEFT,200));
+      //RETURN SAmodelL + MM + PROJECT (IntWL,Addno(LEFT,100)) + PROJECT (IntbL,Addno(LEFT,200));//the line I used to test the second SA's output with MATLAB code
     END;//END StackedSA_Step
-    //Mod := LOOP(SAmodel1 + MatrixOutput1No, COUNTER <= NumLayers-1, StackedSA_Step(ROWS(LEFT),COUNTER));
-    //Add SoftMax Classifier on top of the Stack of Sparse Autoencoders
-    
-    EXPORT Mod := StackedSA_Step(SAmodel1 + MatrixOutput1No,1);
+    EXPORT SSA_prm := LOOP(SAmodel1 + MatrixOutput1No, COUNTER <= NumLayers-1, StackedSA_Step(ROWS(LEFT),COUNTER));//SSA_prm is in Mat.Types.MUElement format convert it to NumericFieldFormat
+    AppendID(SSA_prm, id, SSA_prm_id);
+    ToField (SSA_prm_id, mm, id, 'x,y,value,no');
+    EXPORT Mod := mm;
   END;//END SSA
+  //LearnC returns the learnt model from Stacking up of SparseAutoencoders when some unsupervised data (Indep) are fed to it
+  //the learn model contains one weighta and one bias matrix correpondance to each SparseAutoencoder
+  //the weight and bias matrix that correspond to each SA are actually the weight between first and hidden layer and the bias that goes to the hideen layer
+  //weight of the first SA has no = 1
+  //bias of the first SA has no=2
+  //weight of the second SA has no=3
+  //bias of the second SA has no=4
+  //weight of the third SA has no = 5
+  //bias of the third SA has no= 6
+  //and so on ..
+  //the output of the Stacked Autoencoder (extracted feature) has no =0
   EXPORT LearnC (DATASET(Types.NumericField) Indep) := SSA(Indep).Mod;
+  EXPORT Model(DATASET(Types.NumericField) mod) := FUNCTION
+    modelD_Map :=	DATASET([{'id','ID'},{'x','1'},{'y','2'},{'value','3'},{'no','4'}], {STRING orig_name; STRING assigned_name;});
+    FromField(mod,Mat.Types.MUElement,dOut,modelD_Map);
+    RETURN dOut;
+  END;//END Model
+  EXPORT SSAOutput(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) mod) :=FUNCTION
+    RETURN 1;
+  END;
 END;//StackedSA
 END;//END DeepLearning
