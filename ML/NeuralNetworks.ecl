@@ -80,6 +80,8 @@ EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net) := MODULE
     initialized_weights := LOOP(w1no, COUNTER <= LoopNum, Step(ROWS(LEFT),COUNTER));
     RETURN initialized_weights;
   END;
+  //in the built model the no={1,2,..,NL-1} are the weight indexes
+  //no={NL+1,NL+2,..,NL+NL} are bias indexes that go to the second, third, ..,NL)'s layer respectively
   EXPORT Model(DATASET(Types.NumericField) mod) := FUNCTION
   modelD_Map :=	DATASET([{'id','ID'},{'x','1'},{'y','2'},{'value','3'},{'no','4'}], {STRING orig_name; STRING assigned_name;});
     FromField(mod,Mat.Types.MUElement,dOut,modelD_Map);

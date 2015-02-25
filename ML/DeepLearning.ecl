@@ -386,26 +386,24 @@ EXPORT Sparse_Autoencoder (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxro
     RETURN b2r;
   END;
 END;//END Sparse_Autoencoder
-//this function stack ups NumLayers sparse autoencoders to make a Deep Network of Sparse Autoencoders
-//In this module we recive unsupervised data and pass it through NumLayers layers of sparseAutoencoders to initialize the weights in this network with a Greedy Layer-Wise manner
+//this function stack ups NumSAs sparse autoencoders to make a Deep Network of Sparse Autoencoders
+//In this module we recive unsupervised data and pass it through NumSAs layers of sparseAutoencoders to initialize the weights in this network with a Greedy Layer-Wise manner
 //data is passed to the first SA (Sparse Autoencoder) and SA is trained, i.e. the weights are learnt, when it is trained the output of it is passed to the second SA as input, the second SA is trained with 
-//this data, then the output of this SA is passed as the input to the third SA, this continues until NumLayers of SAs are trained. At the end the end the end the whole network weighst are initialized
+//this data, then the output of this SA is passed as the input to the third SA, this continues until NumSAs of SAs are trained. At the end the end the end the whole network weighst are initialized
 //with this method
-//NumLayers : Number of layers in the Deep Network, basically it means number of sparseautoencoders that need to stack up to make the deep network
+//NumSAs : Number of SAs in the Deep Network, basically it means number of sparseautoencoders that need to stack up to make the deep network (the number of layers in the final Deep Learning models is
+//NumSAs+1 because we have the input layer as well
 //numHiddenNodes : number of hidden nodes in each Sparse Autoencoder
-EXPORT StackedSA (UNSIGNED4 NumLayers, DATASET(Types.DiscreteField) numHiddenNodes, REAL8 BETA, REAL8 sparsityParam , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
+EXPORT StackedSA (UNSIGNED4 NumSAs, DATASET(Types.DiscreteField) numHiddenNodes, REAL8 BETA, REAL8 sparsityParam , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
   UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
-  //TRANFFORMs used
-  Mat.Types.MUElement Addno (Mat.Types.MUElement l, UNSIGNED v) := TRANSFORM
-    SELF.no := l.no+v;
-    SELF := l;
-  END;
-  Types.NumericField Add4f (Types.NumericField l, UNSIGNED v ) := TRANSFORM
-    SELF.value := IF (l.number=4,l.value+v,l.value);
-    SELF := l;
-  END;
-
+  NL := NumSAs+1;//number of layers in the final Deep Learning algorithm is 1 (input layer) + Number of SparseAutoencoders
   SSA (DATASET(Types.NumericField) X) := MODULE
+      //TRANFFORM used
+      Mat.Types.MUElement Addno (Mat.Types.MUElement l, UNSIGNED v) := TRANSFORM
+        SELF.no := l.no+v;
+        SELF := l;
+      END;
+
     //number of features in the input independent data
     NumFeatures := MAX (X,number);
     //Define the first Sparse Autoencoder Module
@@ -417,7 +415,7 @@ EXPORT StackedSA (UNSIGNED4 NumLayers, DATASET(Types.DiscreteField) numHiddenNod
     LearntModel1 := SA1.LearnC(X,IntW1, Intb1, BETA, sparsityParam , LAMBDA, ALPHA, MaxIter); //learnt model in NumericFiled format
     Bias1 := SA1.ExtractBias (LearntModel1);
     Weight1 := SA1.ExtractWeights (LearntModel1);
-    SAmodel1 := Weight1 (no=1) + PROJECT (Bias1 (no=1),Addno(LEFT,1)); // Only weight and bias related to the first layer and hidden layer are considered for each SA to stack them up
+    SAmodel1 := Weight1 (no=1) + PROJECT (Bias1 (no=1),Addno(LEFT,NL)); // Only weight and bias related to the first layer and hidden layer are considered for each SA to stack them up
     //produce the output of the first learnt Sparse Autoencoder
     Output1 := SA1.SAOutput (X, LearntModel1);
     MatrixOutput1 := ML.Types.ToMatrix (Output1);
@@ -437,8 +435,7 @@ EXPORT StackedSA (UNSIGNED4 NumLayers, DATASET(Types.DiscreteField) numHiddenNod
       LearntModelL := SAL.LearnC(lastOutputF,IntWL, IntbL, BETA, sparsityParam , LAMBDA, ALPHA, MaxIter);
       BiasL := SAL.ExtractBias (LearntModelL);
       WeightL := SAL.ExtractWeights (LearntModelL);
-      VL := 2* coun;
-      SAmodelL := PROJECT (WeightL (no=1),Addno(LEFT,VL)) + PROJECT (BiasL (no=1),Addno(LEFT,1+VL));
+      SAmodelL := PROJECT (WeightL (no=1),Addno(LEFT,coun)) + PROJECT (BiasL (no=1),Addno(LEFT,coun+NL));
       //produce the output of the Lth learnt Sparse Autoencoder
       OutputL := SAL.SAOutput (lastOutputF, LearntModelL);
       MatrixOutputL := ML.Types.ToMatrix (OutputL);
@@ -446,34 +443,29 @@ EXPORT StackedSA (UNSIGNED4 NumLayers, DATASET(Types.DiscreteField) numHiddenNod
       RETURN SAmodelL + MatrixOutputLNo + MM (no > 0);
       //RETURN SAmodelL + MM + PROJECT (IntWL,Addno(LEFT,100)) + PROJECT (IntbL,Addno(LEFT,200));//the line I used to test the second SA's output with MATLAB code
     END;//END StackedSA_Step
-    EXPORT SSA_prm := LOOP(SAmodel1 + MatrixOutput1No, COUNTER <= NumLayers-1, StackedSA_Step(ROWS(LEFT),COUNTER));//SSA_prm is in Mat.Types.MUElement format convert it to NumericFieldFormat
+    EXPORT SSA_prm := LOOP(SAmodel1 + MatrixOutput1No, COUNTER <= NumSAs-1, StackedSA_Step(ROWS(LEFT),COUNTER));//SSA_prm is in Mat.Types.MUElement format convert it to NumericFieldFormat
     AppendID(SSA_prm, id, SSA_prm_id);
     ToField (SSA_prm_id, mm, id, 'x,y,value,no');
     EXPORT Mod := mm;
   END;//END SSA
   //LearnC returns the learnt model from Stacking up of SparseAutoencoders when some unsupervised data (Indep) are fed to it
-  //the learn model contains one weighta and one bias matrix correpondance to each SparseAutoencoder
+  //the learn model contains one weight and one bias matrix correpondance to each SparseAutoencoder
   //the weight and bias matrix that correspond to each SA are actually the weight between first and hidden layer and the bias that goes to the hideen layer
-  //weight of the first SA has no = 1
-  //bias of the first SA has no=2
-  //weight of the second SA has no=3
-  //bias of the second SA has no=4
-  //weight of the third SA has no = 5
-  //bias of the third SA has no= 6
-  //and so on ..
   //the output of the Stacked Autoencoder (extracted feature) has no =0
   EXPORT LearnC (DATASET(Types.NumericField) Indep) := SSA(Indep).Mod;
+  //Model converts the learnt model from Numeric field format to the Mat.Types.MUElement format
+  //in the built model the no={1,2,..,NL-1} are the weight indexes
+  //no={NL+1,NL+2,..,NL+NL-1} are bias indexes that go to the second, third, ..,NL)'s layer respectively
+  //no={1,NL+1}: weight and bias belong to the first SA
+  //no={2,NL+2}: weight and bias belong to the second SA
+  //no={NL-1,NL+NL-1}: weight and bias belong to the second NL-1th SA
   EXPORT Model(DATASET(Types.NumericField) mod) := FUNCTION
     modelD_Map :=	DATASET([{'id','ID'},{'x','1'},{'y','2'},{'value','3'},{'no','4'}], {STRING orig_name; STRING assigned_name;});
     FromField(mod,Mat.Types.MUElement,dOut,modelD_Map);
     RETURN dOut;
   END;//END Model
-  EXPORT SSAOutput(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) mod) :=FUNCTION
-    // hd1 := 2;//number of hidden nodes in the first SA
-    // IntW1 := Sparse_Autoencoder_IntWeights(5,hd1);//initialize weights
-    // Intb1 := Sparse_Autoencoder_IntBias(5,hd1);//initialize bias
-    // SA1 := Sparse_Autoencoder (,,BETA, sparsityParam , LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows, Maxcols);//SA module for the first SA
-    
+  EXPORT SSAOutput(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) LearntMod) :=FUNCTION
+    //Conver the LearntMod from NumericField to
     RETURN 1;
   END;
 END;//StackedSA

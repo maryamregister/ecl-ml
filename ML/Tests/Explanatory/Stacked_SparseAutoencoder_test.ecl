@@ -53,3 +53,6 @@ stackedSA :=DeepLearning.StackedSA (NumLayers , numHiddenNodes,  BETA,  sparsity
 LearntModel := stackedSA.LearnC(indepDataC);
 OUTPUT(LearntModel, named ('LearntModel'));
 
+MatrixModel := stackedSA.Model(LearntModel);
+OUTPUT(MatrixModel, named ('MatrixModel'));
+
