@@ -6,11 +6,8 @@ IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
 
-EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net) := MODULE
-  EXPORT Default := MODULE,VIRTUAL
-    // Training the Back Propagation Network
-    EXPORT NNLearn(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) Dep) := DATASET([],Types.NumericField);
-  END;
+EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net,UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
+
 //initialize bias values in the neural network
 //each bias matrix is a vector
 //bias with no=L means the bias that goes to the layer L+1 so its size is equal to number of nodes in layer L+1
@@ -112,10 +109,9 @@ EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net) := MODULE
   b with id = L shows the bias value for the layer L+1
   b(i) with id= L show sthe bias value goes to uni i of layer L
   */
-  EXPORT Train (DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
-  UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE(DEFAULT)
+
   // back propagation algorithm
-  BP(DATASET(Types.NumericField) X,DATASET(Types.NumericField) Y) := MODULE
+  BP(DATASET(Types.NumericField) X,DATASET(Types.NumericField) Y,DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100) := MODULE
     dt := Types.ToMatrix (X);
     //SHARED dTmp := Mat.InsertColumn(dt,1,1.0); // add the intercept column
     dTmp := dt;
@@ -448,9 +444,7 @@ EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net) := MODULE
     EXPORT Mod := NNparams_MUE_out;//mod is in NumericField format
     //EXPORT alaki := biasVecdistno_added;
   END;// END BP
-  EXPORT NNLearn(DATASET(Types.NumericField) Indep, DATASET(Types.NumericField) Dep) := BP(Indep,Dep).mod;
-  END;// END Train
-  EXPORT Test (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
+  EXPORT NNLearn(DATASET(Types.NumericField) Indep, DATASET(Types.NumericField) Dep,DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100) := BP(Indep,Dep, IntW,  Intb, LAMBDA,  ALPHA,  MaxIter).mod;
   //this function applies the feed forward pass to the input dataset (Indep) based on the input neural network model (Learntmod)
     EXPORT NNOutput(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) Learntmod) :=FUNCTION
       //used fucntion
@@ -556,5 +550,5 @@ EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net) := MODULE
       classified := Sseq (Sseq.Sequence=0);
       RETURN PROJECT(classified,l_result);
     END; // END NNClassify
-  END;//END Test
+  
 END;//END NeuralNetworks

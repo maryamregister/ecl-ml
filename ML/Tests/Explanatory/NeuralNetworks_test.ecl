@@ -59,15 +59,15 @@ UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
 UNSIGNED4 Maxcols:=0;
 //define the Neural Network Module
-NN := NeuralNetworks(net);
+NN := NeuralNetworks(net,prows, pcols, Maxrows,  Maxcols);
 //initialize weight and bias values for the Back Propagation algorithm
 IntW := NN.IntWeights;
 Intb := NN.IntBias;
 output(IntW,ALL, named ('IntW'));
 output(IntB,ALL, named ('IntB'));
 //trainer module
-trainer :=NN.Train(IntW, Intb,  LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
-Learntmodel := trainer.NNLearn(indepDataC, depDataC);
+
+Learntmodel := NN.NNLearn(indepDataC, depDataC,IntW, Intb,  LAMBDA, ALPHA, MaxIter);
 OUTPUT  (Learntmodel, ALL, NAMED ('Learntmodel'));
 NNModel := NN.Model(Learntmodel);
 OUTPUT  (NNModel, ALL, NAMED ('NNModel'));
@@ -78,9 +78,9 @@ OUTPUT  (FW, ALL, NAMED ('FW'));
 FB := NN.ExtractBias(Learntmodel);
 OUTPUT  (FB, ALL, NAMED ('FB'));
 
-tester := NN.test(prows, pcols, Maxrows,  Maxcols);
-AEnd :=tester.NNOutput(indepDataC,Learntmodel);//output of the Neural Network
+
+AEnd :=NN.NNOutput(indepDataC,Learntmodel);//output of the Neural Network
 OUTPUT  (AEnd, ALL, NAMED ('AEnd'));
 
-Class := tester.NNClassify(indepDataC,Learntmodel);
+Class := NN.NNClassify(indepDataC,Learntmodel);
 OUTPUT  (Class, ALL, NAMED ('Class'));
