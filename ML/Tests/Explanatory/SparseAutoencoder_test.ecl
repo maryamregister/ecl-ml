@@ -46,9 +46,9 @@ Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
 OUTPUT(IntW,ALL, named ('IntW'));
 OUTPUT(IntB,ALL, named ('IntB'));
 //trainer module
-SA :=DeepLearning.Sparse_Autoencoder(IntW, Intb,BETA, sparsityParam, LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
+SA :=DeepLearning.Sparse_Autoencoder(prows, pcols, Maxrows,  Maxcols);
 
-LearntModel := SA.LearnC(indepDataC);
+LearntModel := SA.LearnC(indepDataC,IntW, Intb,BETA, sparsityParam, LAMBDA, ALPHA, MaxIter);
 OUTPUT(LearntModel, named ('LearntModel'));
 
 MatrixModel := SA.Model (LearntModel);
@@ -63,21 +63,4 @@ OUTPUT(Extractedweights, named ('Extractedweights'));
 ExtractedBias := SA.ExtractBias (LearntModel);
 OUTPUT(ExtractedBias, named ('ExtractedBias'));
 
-ExtractedW1 := SA.ExtractW1 (LearntModel);
-OUTPUT(ExtractedW1, named ('ExtractedW1'));
 
-ExtractedW2 := SA.ExtractW2 (LearntModel);
-OUTPUT(ExtractedW2, named ('ExtractedW2'));
-
-Extractedb1 := SA.Extractb1 (LearntModel);
-OUTPUT(Extractedb1, named ('Extractedb1'));
-
-Extractedb2 := SA.Extractb2 (LearntModel);
-OUTPUT(Extractedb2, named ('Extractedb2'));
-
-  Types.NumericField Add4f (Types.NumericField l, UNSIGNED v ) := TRANSFORM
-    SELF.value := IF (l.number=4,l.value+v,l.value);
-    SELF := l;
-  END;
-  
-  OUTPUT (PROJECT (ExtractedW2,Add4f(LEFT,100)));

@@ -1613,9 +1613,9 @@ Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
 output(IntW, named ('IntW'));
 output(IntB, named ('IntB'));
 //trainer module
-SA :=DeepLearning.Sparse_Autoencoder(IntW, Intb,BETA, sparsityParam, LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
+SA :=DeepLearning.Sparse_Autoencoder(prows, pcols, Maxrows,  Maxcols);
 
-LearntModel := SA.LearnC(indepDataC);
+LearntModel := SA.LearnC(indepDataC,IntW, Intb,BETA, sparsityParam, LAMBDA, ALPHA, MaxIter);
 mout := max(LearntModel,id);
 output(LearntModel(id=1));
 

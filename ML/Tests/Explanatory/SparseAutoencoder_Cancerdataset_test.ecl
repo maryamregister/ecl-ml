@@ -74,7 +74,7 @@ REAL8 sparsityParam  := 0.1;
 REAL8 BETA := 0.1;
 REAL8 ALPHA := 0.1;
 REAL8 LAMBDA :=0.1;
-UNSIGNED2 MaxIter :=100;
+UNSIGNED2 MaxIter :=5;
 UNSIGNED4 prows:=0;
 UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
@@ -85,9 +85,9 @@ Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
 OUTPUT(IntW,ALL, named ('IntW'));
 OUTPUT(IntB,ALL, named ('IntB'));
 //trainer module
-SA :=DeepLearning.Sparse_Autoencoder(IntW, Intb,BETA, sparsityParam, LAMBDA, ALPHA, MaxIter, prows, pcols, Maxrows,  Maxcols);
+SA :=DeepLearning.Sparse_Autoencoder(prows, pcols, Maxrows,  Maxcols);
 
-LearntModel := SA.LearnC(indepDataC);
+LearntModel := SA.LearnC(indepDataC,IntW, Intb,BETA, sparsityParam, LAMBDA, ALPHA, MaxIter);
 OUTPUT(LearntModel, named ('LearnModel'));
 
 MatrixModel := SA.Model (LearntModel);
