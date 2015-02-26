@@ -445,7 +445,7 @@ EXPORT StackedSA (UNSIGNED4 NumSAs, DATASET(Types.DiscreteField) numHiddenNodes,
     END;//END StackedSA_Step
     EXPORT SSA_prm := LOOP(SAmodel1 + MatrixOutput1No, COUNTER <= NumSAs-1, StackedSA_Step(ROWS(LEFT),COUNTER));//SSA_prm is in Mat.Types.MUElement format convert it to NumericFieldFormat
     AppendID(SSA_prm, id, SSA_prm_id);
-    ToField (SSA_prm_id, mm, id, 'x,y,value,no');
+    ToField (SSA_prm_id, mm, id, 'x,y,value,no');//convert the learnt model to numerifield before returning it
     EXPORT Mod := mm;
   END;//END SSA
   //LearnC returns the learnt model from Stacking up of SparseAutoencoders when some unsupervised data (Indep) are fed to it
@@ -465,8 +465,18 @@ EXPORT StackedSA (UNSIGNED4 NumSAs, DATASET(Types.DiscreteField) numHiddenNodes,
     RETURN dOut;
   END;//END Model
   EXPORT SSAOutput(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) LearntMod) :=FUNCTION
-    //Conver the LearntMod from NumericField to
-    RETURN 1;
+    //The leartn model has the same format aa a model which is learnt by using NeuralNetwork.ecl
+    //so we only need to feed this model and the input data to the NeuralNetwork.ecl to get the output
+    Types.DiscreteField Addid (Types.DiscreteField l) := TRANSFORM
+      SELF.id := l.id+1;
+      SELF := l;
+    END;
+    NF := MAX (Indep, Indep.number);
+    firstlayer := DATASET([{1, 1, NF}],Types.DiscreteField);//add the input layer information to the numHiddenNodes (numHiddenNodes only includes the SAs inforamtion)
+    NNnet := firstlayer + PROJECT(numHiddenNodes,Addid(LEFT));
+    NN := NeuralNetworks(NNnet,prows, pcols, Maxrows,  Maxcols);
+    R :=NN.NNOutput(Indep,LearntMod);
+    RETURN R;
   END;
 END;//StackedSA
 END;//END DeepLearning

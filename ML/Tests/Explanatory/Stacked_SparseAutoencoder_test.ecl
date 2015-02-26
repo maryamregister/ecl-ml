@@ -56,3 +56,6 @@ OUTPUT(LearntModel, named ('LearntModel'));
 MatrixModel := stackedSA.Model(LearntModel);
 OUTPUT(MatrixModel, named ('MatrixModel'));
 
+Out := stackedSA.SSAOutput(indepDataC,LearntModel);
+OUTPUT(Out, named ('Out'));
+
