@@ -3,8 +3,6 @@ IMPORT * FROM $;
 IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
 //Number of neurons in the last layer is number of output assigned to each sample
-INTEGER4 hl := 2;//number of nodes in the hiddenlayer
-INTEGER4 f := 3;//number of input features
 
 //input data
 

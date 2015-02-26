@@ -475,8 +475,8 @@ EXPORT StackedSA (UNSIGNED4 NumSAs, DATASET(Types.DiscreteField) numHiddenNodes,
     firstlayer := DATASET([{1, 1, NF}],Types.DiscreteField);//add the input layer information to the numHiddenNodes (numHiddenNodes only includes the SAs inforamtion)
     NNnet := firstlayer + PROJECT(numHiddenNodes,Addid(LEFT));
     NN := NeuralNetworks(NNnet,prows, pcols, Maxrows,  Maxcols);
-    R :=NN.NNOutput(Indep,LearntMod);
-    RETURN R;
+    RR :=NN.NNOutput(Indep,LearntMod);
+    RETURN RR;
   END;
 END;//StackedSA
 END;//END DeepLearning
