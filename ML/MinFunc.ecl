@@ -72,8 +72,24 @@ step (DATASET (Mat.Types.MUElement) inputp) := FUNCTION
   Steps := Mat.MU.From (inputp,3);
   Dirs := Mat.MU.From (inputp,4);
   Hs := Mat.MU.From (inputp,5);
-  Results := O.lbfgs(gs,Steps,Dirs,Hs);
-  RETURN Results;
+  HG_ := O.lbfgs(gs,Steps,Dirs,Hs);//the result is the approximate inverse Hessian, multiplied by the gradient, multiplied by -1 and it is in PBblas.layout format
+  //find alpha that satisfies Wolfe Condition???
+  //update the parameter vector:x_new = xold+alpha*HG_
+  //For now consider the newx as the oldx????
+  xs_updated := xs;
+  x_Next := ML.Types.FromMatrix(xs_updated);
+  CostGrad_Next := CostFunc (x_Next,CostFunc_params,TrainData, TrainLabel);
+  g_Next := CostGrad_Next (id<=P);
+  Cost_Next := CostGrad_Next (id = P+1)[1].value;
+  x_Next_no := Mat.MU.To (ML.Types.ToMatrix(x_Next),1);//??? should be modified when the true updated x is calculated above
+  g_Nextno := Mat.MU.To (ML.Types.ToMatrix(g_Next),2);
+  C_Nextno := DATASET([{1,1,Cost_Next,6}], Mat.Types.MUElement);
+  //calculate new Hessian diag, dir and steps
+  Steps_Next := O.lbfgsUpdate_corr(xs, Steps);
+  Steps_Nextno := Mat.MU.To (Steps_Next, 3);
+  Dirs_Next := O.lbfgsUpdate_corr (gs, Dirs);
+  Dirs_Nextno := Mat.MU.To (Dirs_Next, 4);
+  RETURN HG_;
 END; //END step
 xout := step(Topass);
 //xout := Topass;
