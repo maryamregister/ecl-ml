@@ -23,6 +23,9 @@ derivemap := IF(havemaxrowcol, PBblas.AutoBVMap(P, K,prows,pcols,maxrows, maxcol
                       IF(havemaxcol, PBblas.AutoBVMap(P, K,prows,pcols,,maxcols),
                       PBblas.AutoBVMap(P, K,prows,pcols))));
 SHARED sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derivemap.part_rows(1),derivemap.part_cols(1)}], sizeRec);
+SHARED ColMap := PBblas.Matrix_Map (1,K,1,sizeTable[1].f_b_cols);
+SHARED RowMap := PBblas.Matrix_Map (P,1,sizeTable[1].f_b_rows, 1);
+SHARED OnevalueMap := PBblas.Matrix_Map (1,1,1, 1);
 //Implementation of Limited_Memory BFGS algorithm
 //The implementation is done based on "Numerical Optimization Authors: Nocedal, Jorge, Wright, Stephen"
 //corrections : number of corrections to store in memory
@@ -35,9 +38,6 @@ SHARED sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derive
 EXPORT lbfgs (DATASET(Mat.Types.Element) g, DATASET(Mat.Types.Element) s, DATASET(Mat.Types.Element) d, DATASET(Mat.Types.Element) Hdiag) := FUNCTION
 //maps used
 MainMap := PBblas.Matrix_Map (P,K,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
-ColMap := PBblas.Matrix_Map (1,K,1,sizeTable[1].f_b_cols);
-RowMap := PBblas.Matrix_Map (P,1,sizeTable[1].f_b_rows, 1);
-OnevalueMap := PBblas.Matrix_Map (1,1,1, 1);
 ddist := DMAT.Converted.FromElement(d,MainMap);
 sdist := DMAT.Converted.FromElement(s,MainMap);
 //calculate rho values
@@ -121,9 +121,16 @@ EXPORT lbfgsUpdate_corr (DATASET(Mat.Types.Element) vec, DATASET(Mat.Types.Eleme
   RETURN New_mat;
 END;//END lbfgsUpdate_corr
 //Calculate the next Hessian diagonal value for the next iteration of the lbfgs algorithm based on the current parameter vector (s) and gradient vector (y)
-//Formula 9.6 in the book
+//Formula 9.6 in the book :  Hdiag = y'*s/(y'*y);
 EXPORT lbfgsUpdate_Hdiag (DATASET(Mat.Types.Element) s, DATASET(Mat.Types.Element) y) := FUNCTION
-  RETURN 1;
+  sdist := DMAT.Converted.FromElement(s,RowMap);
+  ydist := DMAT.Converted.FromElement(y,RowMap);
+  first_term := PBblas.PB_dgemm (TRUE, FALSE, 1.0, RowMap, ydist, RowMap, sdist, OnevalueMap );
+  first_term_M := ML.DMat.Converted.FromPart2Elm (first_term);
+  Second_Term := PBblas.PB_dgemm (TRUE, FALSE, 1.0, RowMap, ydist, RowMap, ydist, OnevalueMap );
+  Second_Term_M := ML.DMat.Converted.FromPart2Elm (Second_Term);
+  HD := First_Term_M[1].value/Second_Term_M[1].value;
+  RETURN HD;
 END;
 END;//END Limited_Memory_BFGS
 

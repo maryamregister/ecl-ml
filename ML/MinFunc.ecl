@@ -89,6 +89,8 @@ step (DATASET (Mat.Types.MUElement) inputp) := FUNCTION
   Steps_Nextno := Mat.MU.To (Steps_Next, 3);
   Dirs_Next := O.lbfgsUpdate_corr (gs, Dirs);
   Dirs_Nextno := Mat.MU.To (Dirs_Next, 4);
+  H_Next := O.lbfgsUpdate_Hdiag (xs, gs);
+  H_Nextno := DATASET([{1,1,H_Next,5}], Mat.Types.MUElement);
   RETURN HG_;
 END; //END step
 xout := step(Topass);
