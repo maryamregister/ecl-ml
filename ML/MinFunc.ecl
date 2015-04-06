@@ -21,11 +21,11 @@ EXPORT MinFunc(xout, x0, CostFunc, CostFunc_params='', TrainData ='', TrainLabel
 
 //initial parameters
 P := Max (x0, id); //the length of the parameters vector
-corrections := MethodOptions(id=(1))[1].value;
+corrections := MethodOptions(id=(1))[1].value;//the number of correction vector that need to be kept in the memory
 
 
 //Optimization Module
-O := Optimization (prows, pcols, Maxrows, Maxcols);
+O := Optimization (prows, pcols, Maxrows, Maxcols).Limited_Memory_BFGS (P, corrections);
 
 
 

@@ -7,53 +7,7 @@ Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
 //Func : handle to the function we want to minimize it, its output should be the error cost and the error gradient
 EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
-
-//This function adds the most recent vector (vec) to the matrix (old_mat) and removes the oldest vector from the matrix
-//old_mat can be a P*K matrix that each column can be a parameter vector or a gradient vector in lbfgs algorithm i.e. Steps and Dirs matrices respectively
-//in each step of the lbfgs algorithm Steps and Dirs matrices should be updated. The most recent vector should be added and the oldest vector should be removed
-//The most recent vector should apear as the last column in the matrix and the oldest vector is actually the first column that should be removed
-//MATLAB code is as below:
-// old_dirs = [old_dirs(:,2:corrections) s];
-// old_stps = [old_stps(:,2:corrections) y];
-//corr in the namae of the fucntion stands for "corrections"
-EXPORT lbfgsUpdate_corr (DATASET(Mat.Types.Element) vec, DATASET(Mat.Types.Element) old_mat) := FUNCTION
-  dstats := Mat.Has(old_mat).Stats;
-  P := dstats.XMax;
-  K := dstats.YMax;
-  //remove the first column from the matrix
-  old_mat_firstColrmv := old_mat (y>1);
-  //decrease column values by one (shift the columsn to the left)
-  Mat.Types.Element colMinus (Mat.Types.Element l) := TRANSFORM
-    SELF.y := l.y-1;
-    SELF := l;
-  END;
-  old_mat_firstColrmv_:=PROJECT(old_mat_firstColrmv,colMinus(LEFT));
-  //add vec to the last column
-  vec_K := PROJECT (vec, TRANSFORM(Mat.Types.Element, SELF.y :=K; SELF:=LEFT));
-  New_mat := old_mat_firstColrmv_+vec_K;
-  RETURN New_mat;
-END;
-//Calculate the next Hessian diagonal value for the next iteration of the lbfgs algorithm based on the current parameter vector (s) and gradient vector (y)
-//Formula 9.6 in the book
-EXPORT lbfgsUpdate_Hdiag (DATASET(Mat.Types.Element) s, DATASET(Mat.Types.Element) y) := FUNCTION
-  RETURN 1;
-END;
-//Implementation of Limited_Memory BFGS algorithm
-//The implementation is done based on "Numerical Optimization Authors: Nocedal, Jorge, Wright, Stephen"
-//corrections : number of corrections to store in memory
-//MaxIter : Maximum number of iterations allowed
-//This function returns the approximate inverse Hessian, multiplied by the gradient multiplied by -1
-//g : the gradient values
-// s: old steps values ("s" in the book)
-//d: old dir values ("y" in the book)
-//Hdiag value to initialize Hessian0 as Hdiag*I
-
-EXPORT lbfgs (DATASET(Mat.Types.Element) g, DATASET(Mat.Types.Element) s, DATASET(Mat.Types.Element) d, DATASET(Mat.Types.Element) Hdiag) := FUNCTION
-//P (number of parameters) and K (number of corrections)
-dstats := Mat.Has(s).Stats;
-P := dstats.XMax;
-K := dstats.YMax;
-
+EXPORT Limited_Memory_BFGS (UNSIGNED P, UNSIGNED K) := MODULE
 //drive map
 sizeRec := RECORD
   PBblas.Types.dimension_t m_rows;
@@ -68,7 +22,17 @@ derivemap := IF(havemaxrowcol, PBblas.AutoBVMap(P, K,prows,pcols,maxrows, maxcol
                    IF(havemaxrow, PBblas.AutoBVMap(P, K,prows,pcols,maxrows),
                       IF(havemaxcol, PBblas.AutoBVMap(P, K,prows,pcols,,maxcols),
                       PBblas.AutoBVMap(P, K,prows,pcols))));
-sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derivemap.part_rows(1),derivemap.part_cols(1)}], sizeRec);
+SHARED sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derivemap.part_rows(1),derivemap.part_cols(1)}], sizeRec);
+//Implementation of Limited_Memory BFGS algorithm
+//The implementation is done based on "Numerical Optimization Authors: Nocedal, Jorge, Wright, Stephen"
+//corrections : number of corrections to store in memory
+//MaxIter : Maximum number of iterations allowed
+//This function returns the approximate inverse Hessian, multiplied by the gradient multiplied by -1
+//g : the gradient values
+// s: old steps values ("s" in the book)
+//d: old dir values ("y" in the book)
+//Hdiag value to initialize Hessian0 as Hdiag*I
+EXPORT lbfgs (DATASET(Mat.Types.Element) g, DATASET(Mat.Types.Element) s, DATASET(Mat.Types.Element) d, DATASET(Mat.Types.Element) Hdiag) := FUNCTION
 //maps used
 MainMap := PBblas.Matrix_Map (P,K,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
 ColMap := PBblas.Matrix_Map (1,K,1,sizeTable[1].f_b_cols);
@@ -134,4 +98,33 @@ R2 := LOOP(r0, COUNTER <= 2, loop2(ROWS(LEFT),COUNTER));
 R2_ := PBblas.PB_dscal(-1, R2) ;
 RETURN R2_;
 END;// END lbfgs
+//This function adds the most recent vector (vec) to the matrix (old_mat) and removes the oldest vector from the matrix
+//old_mat can be a P*K matrix that each column can be a parameter vector or a gradient vector in lbfgs algorithm i.e. Steps and Dirs matrices respectively
+//in each step of the lbfgs algorithm Steps and Dirs matrices should be updated. The most recent vector should be added and the oldest vector should be removed
+//The most recent vector should apear as the last column in the matrix and the oldest vector is actually the first column that should be removed
+//MATLAB code is as below:
+// old_dirs = [old_dirs(:,2:corrections) s];
+// old_stps = [old_stps(:,2:corrections) y];
+//corr in the namae of the fucntion stands for "corrections"
+EXPORT lbfgsUpdate_corr (DATASET(Mat.Types.Element) vec, DATASET(Mat.Types.Element) old_mat) := FUNCTION
+  //remove the first column from the matrix
+  old_mat_firstColrmv := old_mat (y>1);
+  //decrease column values by one (shift the columsn to the left)
+  Mat.Types.Element colMinus (Mat.Types.Element l) := TRANSFORM
+    SELF.y := l.y-1;
+    SELF := l;
+  END;
+  old_mat_firstColrmv_:=PROJECT(old_mat_firstColrmv,colMinus(LEFT));
+  //add vec to the last column
+  vec_K := PROJECT (vec, TRANSFORM(Mat.Types.Element, SELF.y :=K; SELF:=LEFT));
+  New_mat := old_mat_firstColrmv_+vec_K;
+  RETURN New_mat;
+END;//END lbfgsUpdate_corr
+//Calculate the next Hessian diagonal value for the next iteration of the lbfgs algorithm based on the current parameter vector (s) and gradient vector (y)
+//Formula 9.6 in the book
+EXPORT lbfgsUpdate_Hdiag (DATASET(Mat.Types.Element) s, DATASET(Mat.Types.Element) y) := FUNCTION
+  RETURN 1;
+END;
+END;//END Limited_Memory_BFGS
+
 END;// END Optimization
