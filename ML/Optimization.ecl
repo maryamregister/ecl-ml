@@ -11,7 +11,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
 //The implementation is done based on "Numerical Optimization Authors: Nocedal, Jorge, Wright, Stephen"
 //corrections : number of corrections to store in memory
 //MaxIter : Maximum number of iterations allowed
-//This function returns the approximate inverse Hessian, multiplied by the gradient, the updated steps , the updated dir , Hdiag value for the next iteration
+//This function returns the approximate inverse Hessian, multiplied by the gradient multiplied by -1
 //g : the gradient values
 // s: old steps values ("s" in the book)
 //y: old dir values ("y" in the book)
@@ -100,7 +100,7 @@ loop2 (DATASET(Layout_Part) r, INTEGER coun) := FUNCTION
 RETURN rout;
 END;
 R2 := LOOP(r0, COUNTER <= 2, loop2(ROWS(LEFT),COUNTER));
-
-RETURN R2;
+R2_ := PBblas.PB_dscal(-1, R2) ;
+RETURN R2_;
 END;// END lbfgs
 END;// END Optimization
