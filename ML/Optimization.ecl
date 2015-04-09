@@ -7,6 +7,8 @@ Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
 //Func : handle to the function we want to minimize it, its output should be the error cost and the error gradient
 EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
+
+
 EXPORT Limited_Memory_BFGS (UNSIGNED P, UNSIGNED K) := MODULE
 //drive map
 sizeRec := RECORD
@@ -26,6 +28,16 @@ SHARED sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derive
 SHARED ColMap := PBblas.Matrix_Map (1,K,1,sizeTable[1].f_b_cols);
 SHARED RowMap := PBblas.Matrix_Map (P,1,sizeTable[1].f_b_rows, 1);
 SHARED OnevalueMap := PBblas.Matrix_Map (1,1,1, 1);
+
+//this function is used for the very first step in lbfgs algorithm
+EXPORT Steepest_Descent (DATASET(Mat.Types.Element) g) := FUNCTION
+  gdist := DMAT.Converted.FromElement(g, RowMap);
+  gdist_ := PBblas.PB_dscal(-1, gdist);
+  RETURN gdist_;
+END;
+
+
+
 //Implementation of Limited_Memory BFGS algorithm
 //The implementation is done based on "Numerical Optimization Authors: Nocedal, Jorge, Wright, Stephen"
 //corrections : number of corrections to store in memory
@@ -106,7 +118,12 @@ END;// END lbfgs
 // old_dirs = [old_dirs(:,2:corrections) s];
 // old_stps = [old_stps(:,2:corrections) y];
 //corr in the namae of the fucntion stands for "corrections"
-EXPORT lbfgsUpdate_corr (DATASET(Mat.Types.Element) vec, DATASET(Mat.Types.Element) old_mat) := FUNCTION
+EXPORT lbfgsUpdate_corr (DATASET(Mat.Types.Element) vec_pre, DATASET(Mat.Types.Element) vec_next, DATASET(Mat.Types.Element) old_mat) := FUNCTION
+  //vec = vec_next-vec_pre
+  vec_predist := DMAT.Converted.FromElement(vec_pre, RowMap);
+  vec_nextdist := DMAT.Converted.FromElement(vec_next, RowMap);
+  vecdist := PBblas.PB_daxpy(-1, vec_predist, vec_nextdist);
+  vec := ML.DMat.Converted.FromPart2Elm (vecdist);
   //remove the first column from the matrix
   old_mat_firstColrmv := old_mat (y>1);
   //decrease column values by one (shift the columsn to the left)

@@ -66,18 +66,19 @@ old_steps0no := Mat.MU.To (old_steps0,3);
 old_dir0no := Mat.MU.To (old_dir0,4);
 Topass := x0no + g0n0 + old_steps0no + old_dir0no + Hdiag0no + C0n0;
 //updating step function
-step (DATASET (Mat.Types.MUElement) inputp) := FUNCTION
-  xs := Mat.MU.From (inputp,1);
-  gs := Mat.MU.From (inputp,2);
-  Steps := Mat.MU.From (inputp,3);
-  Dirs := Mat.MU.From (inputp,4);
-  Hs := Mat.MU.From (inputp,5);
-  HG_ := O.lbfgs(gs,Steps,Dirs,Hs);//the result is the approximate inverse Hessian, multiplied by the gradient, multiplied by -1 and it is in PBblas.layout format
+step (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
+  x_pre := Mat.MU.From (inputp,1);// x_pre : x previouse : parameter vector from the last iteration (to be updated)
+  g_pre := Mat.MU.From (inputp,2);
+  Step_pre := Mat.MU.From (inputp,3);
+  Dir_pre := Mat.MU.From (inputp,4);
+  H_pre := Mat.MU.From (inputp,5);
+  HG_ :=  IF (coun = 1, O.Steepest_Descent (g_pre), O.lbfgs(g_pre,Step_pre,Dir_pre,H_pre));//the result is the approximate inverse Hessian, multiplied by the gradient, multiplied by -1 and it is in PBblas.layout format
+  //HG_ is actually search direction in fromual 3.1
   //find alpha that satisfies Wolfe Condition???
   //update the parameter vector:x_new = xold+alpha*HG_
   //For now consider the newx as the oldx????
-  xs_updated := xs;
-  x_Next := ML.Types.FromMatrix(xs_updated);
+  x_pre_updated := x_pre; //
+  x_Next := ML.Types.FromMatrix(x_pre_updated);
   CostGrad_Next := CostFunc (x_Next,CostFunc_params,TrainData, TrainLabel);
   g_Next := CostGrad_Next (id<=P);
   Cost_Next := CostGrad_Next (id = P+1)[1].value;
@@ -85,14 +86,14 @@ step (DATASET (Mat.Types.MUElement) inputp) := FUNCTION
   g_Nextno := Mat.MU.To (ML.Types.ToMatrix(g_Next),2);
   C_Nextno := DATASET([{1,1,Cost_Next,6}], Mat.Types.MUElement);
   //calculate new Hessian diag, dir and steps
-  Steps_Next := O.lbfgsUpdate_corr(xs, Steps);
-  Steps_Nextno := Mat.MU.To (Steps_Next, 3);
-  Dirs_Next := O.lbfgsUpdate_corr (gs, Dirs);
-  Dirs_Nextno := Mat.MU.To (Dirs_Next, 4);
-  H_Next := O.lbfgsUpdate_Hdiag (xs, gs);
+  Step_Next := O.lbfgsUpdate_corr(x_pre, x_pre_updated, Step_pre);
+  Step_Nextno := Mat.MU.To (Step_Next, 3);
+  Dir_Next := O.lbfgsUpdate_corr (g_pre, ML.Types.ToMatrix(g_Next), Dir_pre);
+  Dir_Nextno := Mat.MU.To (Dir_Next, 4);
+  H_Next := O.lbfgsUpdate_Hdiag (x_pre, g_pre);
   H_Nextno := DATASET([{1,1,H_Next,5}], Mat.Types.MUElement);
   RETURN HG_;
 END; //END step
-xout := step(Topass);
+xout := step(Topass,1);
 //xout := Topass;
 ENDMACRO;
