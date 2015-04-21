@@ -21,6 +21,12 @@ Types.NumericField);
 a:= myfunc (net);
 //OUTPUT (a);
 
-MinFunc(xout, net, myfunc, emptyC, emptyC, emptyC, 1, optn);
-
+MinFunc(xout, net, myfunc, emptyC, emptyC, emptyC, 1,10,100, optn);
+//WolfeLineSearch(wolfeout, net,3,net,2,net,5,1,2,3,0.001,myfunc);
 OUTPUT (xout);
+//OUTPUT (wolfeout);
+
+// E := DATASET([], Mat.Types.Element);
+// E2 := DATASET([{1,1,1,10}], Mat.Types.MUElement);
+// Enno := Mat.MU.To (E,13);
+// output (Enno + E2);
