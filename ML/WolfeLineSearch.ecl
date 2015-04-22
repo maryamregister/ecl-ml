@@ -16,6 +16,10 @@
 // the rest are PBblas parameters
 //QUESTION : gtd is positive or negative?? based on con2 is wolfebracketing algorithm it should be negative : IT is negative bcz d is negative
 EXPORT WolfeLineSearch(WolfeOut, x,t,d,f,g,gtd,c1,c2,maxLS,tolX,CostFunc,CostFunc_params='', TrainData ='', TrainLabel='', prows=0, pcols=0, Maxrows=0, Maxcols=0):=MACRO
+//initial parameters
+P_num := Max (x, id); //the length of the parameters vector
+Bracket1no := DATASET([{1,1,-1,10}], Mat.Types.MUElement); //the result of the bracketing algorithm
+Bracket2no := DATASET([{1,1,-1,11}], Mat.Types.MUElement); //the result of the bracketing algorithm
 emptyE := DATASET([], Mat.Types.Element);
 LSiter := 1;
 IsNotLegal (DATASET (Mat.Types.Element) Mat) := FUNCTION //???to be defined
@@ -33,14 +37,14 @@ Zoom_Selection (DATASET (Mat.Types.MUElement) inputpp) := FUNCTION
   RETURN inputpp;
 END;
 
-WolfeBracketing ( Real8 fNew, Real8 fPrev, Real8 gtdNew, REAL8 gtdPrev, REAL8 tt, REAL8 tPrev, DATASET(Mat.Types.Element) gNew, DATASET(Mat.Types.Element) gPrev) := FUNCTION
+WolfeBracketing ( Real8 fNew, Real8 fPrev, Real8 gtdNew, REAL8 gtdPrev, REAL8 tt, REAL8 tPrev, DATASET(Mat.Types.Element) gNew, DATASET(Mat.Types.Element) gPrev, UNSIGNED8 inputFunEval) := FUNCTION
   SetBrackets (REAL8 t1, REAL8 t2, REAL8 fval1, REAL8 fval2, DATASET(Mat.Types.Element) gval1 , DATASET(Mat.Types.Element) gval2) := FUNCTION
-    t1no := DATASET([{1,1,t1,8}], Mat.Types.MUElement); //the result of the bracketing algorithm
-    t2no := DATASET([{1,1,t2,9}], Mat.Types.MUElement); //the result of the bracketing algorithm
-    fval1no := DATASET([{1,1,fval1,10}], Mat.Types.MUElement); //the result of the bracketing algorithm
-    fval2no := DATASET([{1,1,fval2,11}], Mat.Types.MUElement); //the result of the bracketing algorithm
-    gval1no := Mat.MU.To (gval1,12); //the result of the bracketing algorithm
-    gval2no := Mat.MU.To (gval2,13); //the result of the bracketing algorithm
+    t1no := DATASET([{1,1,t1,10}], Mat.Types.MUElement); //the result of the bracketing algorithm
+    t2no := DATASET([{1,1,t2,11}], Mat.Types.MUElement); //the result of the bracketing algorithm
+    fval1no := DATASET([{1,1,fval1,12}], Mat.Types.MUElement); //the result of the bracketing algorithm
+    fval2no := DATASET([{1,1,fval2,13}], Mat.Types.MUElement); //the result of the bracketing algorithm
+    gval1no := Mat.MU.To (gval1,14); //the result of the bracketing algorithm
+    gval2no := Mat.MU.To (gval2,15); //the result of the bracketing algorithm
     RETURN t1no + t2no + fval1no + fval2no + gval1no + gval2no;
   END;
   polyinterp (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
@@ -62,10 +66,27 @@ WolfeBracketing ( Real8 fNew, Real8 fPrev, Real8 gtdNew, REAL8 gtdPrev, REAL8 tt
     //t = polyinterp([temp f_prev gtd_prev; t f_new gtd_new],doPlot,minStep,maxStep);
     newt := polyinterp (tPrev, fPrev,gtdPrev, tt, fNew, gtdNew);
     newtno := DATASET([{1,1,newt,5}], Mat.Types.MUElement);
-   RETURN tPrevno;
+    // f_prev = f_new;
+    // g_prev = g_new;
+    // gtd_prev = gtd_new;
+    fPrevno := DATASET([{1,1,fNew,1}], Mat.Types.MUElement);
+    gPrevno := Mat.MU.To (gNew,3);
+    gtdPrevno:= DATASET([{1,1,gtdNew,8}], Mat.Types.MUElement);
+    //calculate fnew gnew gtdnew
+    xNew := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),newt)));
+    CostGradNew := CostFunc (xNew ,CostFunc_params,TrainData, TrainLabel);
+    gNewwolfe := CostGradNew (id<=P_num);
+    fNewWolfe := CostGradNew (id = P_num+1)[1].value;
+    gtdNewWolfe := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(gNewwolfe)),ML.Types.ToMatrix(d));
+    gNewwolfeno := Mat.MU.To (ML.Types.ToMatrix(gNewwolfe),4);
+    fNewWolfeno := DATASET([{1,1,gtdNew,2}], Mat.Types.MUElement);
+    gtdNewWolfeno := Mat.MU.To (gtdNewWolfe,9);
+    FEno := DATASET([{1,1,inputFunEval + 1,7}], Mat.Types.MUElement);
+    Rno := fPrevno + fNewWolfeno + gPrevno + gNewwolfeno + newtno + tPrevno + FEno + gtdPrevno + gtdNewWolfeno + Bracket1no + Bracket2no;
+   RETURN Rno;
   END;
 
-  //If the strong wolfe conditions satisfies then retunr the final t or the bracket, otherwise do the next iteration
+  //If the strong wolfe conditions satisfies then retun the final t or the bracket, otherwise do the next iteration
   //f_new > f + c1*t*gtd || (LSiter > 1 && f_new >= f_prev)
   con1 := (fNew > f + c1 * tt* gtd)| ((LSiter > 1) & (fNew >= fPrev)) ;
   //abs(gtd_new) <= -c2*gtd
@@ -77,14 +98,14 @@ WolfeBracketing ( Real8 fNew, Real8 fPrev, Real8 gtdNew, REAL8 gtdPrev, REAL8 tt
   // bracketFval = [f_prev f_new];
   // bracketGval = [g_prev g_new];
   BracketValues := IF (con1, SetBrackets (tPrev,tt,fPrev,fNew, gPrev, gNew), IF (con2,SetBrackets (tt,-1,fNew,-1, gNew, EmptyE),IF (con3, SetBrackets (tPrev,tt,fPrev,fNew, gPrev, gNew),SetNewValues ()) ));
-  //if not bracket values is assigned then it means you need to calculate new f,other wise just retunr whatever it is 123
-  RETURN 5;
+  //WolfeBracketing ( Real8 fNew, Real8 fPrev, Real8 gtdNew, REAL8 gtdPrev, REAL8 tt, REAL8 tPrev, DATASET(Mat.Types.Element) gNew, DATASET(Mat.Types.Element) gPrev) := FUNCTION
+  //if not bracket values is assigned then it means you need to calculate new f,other wise just retunr whatever it is
+  RETURN BracketValues;
 END;
 
 
 
-//initial parameters
-P_num := Max (x, id); //the length of the parameters vector
+
 
 //x_new = x+t*d 
 x_new := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t)));
@@ -112,15 +133,11 @@ g_newno := Mat.MU.To (ML.Types.ToMatrix(g_new),4);
 tno := DATASET([{1,1,t,5}], Mat.Types.MUElement);
 t_prevno := DATASET([{1,1,t_prev,6}], Mat.Types.MUElement);
 funEvalsno := DATASET([{1,1,funEvals,7}], Mat.Types.MUElement);
-Bracket1no := DATASET([{1,1,-1,8}], Mat.Types.MUElement); //the result of the bracketing algorithm
-Bracket2no := DATASET([{1,1,-1,9}], Mat.Types.MUElement); //the result of the bracketing algorithm
-Bracketfval1no := DATASET([{1,1,-1,10}], Mat.Types.MUElement); //the result of the bracketing algorithm
-Bracketfval2no := DATASET([{1,1,-1,11}], Mat.Types.MUElement); //the result of the bracketing algorithm
-Bracketgval1no := DATASET([{1,1,-1,12}], Mat.Types.MUElement); //the result of the bracketing algorithm
-Bracketgval2no := DATASET([{1,1,-1,13}], Mat.Types.MUElement); //the result of the bracketing algorithm
-gtd_prevno := DATASET([{1,1,gtd_prev,14}], Mat.Types.MUElement);
-gtd_newno := DATASET([{1,1,gtd_new[1].value,15}], Mat.Types.MUElement);
-Topass := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + Bracket1no + Bracket2no   ;
+gtd_prevno := DATASET([{1,1,gtd_prev,8}], Mat.Types.MUElement);
+gtd_newno := DATASET([{1,1,gtd_new[1].value,9}], Mat.Types.MUElement);
+
+
+Topass := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no  ;
 Bracketing (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
   fi_prev :=  Mat.MU.From (inputp,1);
   fi_new := Mat.MU.From (inputp,2);
@@ -128,13 +145,16 @@ Bracketing (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
   gi_new := Mat.MU.From (inputp,4);
   ti :=  Mat.MU.From (inputp,5);
   ti_prev :=  Mat.MU.From (inputp,6);
+  FunEvalsi := Mat.MU.From (inputp,7);
+  gtdi_prev := Mat.MU.From (inputp,8);
+
 
   AreTheyLegal := IsNotLegal(fi_new) | IsNotLegal(gi_new);
   //Bracketing_Result := IF (AreTheyLegal, ArmijoBacktrack(inputp), WolfeBracketing(inputp) ); this is correct
+  //armijo only returns bracketing results and then the loop will stop becasue bracket1 would be ~1
   Bracketing_Result := IF (AreTheyLegal, ArmijoBacktrack(inputp), ArmijoBacktrack(inputp) );
-  Counno := DATASET([{1,1,coun,14}], Mat.Types.MUElement);
-  //update funeval
-  tobereturn := Bracketing_Result + Counno;
+ 
+  tobereturn := Bracketing_Result ;
   RETURN inputp;
 END;
 
