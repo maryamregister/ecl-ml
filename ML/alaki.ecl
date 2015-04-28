@@ -22,11 +22,18 @@ a:= myfunc (net);
 //OUTPUT (a);
 
 //MinFunc(xout, net, myfunc, emptyC, emptyC, emptyC, 1,10,100, optn);
-WolfeLineSearch(wolfeout, net,3,net,2,net,5,1,2,3,0.001,myfunc);
 //OUTPUT (xout);
-OUTPUT (wolfeout);
+ WolfeLineSearch(wolfeout, net,3,net,2,net,5,1,2,3,0.001,myfunc,emptyC, emptyC, emptyC,0,0,0,0);
 
+ OUTPUT (wolfeout);
+
+
+// ArmijoBacktrack(ArmOut,net,1,net,7,net,5,0.001,0.00001,myfunc,emptyC, emptyC, emptyC,0,0,0,0);
+
+ // OUTPUT (ArmOut);
 // E := DATASET([], Mat.Types.Element);
 // E2 := DATASET([{1,1,1,10}], Mat.Types.MUElement);
 // Enno := Mat.MU.To (E,13);
 // output (Enno + E2);
+ak:= FALSE;
+output((INTEGER)ak)
