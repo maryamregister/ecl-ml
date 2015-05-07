@@ -11,6 +11,6 @@ SELF := l;
 END;
 xx := PROJECT (x, tr(LEFT));
 mid := Max (x,id);
-Cost :=  DATASET([{mid+1, 1, 1000}],Types.NumericField);
+Cost :=  DATASET([{mid+1, 1, 509}],Types.NumericField);
 RETURN  xx+cost;
 END;
