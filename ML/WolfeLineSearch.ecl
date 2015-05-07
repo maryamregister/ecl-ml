@@ -127,8 +127,8 @@ WolfeZooming (DATASET (Mat.Types.MUElement) WI, INTEGER coun) := FUNCTION
   //
   // Find High and Low Points in bracket
   LOt_i := IF (f_first < f_second, 10 , 11);
-  LOf_i := IF (f_first < f_second, 12 , 13);
-  LOg_i := IF (f_first < f_second, 14 , 15);
+  LOf_i := LOt_i + 2;
+  LOg_i := LOt_i + 4;
   HIt_i := -1 * LOt_i + 21;
   HIf_i := -1 * LOf_i + 25;
   HIg_i := -1 * LOg_i + 29;
@@ -145,22 +145,25 @@ WolfeZooming (DATASET (Mat.Types.MUElement) WI, INTEGER coun) := FUNCTION
   tTmp := polyinterp (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
   //
   //Test that we are making sufficient progress
-  //if min(max(bracket)-t,t-min(bracket))/(max(bracket)-min(bracket)) < 0.1
   insufProgress := (BOOLEAN)Mat.MU.From (WI,300)[1].value;
   BList := [t_first,t_second];
-  MainPCond := (MIN ((MAX (BList) - tTmp) , (tTmp - MIN (BList))) / (MAX (BList) - MIN (BList)) ) < 0.1 ;
+  MaxB := MAX (BList);
+  MinB := MIN (BList);
+  //if min(max(bracket)-t,t-min(bracket))/(max(bracket)-min(bracket)) < 0.1
+  MainPCond := (MIN ((MAXB - tTmp) , (tTmp - MINB)) / (MAXB - MINB) ) < 0.1 ;
   //if insufProgress || t>=max(bracket) || t <= min(bracket)
-  PCond2 := insufProgress | (tTmp >= MAX (BList)) | (tTmp <= MIN (BList));
+  PCond2 := insufProgress | (tTmp >= MAXB) | (tTmp <= MINB);
   //abs(t-max(bracket)) < abs(t-min(bracket))
-  PCond2_1 := ABS (tTMP - MAX (BList)) < ABS (tTmp - MIN (BList));
-  // max(bracket)-0.1*(max(bracket)-min(bracket));
-  tIF := MAX (BList) - (0.1 * (MAX (BList) - MIN (BList)));
+  PCond2_1 := ABS (tTMP - MAXB) < ABS (tTmp - MINB);
+  // t = max(bracket)-0.1*(max(bracket)-min(bracket));
+  MMTemp := 0.1 * (MAXB - MINB);
+  tIF    := MAXB - MMTemp;
   // t = min(bracket)+0.1*(max(bracket)-min(bracket));
-  tELSE := MIN (BList) + (0.1 * (MAX (BList) - MIN (BList)));
+  tELSE := MINB + MMTemp;
   tZOOM := IF (MainPCond,IF (PCond2, IF (PCond2_1, tIF, tELSE) , tTmp),tTmp);
   insufProgress_new := IF (MainPCond, IF (PCond2, 0, 1) , 0);
   //
-  // Evaluate new point
+  // Evaluate new point with tZoom
   x_td := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),tZOOM)));
   CG_New := CostFunc (x_td ,CostFunc_params,TrainData, TrainLabel);
   gNew := ExtractGrad (CG_New);
@@ -223,7 +226,7 @@ WolfeZooming (DATASET (Mat.Types.MUElement) WI, INTEGER coun) := FUNCTION
   ZOOMCon1_2 := (gtdNew[1].value * (HIt[1].value - LOt[1].value)) >= 0;
   ZOOOMResult := IF (ZoomCon1, SetIntervalIF1, (IF(ZOOMCon1_1, SETIntervalELSE1_1, IF (ZOOMCon1_2,SETIntervalELSE1_2, SetIntervalELSE1 ))));
   //~done && abs((bracket(1)-bracket(2))*gtd_new) < tolX
-  ZOOMTermination := (Mat.MU.FROM (ZOOOMResult,200)[1].value = 0) & ((gtdNew[1].value * (t_first-t_second))<tolX);
+  ZOOMTermination :=( (Mat.MU.FROM (ZOOOMResult,200)[1].value = 0) & (ABS((gtdNew[1].value * (t_first-t_second)))<tolX) ) | (Mat.MU.FROM (ZOOOMResult,200)[1].value = 1);
   ZOOMTermination_num := (INTEGER)ZOOMTermination;
   ZOOMFinalResult := ZOOOMResult (no<200) + DATASET([{1,1,ZOOMTermination_num,200}], Mat.Types.MUElement)+ DATASET([{1,1,insufProgress_new,300}], Mat.Types.MUElement) +ZoomFunEvalno ;
   RETURN ZOOMFinalResult;
@@ -292,5 +295,5 @@ Zoom_Max_Itr := IF (Zoom_Max_itr_tmp >0, Zoom_Max_itr_tmp, 0);
 TOpassZOOM := FoundInterval + DATASET([{1,1,0,200}], Mat.Types.MUElement) + DATASET([{1,1,0,300}], Mat.Types.MUElement) + Bracketing_Result (no = 7); // pass the found interval + {done=0} to Zoom LOOP +insufficientProgress+FunEval
 ZOOMInterval := LOOP(TOpassZOOM, COUNTER <= Zoom_Max_Itr AND Mat.MU.From (ROWS(LEFT),200)[1].value = 0, WolfeZooming(ROWS(LEFT), COUNTER));
 FinalBracket := IF (final_t_found, FoundInterval, IF (Interval_Found,ZOOMInterval,ItrExceedInterval));
-WolfeOut :=Bracketing_Result;
+WolfeOut :=Interval_Found;
 ENDMACRO;
