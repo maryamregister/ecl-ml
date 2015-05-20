@@ -18,7 +18,12 @@
 //  WolfeOut is what the macro returns, it include t,f_new,g_new,funEvals (t the calculated step size
 //  f_new the cost value in the new point, g_new is the gradient value in the new point and funevals is the number of
 //  time the cost function has been calculated in WolfeLineSearch algorithm
-EXPORT WolfeLineSearch(WolfeOut, x,t,d,f,g,gtd,c1=0.0001,c2=0.9,maxLS=25,tolX=0.000000001,CostFunc,CostFunc_params='', TrainData ='', TrainLabel='', prows=0, pcols=0, Maxrows=0, Maxcols=0):=MACRO
+IMPORT ML;
+IMPORT * FROM $;
+IMPORT $.Mat;
+IMPORT * FROM ML.Types;
+
+EXPORT WolfeLineSearch(DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
 
 //initial parameters
 P_num := Max (x, id); //the length of the parameters vector (number of parameters)
@@ -295,5 +300,6 @@ Zoom_Max_Itr := IF (Zoom_Max_itr_tmp >0, Zoom_Max_itr_tmp, 0);
 TOpassZOOM := FoundInterval + DATASET([{1,1,0,200}], Mat.Types.MUElement) + DATASET([{1,1,0,300}], Mat.Types.MUElement) + Bracketing_Result (no = 7); // pass the found interval + {done=0} to Zoom LOOP +insufficientProgress+FunEval
 ZOOMInterval := LOOP(TOpassZOOM, COUNTER <= Zoom_Max_Itr AND Mat.MU.From (ROWS(LEFT),200)[1].value = 0, WolfeZooming(ROWS(LEFT), COUNTER));
 FinalBracket := IF (final_t_found, FoundInterval, IF (Interval_Found,ZOOMInterval,ItrExceedInterval));
-WolfeOut :=Interval_Found;
-ENDMACRO;
+WolfeOut :=FinalBracket;
+RETURN WolfeOut;
+END;

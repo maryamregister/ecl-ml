@@ -16,9 +16,9 @@
 //this Macro recives all the parameters in numeric field fromat and returns in numeric field format
 //prows and maxrows related to "numer of parameters (P)" which is actually the length of the x0 vector
 //pcols and Maxcols are relaetd to "number of correstions to store in the memory (corrections)" which is in the MethodOptions
-
+//In all operation I want to f or g get nan value if it is devided by zero (do I need to include #option on top of the CostFunc)????????
 EXPORT MinFunc(xout, x0, CostFunc, CostFunc_params='', TrainData ='', TrainLabel='', MaxIter, tolFun, maxFunEvals, MethodOptions, prows=0, pcols=0, Maxrows=0, Maxcols=0) := MACRO
-
+#option ('divideByZero', 'nan'); //In all operation I want to f or g get nan value if it is devided by zero
 //initial parameters
 P := Max (x0, id); //the length of the parameters vector
 corrections := MethodOptions(id=(1))[1].value;//the number of correction vector that need to be kept in the memory
