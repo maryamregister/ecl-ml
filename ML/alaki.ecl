@@ -47,9 +47,9 @@ a:= myfunc (net);
 
 //MinFunc(xout, net, myfunc, emptyC, emptyC, emptyC, 1,10,100, optn);
 //OUTPUT (xout);
- WolfeLineSearch(wolfeout, x,t,d,f,g,gtd,1,2,3,0.001,myfunc,emptyC, emptyC, emptyC,0,0,0,0);
+ // WolfeLineSearch(wolfeout, x,t,d,f,g,gtd,1,2,3,0.001,myfunc,emptyC, emptyC, emptyC,0,0,0,0);
 
- OUTPUT (wolfeout, NAMED('Wolfe'));
+ // OUTPUT (wolfeout, NAMED('Wolfe'));
 
 
 // ArmijoBacktrack(ArmOut,net,1,net,7,net,5,0.001,0.00001,myfunc,emptyC, emptyC, emptyC,0,0,0,0);
@@ -63,3 +63,5 @@ a:= myfunc (net);
 // output((INTEGER)ak)
 insuf := 1 ;
 OUTPUT((BOOLEAN)insuf);
+
+OUTPUT((POWER(2,3)))

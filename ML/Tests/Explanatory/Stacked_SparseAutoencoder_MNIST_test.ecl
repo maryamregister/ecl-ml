@@ -793,6 +793,7 @@ real	f784	;
 INTEGER Label  ;
 END;
 input_data_tmp := DATASET('~online::maryam::mytest::MNIST_60000sa', value_record, CSV);
+OUTPUT(input_data_tmp,named('input_data_tmp'));
 ML.AppendID(input_data_tmp, id, input_data);
 
 //convert input data to two datset: samples dataset and labels dataset
@@ -1596,7 +1597,7 @@ REAL8 sparsityParam  := 0.1;
 REAL8 BETA := 0.1;
 REAL8 ALPHA := 0.1;
 REAL8 LAMBDA :=0.1;
-UNSIGNED2 MaxIter :=2;
+UNSIGNED2 MaxIter :=50;
 UNSIGNED4 prows:=0;
 UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
