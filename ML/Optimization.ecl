@@ -20,7 +20,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
         END;
         orderedp := IF (t_1<t_2,setp1 , setp2);
         tmin := orderedp (id=1)[1].value;
-        tmax := orderedp (id=2)[2].value;
+        tmax := orderedp (id=2)[1].value;
         fmin := orderedp (id=3)[1].value;
         fmax := orderedp (id=4)[1].value;
         gtdmin := orderedp (id=5)[1].value;
@@ -47,7 +47,6 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       polResult := IF (gtd_2_I,poly1,poly2);
       RETURN polResult;
     END;//end polyinterp
-    
     EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
     poly1 := FUNCTION
       setp1 := FUNCTION
@@ -60,7 +59,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       END;
       orderedp := IF (t_1<t_2,setp1 , setp2);
       tmin := orderedp (id=1)[1].value;
-      tmax := orderedp (id=2)[2].value;
+      tmax := orderedp (id=2)[1].value;
       fmin := orderedp (id=3)[1].value;
       fmax := orderedp (id=4)[1].value;
       gtdmin := orderedp (id=5)[1].value;
@@ -91,29 +90,249 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       b := DATASET([
       {1,1,f_1},
       {2,1,f_2},
-      {3,1,gtd_1}],
+      {3,1,gtd_1},
+      {4,1,gtd_2}],
       Types.NumericField);
       // Find interpolating polynomial
-      params := b ; // for now
-      dParams := DATASET([
-      {1,1,3*params(id=1)[1].value},
-      {2,1,2*params(id=2)[1].value},
-      {3,1,params(id=3)[1].value},
-      {4,1,0}],
-      Types.NumericField);
+      A_map := PBblas.Matrix_Map(4, 4, 4, 4);
+      b_map := PBblas.Matrix_Map(4, 1, 4, 1);
+      A_part := ML.DMat.Converted.FromNumericFieldDS (A, A_map);
+      b_part := ML.DMat.Converted.FromNumericFieldDS (b, b_map);
+      //params = A\b;
+      params_part := DMAT.solvelinear (A_map,  A_part, FALSE, b_map, b_part) ; // for now
+      params := DMat.Converted.FromPart2DS (params_part);
+      params1 := params(id=1)[1].value;
+      params2 := params(id=2)[1].value;
+      params3 := params(id=3)[1].value;
+      params4 := params(id=4)[1].value;
+      dParams1 := 3*params(id=1)[1].value;
+      dparams2 := 2*params(id=2)[1].value;
+      dparams3 := params(id=3)[1].value;
+      Rvalues := roots (dParams1, dparams2, dparams3);
       // Compute Critical Points
-      //RETURN pol1Result; orig
-      RETURN IF(t_1=0, 10, 100);
-    END;
-    poly2 := FUNCTION
-      tminBound := MIN ([t_1,t_2]);
-      tmaxBound := MAX ([t_1,t_2]);
-      RETURN 3;
-    END;
+      INANYINF := FALSE; //????for now
+      cp1 := xminBound;
+      cp2 := xmaxBound;
+      cp3 := t_1;
+      cp4 := t_2;
+      cp5 := Rvalues (id=2)[1].value;
+      cp6 := Rvalues (id=3)[1].value;
+      ISrootsreal := (BOOLEAN) Rvalues (id=1)[1].value;
+      cp_real := DATASET([
+      {1,1,cp1},
+      {2,1,cp2},
+      {3,1,cp3},
+      {4,1,cp4},
+      {5,1,cp5},
+      {6,1,cp6}],
+      Types.NumericField);
+      cp_imag := DATASET([
+      {1,1,cp1},
+      {2,1,cp2},
+      {3,1,cp3},
+      {4,1,cp4}],
+      Types.NumericField);
+      cp := IF (ISrootsreal, cp_real, cp_imag);
+      itr := IF (ISrootsreal, 6, 4);
+      // Test Critical Points
+      topa :=  DATASET([{1,1,(xminBound+xmaxBound)/2},{1,2,1000000}], Types.NumericField);//send minpos and fmin value to Resultsstep
+      Resultstep (DATASET(Types.NumericField) x, UNSIGNED coun) := FUNCTION
+        inr := x(id=1)[1].value;
+        f_min := x(id=2)[1].value;
+        // if imag(xCP)==0 && xCP >= xminBound && xCP <= xmaxBound
+        xCP := cp(id=coun)[1].value;
+        cond := xCP >= xminBound AND xCP <= xmaxBound; //???
+        // fCP = polyval(params,xCP);
+        fCP := params1*POWER(xCP,3)+params2*POWER(xCP,2)+params3*xCP+params4;
+        //if imag(fCP)==0 && fCP < fmin
+        cond2 := coun=1 OR fCP<f_min;//???
+        rr := IF (cond,IF (cond2, xCP, inr),inr);
+        ff := IF (cond,IF (cond2, fCP, f_min),f_min);
+        RETURN DATASET([{1,1,rr},{2,1,ff}], Types.NumericField);
+      END;
+      finalresult := LOOP(topa, COUNTER <= itr, Resultstep(ROWS(LEFT),COUNTER));
+      //RETURN finalresult; orig
+      //RETURN IF(t_1=0, 10, 100);
+      // RETURN DATASET([
+      // {1,1,dParams1},
+      // {2,1,dParams2},
+      // {3,1,dParams3}],
+      // Types.NumericField);
+     RETURN finalresult;
+    END;//END poly1
+     poly2 := FUNCTION
+        setp1 := FUNCTION
+          points := DATASET([{1,1,t_1},{2,1,t_2},{3,1,f_1},{4,1,f_2},{5,1,gtd_1},{6,2,gtd_2}], Types.NumericField);
+          RETURN points;
+        END;
+        setp2 := FUNCTION
+          points := DATASET([{2,1,t_1},{1,1,t_2},{4,1,f_1},{3,1,f_2},{6,1,gtd_1},{5,2,gtd_2}], Types.NumericField);
+          RETURN points;
+        END;
+        orderedp := IF (t_1<t_2,setp1 , setp2);
+        tmin := orderedp (id=1)[1].value;
+        tmax := orderedp (id=2)[1].value;
+        fmin := orderedp (id=3)[1].value;
+        fmax := orderedp (id=4)[1].value;
+        gtdmin := orderedp (id=5)[1].value;
+        gtdmax := orderedp (id=6)[1].value;
+        // d1 = points(minPos,3) + points(notMinPos,3) - 3*(points(minPos,2)-points(notMinPos,2))/(points(minPos,1)-points(notMinPos,1));
+        d1 := gtdmin + gtdmax - (3*((fmin-fmax)/(tmin-tmax)));
+        //d2 = sqrt(d1^2 - points(minPos,3)*points(notMinPos,3));
+        d2 := SQRT ((d1*d1)-(gtdmin*gtdmax));
+        d2real := TRUE; //check it ???
+        //t = points(notMinPos,1) - (points(notMinPos,1) - points(minPos,1))*((points(notMinPos,3) + d2 - d1)/(points(notMinPos,3) - points(minPos,3) + 2*d2));
+        temp := tmax - ((tmax-tmin)*((gtdmax+d2-d1)/(gtdmax-gtdmin+(2*d2))));
+        //min(max(t,points(minPos,1)),points(notMinPos,1));
+        minpos1 := MIN([MAX([temp,tmin]),tmax]);
+        minpos2 := (t_1+t_2)/2;
+        pol1Result := IF (d2real,minpos1,minpos2);
+        RETURN pol1Result;
+        //RETURN IF(t_1=0, 10, 100);
+      END;//END poly2
     polResult := poly1;
     RETURN polResult;
-  END;//end polyinterp
+  END;//end polyinterp_both
+  EXPORT  polyinterp_noboundry (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
+    poly2 := FUNCTION
+      setp1 := FUNCTION
+        points := DATASET([{1,1,t_1},{2,1,t_2},{3,1,f_1},{4,1,f_2},{5,1,gtd_1},{6,2,gtd_2}], Types.NumericField);
+        RETURN points;
+      END;
+      setp2 := FUNCTION
+        points := DATASET([{2,1,t_1},{1,1,t_2},{4,1,f_1},{3,1,f_2},{6,1,gtd_1},{5,2,gtd_2}], Types.NumericField);
+        RETURN points;
+      END;
+      orderedp := IF (t_1<t_2,setp1 , setp2);
+      tmin := orderedp (id=1)[1].value;
+      tmax := orderedp (id=2)[1].value;
+      fmin := orderedp (id=3)[1].value;
+      fmax := orderedp (id=4)[1].value;
+      gtdmin := orderedp (id=5)[1].value;
+      gtdmax := orderedp (id=6)[1].value;
+      // d1 = points(minPos,3) + points(notMinPos,3) - 3*(points(minPos,2)-points(notMinPos,2))/(points(minPos,1)-points(notMinPos,1));
+      d1 := gtdmin + gtdmax - (3*(fmin-fmax)/(tmin-tmax));
+      //d2 = sqrt(d1^2 - points(minPos,3)*points(notMinPos,3));
+      d2 := SQRT ((d1*d1)-(gtdmin*gtdmax));
+      d2real := TRUE; //check it ???
+      //t = points(notMinPos,1) - (points(notMinPos,1) - points(minPos,1))*((points(notMinPos,3) + d2 - d1)/(points(notMinPos,3) - points(minPos,3) + 2*d2));
+      temp := tmax - ((tmax-tmin)*((gtdmax+d2-d1)/(gtdmax-gtdmin+(2*d2))));
+      //min(max(t,points(minPos,1)),points(notMinPos,1));
+      minpos1 := MIN([MAX([temp,tmin]),tmax]);
+      minpos2 := (t_1+t_2)/2;
+      pol2Result := IF (d2real,minpos1,minpos2);
+      RETURN pol2Result;
+    END;//END poly2
+    polResult := poly2;
+    RETURN polResult;
+  END;//end polyinterp_noboundry
+  EXPORT  polyinterp_img (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
+    poly1 := FUNCTION
+    setp1 := FUNCTION
+      points := DATASET([{1,1,t_1},{2,1,t_2},{3,1,f_1},{4,1,f_2},{5,1,gtd_1},{6,2,gtd_2}], Types.NumericField);
+      RETURN points;
+    END;
+    setp2 := FUNCTION
+      points := DATASET([{2,1,t_1},{1,1,t_2},{4,1,f_1},{3,1,f_2},{6,1,gtd_1},{5,2,gtd_2}], Types.NumericField);
+      RETURN points;
+    END;
+    orderedp := IF (t_1<t_2,setp1 , setp2);
+    tmin := orderedp (id=1)[1].value;
+    tmax := orderedp (id=2)[1].value;
+    fmin := orderedp (id=3)[1].value;
+    fmax := orderedp (id=4)[1].value;
+    gtdmin := orderedp (id=5)[1].value;
+    gtdmax := orderedp (id=6)[1].value;
+    xminBound := tmin;
+    xmaxBound := tmax;
+    // A= [t_1^3 t_1^2 t_1 1
+    //    t_2^3 t_2^2 t_2 1
+    //    3*t_1^2 2*t_1 t_1 0]
+    //b = [f_1 f_2 dtg_1]'
+    A := DATASET([
+    {1,1,POWER(t_1,2)},
+    {1,2,POWER(t_1,3)},
+    {1,3,1},
+    {2,1,POWER(t_2,2)},
+    {2,2,POWER(t_2,1)},
+    {2,3,1},
+    {3,1,2*t_1},
+    {3,2,1},
+    {3,3,0}],
+    Types.NumericField);
+    b := DATASET([
+    {1,1,f_1},
+    {2,1,f_2},
+    {3,1,gtd_1}],
+    Types.NumericField);
+    // Find interpolating polynomial
+    A_map := PBblas.Matrix_Map(3, 3, 3, 3);
+    b_map := PBblas.Matrix_Map(3, 1, 3, 1);
+    A_part := ML.DMat.Converted.FromNumericFieldDS (A, A_map);
+    b_part := ML.DMat.Converted.FromNumericFieldDS (b, b_map);
+    //params = A\b;
+    params_part := DMAT.solvelinear (A_map,  A_part, FALSE, b_map, b_part) ; // for now
+    params := DMat.Converted.FromPart2DS (params_part);
+    params1 := params(id=1)[1].value;
+    params2 := params(id=2)[1].value;
+    params3 := params(id=3)[1].value;
+    dParams1 := 2*params(id=1)[1].value;
+    dparams2 := params(id=2)[1].value;
 
+    Rvalues := -1*dparams2/dParams1;
+
+    // Compute Critical Points
+    INANYINF := FALSE; //????for now
+    cp1 := xminBound;
+    cp2 := xmaxBound;
+    cp3 := t_1;
+    cp4 := t_2;
+    cp5 := Rvalues;
+    ISrootsreal := TRUE;
+    cp_real := DATASET([
+    {1,1,cp1},
+    {2,1,cp2},
+    {3,1,cp3},
+    {4,1,cp4},
+    {5,1,cp5}],
+    Types.NumericField);
+    cp_imag := DATASET([
+    {1,1,cp1},
+    {2,1,cp2},
+    {3,1,cp3},
+    {4,1,cp4}],
+    Types.NumericField);
+    cp := IF (ISrootsreal, cp_real, cp_imag);
+    itr := IF (ISrootsreal, 5, 4);
+    // Test Critical Points
+    topa :=  DATASET([{1,1,(xminBound+xmaxBound)/2},{1,2,1000000}], Types.NumericField);
+    Resultstep (DATASET(Types.NumericField) x, UNSIGNED coun) := FUNCTION
+      minPos := x(id=1)[1].value;
+      f_min := x(id=2)[1].value;
+      // if imag(xCP)==0 && xCP >= xminBound && xCP <= xmaxBound
+      xCP := cp(id=coun)[1].value;
+      cond := xCP >= xminBound AND xCP <= xmaxBound; //???
+      // fCP = polyval(params,xCP);
+      fCP := params1*POWER(xCP,2)+params2*xCP+params3;
+      //if imag(fCP)==0 && fCP < fmin
+      cond2 := coun=1 OR fCP<f_min;//???
+      rr := IF (cond,IF (cond2, xCP, minPos),minPos);
+      ff := IF (cond,IF (cond2, fCP, f_min),f_min);
+      RETURN DATASET([{1,1,rr},{2,1,ff}], Types.NumericField);
+    END;
+    finalresult := LOOP(topa, COUNTER <= itr, Resultstep(ROWS(LEFT),COUNTER));
+    //RETURN finalresult; orig
+    //RETURN IF(t_1=0, 10, 100);
+    // RETURN DATASET([
+    // {1,1,dParams1},
+    // {2,1,dParams2},
+    // {3,1,dParams3}],
+    // Types.NumericField);
+    RETURN finalresult;
+    END;//END poly1
+    polResult := poly1(id=1)[1].value;
+    RETURN polResult;  
+  END;//end polyinterp_img
   EXPORT Limited_Memory_BFGS (UNSIGNED P, UNSIGNED K) := MODULE
     //drive map
     sizeRec := RECORD

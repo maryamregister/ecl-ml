@@ -63,5 +63,5 @@ a:= myfunc (net);
 // output((INTEGER)ak)
 insuf := 1 ;
 OUTPUT((BOOLEAN)insuf);
-
-OUTPUT((POWER(2,3)))
+aaaa:=1;
+OUTPUT(sqrt(-1));

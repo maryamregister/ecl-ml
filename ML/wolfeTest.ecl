@@ -29,22 +29,30 @@ g := fg (id <= p_um);
 f := fg (id = p_um+1)[1].value;
 
 
-OUTPUT (x, NAMED ('xx'));
-OUTPUT (g, NAMED ('gg'));
-OUTPUT (f,NAMED('ff'));
-OUTPUT (d,NAMED('dd'));
+// OUTPUT (x, NAMED ('xx'));
+// OUTPUT (g, NAMED ('gg'));
+// OUTPUT (f,NAMED('ff'));
+// OUTPUT (d,NAMED('dd'));
 
 
 //gtd = d'*d;
 gtdT := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(g)),ML.Types.ToMatrix(d));
 gtd := gtdT[1].value;
-OUTPUT (gtd,NAMED('gtd'));
+//OUTPUT (gtd,NAMED('gtd'));
 
 //WolfeLineSearch(wolfeout, x,t,d,f,g,gtd,0.0001,0.9,25,0.000000001,myfunc2,emptyC, emptyC, emptyC,0,0,0,0);
  //wolfeout := WolfeLineSearch(x,t,d,f,g,gtd,0.0001,0.9,3,0.000000001,emptyC, emptyC, emptyC,myfunc2,0,0,0,0);
 //OUTPUT(wolfeout);
 
 WResult := Optimization (0, 0, 0, 0).WolfeLineSearch(x,t,d,f,g,gtd,0.0001,0.9,10,0.000000001,emptyC, emptyC, emptyC,myfunc2,0,0,0,0);
-OUTPUT(WResult,NAMED('WResult'));
+//OUTPUT(WResult,NAMED('WResult'));
 // funresult := myfunc2 ( x, emptyC, emptyC , emptyC);
 // OUTPUT(funresult, NAMED('funresults'));
+
+pol := Optimization (0, 0, 0, 0).polyinterp_both (  10.0000 ,  12.8652 ,  -1.3527,100.0000  , 12.9898 ,   1.0860,10.0900, 100);
+pol2 :=  Optimization (0, 0, 0, 0).polyinterp_noboundry (10.0000  , 12.8652 ,  -1.3527,100.0000 ,  12.9898 ,   1.0860);
+pol3 := Optimization (0, 0, 0, 0).polyinterp_img ( 0 , 1.0000 , 19.0000 ,8.0000,2.0000,8 );
+
+        
+  
+OUTPUT(pol3);
