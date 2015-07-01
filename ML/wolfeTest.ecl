@@ -45,14 +45,14 @@ gtd := gtdT[1].value;
 //OUTPUT(wolfeout);
 
 WResult := Optimization (0, 0, 0, 0).WolfeLineSearch(x,t,d,f,g,gtd,0.0001,0.9,10,0.000000001,emptyC, emptyC, emptyC,myfunc2,0,0,0,0);
-//OUTPUT(WResult,NAMED('WResult'));
+OUTPUT(WResult,NAMED('WResult'));
 // funresult := myfunc2 ( x, emptyC, emptyC , emptyC);
 // OUTPUT(funresult, NAMED('funresults'));
 
-pol := Optimization (0, 0, 0, 0).polyinterp_both (  10.0000 ,  12.8652 ,  -1.3527,100.0000  , 12.9898 ,   1.0860,10.0900, 100);
-pol2 :=  Optimization (0, 0, 0, 0).polyinterp_noboundry (10.0000  , 12.8652 ,  -1.3527,100.0000 ,  12.9898 ,   1.0860);
-pol3 := Optimization (0, 0, 0, 0).polyinterp_img ( 0 , 1.0000 , 19.0000 ,8.0000,2.0000,8 );
+// pol := Optimization (0, 0, 0, 0).polyinterp_both (  10.0000 ,  12.8652 ,  -1.3527,100.0000  , 12.9898 ,   1.0860,10.0900, 100);
+// pol2 :=  Optimization (0, 0, 0, 0).polyinterp_noboundry (10.0000  , 12.8652 ,  -1.3527,100.0000 ,  12.9898 ,   1.0860);
+// pol3 := Optimization (0, 0, 0, 0).polyinterp_img ( 0 , 1.0000 , 19.0000 ,8.0000,2.0000,8 );
 
         
   
-OUTPUT(pol3);
+// OUTPUT(pol3);

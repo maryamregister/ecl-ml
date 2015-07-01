@@ -135,7 +135,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       cp := IF (ISrootsreal, cp_real, cp_imag);
       itr := IF (ISrootsreal, 6, 4);
       // Test Critical Points
-      topa :=  DATASET([{1,1,(xminBound+xmaxBound)/2},{1,2,1000000}], Types.NumericField);//send minpos and fmin value to Resultsstep
+      topa :=  DATASET([{1,1,(xminBound+xmaxBound)/2},{2,1,1000000}], Types.NumericField);//send minpos and fmin value to Resultsstep
       Resultstep (DATASET(Types.NumericField) x, UNSIGNED coun) := FUNCTION
         inr := x(id=1)[1].value;
         f_min := x(id=2)[1].value;
@@ -158,7 +158,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       // {2,1,dParams2},
       // {3,1,dParams3}],
       // Types.NumericField);
-     RETURN finalresult;
+     RETURN finalresult(id=1)[1].value;
     END;//END poly1
      poly2 := FUNCTION
         setp1 := FUNCTION
@@ -194,22 +194,12 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     RETURN polResult;
   END;//end polyinterp_both
   EXPORT  polyinterp_noboundry (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
-    poly2 := FUNCTION
-      setp1 := FUNCTION
-        points := DATASET([{1,1,t_1},{2,1,t_2},{3,1,f_1},{4,1,f_2},{5,1,gtd_1},{6,2,gtd_2}], Types.NumericField);
-        RETURN points;
-      END;
-      setp2 := FUNCTION
-        points := DATASET([{2,1,t_1},{1,1,t_2},{4,1,f_1},{3,1,f_2},{6,1,gtd_1},{5,2,gtd_2}], Types.NumericField);
-        RETURN points;
-      END;
-      orderedp := IF (t_1<t_2,setp1 , setp2);
-      tmin := orderedp (id=1)[1].value;
-      tmax := orderedp (id=2)[1].value;
-      fmin := orderedp (id=3)[1].value;
-      fmax := orderedp (id=4)[1].value;
-      gtdmin := orderedp (id=5)[1].value;
-      gtdmax := orderedp (id=6)[1].value;
+      tmin := IF (t_1<t_2,t_1 , t_2);
+      tmax := IF (t_1<t_2,t_2 , t_1);
+      fmin := IF (t_1<t_2,f_1 , f_2);
+      fmax := IF (t_1<t_2,f_2 , f_1);
+      gtdmin := IF (t_1<t_2,gtd_1 , gtd_2);
+      gtdmax := IF (t_1<t_2,gtd_2 , gtd_1);
       // d1 = points(minPos,3) + points(notMinPos,3) - 3*(points(minPos,2)-points(notMinPos,2))/(points(minPos,1)-points(notMinPos,1));
       d1 := gtdmin + gtdmax - (3*(fmin-fmax)/(tmin-tmax));
       //d2 = sqrt(d1^2 - points(minPos,3)*points(notMinPos,3));
@@ -221,10 +211,8 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       minpos1 := MIN([MAX([temp,tmin]),tmax]);
       minpos2 := (t_1+t_2)/2;
       pol2Result := IF (d2real,minpos1,minpos2);
-      RETURN pol2Result;
-    END;//END poly2
-    polResult := poly2;
-    RETURN polResult;
+    RETURN pol2Result;
+    //RETURN d1;
   END;//end polyinterp_noboundry
   EXPORT  polyinterp_img (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
     poly1 := FUNCTION
@@ -305,7 +293,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     cp := IF (ISrootsreal, cp_real, cp_imag);
     itr := IF (ISrootsreal, 5, 4);
     // Test Critical Points
-    topa :=  DATASET([{1,1,(xminBound+xmaxBound)/2},{1,2,1000000}], Types.NumericField);
+    topa :=  DATASET([{1,1,(xminBound+xmaxBound)/2},{2,1,1000000}], Types.NumericField);
     Resultstep (DATASET(Types.NumericField) x, UNSIGNED coun) := FUNCTION
       minPos := x(id=1)[1].value;
       f_min := x(id=2)[1].value;
@@ -547,7 +535,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
         minstep := tt + 0.01* (tt-tPrev);
         maxstep := tt*10;
         //t = polyinterp([temp f_prev gtd_prev; t f_new gtd_new],doPlot,minStep,maxStep);
-        newt := polyinterp (tPrev, fPrev,gtdPrev, tt, fNew, gtdNew);
+        newt := polyinterp_both (tPrev, fPrev,gtdPrev, tt, fNew, gtdNew, minstep, maxstep);
         newtno := DATASET([{1,1,newt,5}], Mat.Types.MUElement);
         // f_prev = f_new;
         // g_prev = g_new;
@@ -612,7 +600,9 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       // Compute new trial value
       //t = polyinterp([bracket(1) bracketFval(1) bracketGval(:,1)'*d bracket(2) bracketFval(2) bracketGval(:,2)'*d],doPlot);
       //tTmp := polyinterp (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value); orig
-      tTmp := IF (coun=1,52.4859, IF(coun=2, 30.5770, IF(coun=3,19.5981, IF(coun=4,17.2821, IF(coun=5,19.4093,IF(coun=6,19.3919, IF(coun=7,19.3902,19.3901)))))));
+      //tTmp := polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value); orig
+      tTmp := polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
+      //tTmp := IF (coun=1,52.4859, IF(coun=2, 30.5770, IF(coun=3,19.5981, IF(coun=4,17.2821, IF(coun=5,19.4093,IF(coun=6,19.3919, IF(coun=7,19.3902,19.3901)))))));
       //Test that we are making sufficient progress
       insufProgress := (BOOLEAN)Mat.MU.From (WI,300)[1].value;
       BList := [t_first,t_second];
@@ -699,9 +689,11 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       ZOOMTermination :=( (Mat.MU.FROM (ZOOOMResult,200)[1].value = 0) & (ABS((gtdNew[1].value * (t_first-t_second)))<tolX) ) | (Mat.MU.FROM (ZOOOMResult,200)[1].value = 1);
       ZOOMTermination_num := (INTEGER)ZOOMTermination;
       ZOOMFinalResult := ZOOOMResult (no<200) + DATASET([{1,1,ZOOMTermination_num,200}], Mat.Types.MUElement)+ DATASET([{1,1,insufProgress_new,300}], Mat.Types.MUElement) +ZoomFunEvalno ;
-      RETURN ZOOMFinalResult; 
-      //RETURN DATASET([{1,1,lof[1].value,1},{1,1,hif[1].value ,2}], Mat.Types.MUElement);
-        
+      //RETURN ZOOMFinalResult; orig
+      RETURN ZOOMFinalResult;
+      //RETURN DATASET([{1,1,tTmp,1}], Mat.Types.MUElement);
+      //RETURN DATASET([{1,1,t_first,1},{2,1,f_first,1},{3,1,gtd_first[1].value,1},{4,1,t_second,1},{5,1,f_second,1},{6,1,gtd_second[1].value ,1}], Mat.Types.MUElement);
+
     END;// END WolfeZooming
     //x_new = x+t*d
     x_new := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t)));
@@ -777,12 +769,16 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     Zoom_Max_itr_tmp :=  maxLS - Mat.MU.From (Bracketing_Result,100)[1].value;
     Zoom_Max_Itr := IF (Zoom_Max_itr_tmp >0, Zoom_Max_itr_tmp, 0);
     TOpassZOOM := FoundInterval + DATASET([{1,1,0,200}], Mat.Types.MUElement) + DATASET([{1,1,0,300}], Mat.Types.MUElement) + Bracketing_Result (no = 7); // pass the found interval + {zoomtermination=0} to Zoom LOOP +insufficientProgress+FunEval
-    ZOOMInterval := LOOP(TOpassZOOM, COUNTER <= Zoom_Max_Itr AND Mat.MU.From (ROWS(LEFT),200)[1].value = 0, WolfeZooming(ROWS(LEFT), COUNTER));
+    ZOOMInterval := LOOP(TOpassZOOM, COUNTER < Zoom_Max_Itr AND Mat.MU.From (ROWS(LEFT),200)[1].value = 0, WolfeZooming(ROWS(LEFT), COUNTER));
+    //ZOOMInterval := WolfeZooming(TOpassZOOM, 1);
+    //ZOOMInterval := LOOP(TOpassZOOM, COUNTER <= Zoom_Max_Itr , WolfeZooming(ROWS(LEFT), COUNTER));
+    //ZOOMInterval := LOOP(TOpassZOOM,  1, WolfeZooming(ROWS(LEFT), COUNTER));
     FinalBracket := IF (final_t_found, FinaltInterval, IF (Interval_Found,ZOOMInterval,ItrExceedInterval));
     WolfeOut :=FinalBracket;
-    RETURN WolfeOut; 
+    //RETURN WolfeOut; orig
     //MYOUT := ZOOMInterval;
-   // RETURN MYOUT;
+    MYOUT2 := WolfeOut;
+    RETURN MYOUT2;
   END;// END WolfeLineSearch
 
 END;// END Optimization
