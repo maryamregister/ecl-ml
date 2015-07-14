@@ -7,47 +7,9 @@ Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
 //Func : handle to the function we want to minimize it, its output should be the error cost and the error gradient
 EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
-  //gtd_2_I : if gtd_2_I should be ignored, this is used in ArmijoBacktrack
-  EXPORT  polyinterp (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, BOOLEAN gtd_2_I=TRUE) := FUNCTION
-      poly1 := FUNCTION
-        setp1 := FUNCTION
-          points := DATASET([{1,1,t_1},{2,1,t_2},{3,1,f_1},{4,1,f_2},{5,1,gtd_1},{6,2,gtd_2}], Types.NumericField);
-          RETURN points;
-        END;
-        setp2 := FUNCTION
-          points := DATASET([{2,1,t_1},{1,1,t_2},{4,1,f_1},{3,1,f_2},{6,1,gtd_1},{5,2,gtd_2}], Types.NumericField);
-          RETURN points;
-        END;
-        orderedp := IF (t_1<t_2,setp1 , setp2);
-        tmin := orderedp (id=1)[1].value;
-        tmax := orderedp (id=2)[1].value;
-        fmin := orderedp (id=3)[1].value;
-        fmax := orderedp (id=4)[1].value;
-        gtdmin := orderedp (id=5)[1].value;
-        gtdmax := orderedp (id=6)[1].value;
-        // d1 = points(minPos,3) + points(notMinPos,3) - 3*(points(minPos,2)-points(notMinPos,2))/(points(minPos,1)-points(notMinPos,1));
-        d1 := gtdmin + gtdmax - (3*((fmin-fmax)/(tmin-tmax)));
-        //d2 = sqrt(d1^2 - points(minPos,3)*points(notMinPos,3));
-        d2 := SQRT ((d1*d1)-(gtdmin*gtdmax));
-        d2real := TRUE; //check it ???
-        //t = points(notMinPos,1) - (points(notMinPos,1) - points(minPos,1))*((points(notMinPos,3) + d2 - d1)/(points(notMinPos,3) - points(minPos,3) + 2*d2));
-        temp := tmax - ((tmax-tmin)*((gtdmax+d2-d1)/(gtdmax-gtdmin+(2*d2))));
-        //min(max(t,points(minPos,1)),points(notMinPos,1));
-        minpos1 := MIN([MAX([temp,tmin]),tmax]);
-        minpos2 := (t_1+t_2)/2;
-        pol1Result := IF (d2real,minpos1,minpos2);
-        //RETURN pol1Result; orig
-        RETURN IF(t_1=0, 10, 100);
-      END;
-      poly2 := FUNCTION
-        tminBound := MIN ([t_1,t_2]);
-        tmaxBound := MAX ([t_1,t_2]);
-        RETURN 3;
-      END;
-      polResult := IF (gtd_2_I,poly1,poly2);
-      RETURN polResult;
-    END;//end polyinterp
-    EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
+
+  //polyinterp when the boundry values are provided
+  EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
     poly1 := FUNCTION
       setp1 := FUNCTION
         points := DATASET([{1,1,t_1},{2,1,t_2},{3,1,f_1},{4,1,f_2},{5,1,gtd_1},{6,2,gtd_2}], Types.NumericField);
@@ -151,7 +113,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
         RETURN DATASET([{1,1,rr},{2,1,ff}], Types.NumericField);
       END;
       finalresult := LOOP(topa, COUNTER <= itr, Resultstep(ROWS(LEFT),COUNTER));
-      //RETURN finalresult; orig
+      //RETURN finalresult;
       //RETURN IF(t_1=0, 10, 100);
       // RETURN DATASET([
       // {1,1,dParams1},
@@ -193,6 +155,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     polResult := poly1;
     RETURN polResult;
   END;//end polyinterp_both
+  //polyinterp when no boundry values is provided
   EXPORT  polyinterp_noboundry (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
       tmin := IF (t_1<t_2,t_1 , t_2);
       tmax := IF (t_1<t_2,t_2 , t_1);
@@ -214,6 +177,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     RETURN pol2Result;
     //RETURN d1;
   END;//end polyinterp_noboundry
+  //polyinterp when no boundry values is provided  and gtd_2 is imaginary (used in Armijo Back Tracking)
   EXPORT  polyinterp_img (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
     poly1 := FUNCTION
     setp1 := FUNCTION
@@ -309,7 +273,6 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       RETURN DATASET([{1,1,rr},{2,1,ff}], Types.NumericField);
     END;
     finalresult := LOOP(topa, COUNTER <= itr, Resultstep(ROWS(LEFT),COUNTER));
-    //RETURN finalresult; orig
     //RETURN IF(t_1=0, 10, 100);
     // RETURN DATASET([
     // {1,1,dParams1},
@@ -599,8 +562,6 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       //
       // Compute new trial value
       //t = polyinterp([bracket(1) bracketFval(1) bracketGval(:,1)'*d bracket(2) bracketFval(2) bracketGval(:,2)'*d],doPlot);
-      //tTmp := polyinterp (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value); orig
-      //tTmp := polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value); orig
       tTmp := polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
       //tTmp := IF (coun=1,52.4859, IF(coun=2, 30.5770, IF(coun=3,19.5981, IF(coun=4,17.2821, IF(coun=5,19.4093,IF(coun=6,19.3919, IF(coun=7,19.3902,19.3901)))))));
       //Test that we are making sufficient progress
@@ -689,11 +650,9 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       ZOOMTermination :=( (Mat.MU.FROM (ZOOOMResult,200)[1].value = 0) & (ABS((gtdNew[1].value * (t_first-t_second)))<tolX) ) | (Mat.MU.FROM (ZOOOMResult,200)[1].value = 1);
       ZOOMTermination_num := (INTEGER)ZOOMTermination;
       ZOOMFinalResult := ZOOOMResult (no<200) + DATASET([{1,1,ZOOMTermination_num,200}], Mat.Types.MUElement)+ DATASET([{1,1,insufProgress_new,300}], Mat.Types.MUElement) +ZoomFunEvalno ;
-      //RETURN ZOOMFinalResult; orig
       RETURN ZOOMFinalResult;
       //RETURN DATASET([{1,1,tTmp,1}], Mat.Types.MUElement);
       //RETURN DATASET([{1,1,t_first,1},{2,1,f_first,1},{3,1,gtd_first[1].value,1},{4,1,t_second,1},{5,1,f_second,1},{6,1,gtd_second[1].value ,1}], Mat.Types.MUElement);
-
     END;// END WolfeZooming
     //x_new = x+t*d
     x_new := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t)));
@@ -757,28 +716,131 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     
     
     FoundInterval := Bracketing_Result (no = 10) + Bracketing_Result (no = 11) + Bracketing_Result (no = 12) + Bracketing_Result (no = 13) + Bracketing_Result (no = 14) + Bracketing_Result (no = 15);
-    FinaltInterval := Bracketing_Result (no = 10) + Bracketing_Result (no = 12) + Bracketing_Result (no = 14) ;
+    FinaltInterval := Bracketing_Result (no = 10) + Bracketing_Result (no = 12) + Bracketing_Result (no = 14) + Bracketing_Result (no = 7);
     Interval_Found := Mat.MU.From (Bracketing_Result,10)[1].value != -1 AND Mat.MU.From (Bracketing_Result,11)[1].value !=-1;
     final_t_found := Mat.MU.From (Bracketing_Result,10)[1].value != -1 AND Mat.MU.From (Bracketing_Result,11)[1].value =-1;
     ItrExceedInterval := DATASET([{1,1,0,10},
     {1,1,Mat.MU.From (Bracketing_Result,5)[1].value ,11},
     {1,1,f ,12},
     {1,1,Mat.MU.From (Bracketing_Result,2)[1].value ,13}
-    ], Mat.Types.MUElement) + Mat.MU.To (ML.Types.ToMatrix(g),14) + Mat.MU.To (Mat.MU.FROM(Bracketing_Result,4),15);
+    ], Mat.Types.MUElement) + Mat.MU.To (ML.Types.ToMatrix(g),14) + Mat.MU.To (Mat.MU.FROM(Bracketing_Result,4),15) + Bracketing_Result (no = 7);
     //
     Zoom_Max_itr_tmp :=  maxLS - Mat.MU.From (Bracketing_Result,100)[1].value;
     Zoom_Max_Itr := IF (Zoom_Max_itr_tmp >0, Zoom_Max_itr_tmp, 0);
     TOpassZOOM := FoundInterval + DATASET([{1,1,0,200}], Mat.Types.MUElement) + DATASET([{1,1,0,300}], Mat.Types.MUElement) + Bracketing_Result (no = 7); // pass the found interval + {zoomtermination=0} to Zoom LOOP +insufficientProgress+FunEval
-    ZOOMInterval := LOOP(TOpassZOOM, COUNTER < Zoom_Max_Itr AND Mat.MU.From (ROWS(LEFT),200)[1].value = 0, WolfeZooming(ROWS(LEFT), COUNTER));
+    ZOOMInterval := LOOP(TOpassZOOM, COUNTER <= Zoom_Max_Itr AND Mat.MU.From (ROWS(LEFT),200)[1].value = 0, WolfeZooming(ROWS(LEFT), COUNTER));
     //ZOOMInterval := WolfeZooming(TOpassZOOM, 1);
     //ZOOMInterval := LOOP(TOpassZOOM, COUNTER <= Zoom_Max_Itr , WolfeZooming(ROWS(LEFT), COUNTER));
     //ZOOMInterval := LOOP(TOpassZOOM,  1, WolfeZooming(ROWS(LEFT), COUNTER));
     FinalBracket := IF (final_t_found, FinaltInterval, IF (Interval_Found,ZOOMInterval,ItrExceedInterval));
-    WolfeOut :=FinalBracket;
-    //RETURN WolfeOut; orig
-    //MYOUT := ZOOMInterval;
-    MYOUT2 := WolfeOut;
-    RETURN MYOUT2;
+    //The final t value is the t value which has the lowest f value
+    WolfeT1 := DATASET([{1,1,FinalBracket(no=10)[1].value,1},
+    {1,1,FinalBracket(no=12)[1].value,2},
+    {1,1,FinalBracket(no=7)[1].value,4}], Mat.Types.MUElement) + Mat.MU.To (Mat.MU.FROM (FinalBracket,14),3) ;
+    WolfeT2 := DATASET([{1,1,FinalBracket(no=11)[1].value,1},
+    {1,1,FinalBracket(no=13)[1].value,2},
+    {1,1,FinalBracket(no=7)[1].value,4}], Mat.Types.MUElement) + Mat.MU.To (Mat.MU.FROM (FinalBracket,15),3) ;;
+    WolfeOut := IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2);
+    AppendID(WolfeOut, id, WolfeOut_id);
+    ToField (WolfeOut_id, WolfeOut_id_out, id, 'x,y,value,no');//WolfeOut_id_out is the numeric field format of WolfeOut
+    RETURN WolfeOut_id_out;
+   // RETURN DATASET([{1,1,Zoom_Max_Itr,200}], Mat.Types.MUElement) ;
+  // RETURN ZOOMInterval;
   END;// END WolfeLineSearch
-
+  EXPORT WolfeOut_FromField(DATASET(Types.NumericField) mod) := FUNCTION
+    modelD_Map :=	DATASET([{'id','ID'},{'x','1'},{'y','2'},{'value','3'},{'no','4'}], {STRING orig_name; STRING assigned_name;});
+    FromField(mod,Mat.Types.MUElement,dOut,modelD_Map);
+    RETURN dOut;
+  END;
+  //x,t,d,f,fr,g,gtd,c1,LS,tolX,debug,doPlot,saveHessianComp,funObj,varargin)
+  // Backtracking linesearch to satisfy Armijo condition
+  //
+  // Inputs:
+  //   x: starting location
+  //   t: initial step size
+  //   d: descent direction
+  //   f: function value at starting location
+  //   fr: reference function value (usually funObj(x))
+  //   gtd: directional derivative at starting location
+  //   c1: sufficient decrease parameter
+  //   debug: display debugging information
+  //   LS: type of interpolation
+  //   tolX: minimum allowable step length
+  //   doPlot: do a graphical display of interpolation
+  //   funObj: objective function
+  //   varargin: parameters of objective function
+  EXPORT ArmijoBacktrack(DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, REAL8 fr, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
+      P_num := Max (x, id); //the length of the parameters vector (number of parameters)
+      IsNotLegal (DATASET (Mat.Types.Element) Mat) := FUNCTION //???to be defined
+        RETURN FALSE;
+      END;
+      ExtractGrad (DATASET(Types.NumericField) inp) := FUNCTION
+        RETURN inp (id <= P_num);
+      END;
+      ExtractCost (DATASET(Types.NumericField) inp) := FUNCTION
+        RETURN inp (id = (P_num+1))[1].value;
+      END;
+      // Evaluate the Objective and Gradient at the Initial Step
+      xNew := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t)));
+      CostGradNew := CostFunc (xNew ,CostFunc_params,TrainData, TrainLabel);
+      gNew := ExtractGrad (CostGradNew);
+      fNew := ExtractCost (CostGradNew);
+      //loop term to be used in the loop condition
+      LoopTerm := fr + c1*t*gtd;
+      //build what should be passed to the bracketing loop
+      fNewno := DATASET([{1,1,fNew,1}], Mat.Types.MUElement);
+      gNewno := Mat.MU.To (ML.Types.ToMatrix(gNew),2);
+      funevalno := DATASET([{1,1,1,3}], Mat.Types.MUElement);
+      tno := DATASET([{1,1,t,4}], Mat.Types.MUElement);
+      fPrevno := DATASET([{1,1,-1,5}], Mat.Types.MUElement);
+      tPrevno := DATASET([{1,1,0,6}], Mat.Types.MUElement);
+      breakno := DATASET([{1,1,0,7}], Mat.Types.MUElement);
+      toPass := fNewno + gNewno + funevalno + tno + fPrevno + tPrevno + breakno;
+      Armijo (DATASET (Mat.Types.MUElement) Inp) := FUNCTION
+        //calculate new t
+        fNewit := Mat.MU.From (Inp,1);
+        gNewit := Mat.MU.FROM (Inp,2);
+        tit := Mat.MU.From (Inp,4)[1].value;
+        tPrevit := Mat.MU.From (Inp,6)[1].value;
+        gtdNewit := ML.Mat.Mul (ML.Mat.Trans((gNewit)),ML.Types.ToMatrix(d));
+        FEval := Mat.MU.FROM (Inp,3)[1].value;
+        fPrevit := Mat.MU.FROM (Inp,5);
+        cond := IsNotLegal (fPrevit) | (FEval <2);
+        // t = polyinterp([0 f gtd; t f_new sqrt(-1)],doPlot);
+        tTemp := polyinterp_img (0, f, gtd, tit, fNewit[1].value, gtdNewit[1].value);
+        tTemp2 := tTemp;//t = polyinterp([0 f gtd; t f_new sqrt(-1); t_prev f_prev sqrt(-1)],doPlot);
+        tNew := IF (IsNotLegal(fNewit),tit*0.5,IF (cond,tTemp,tTemp2));
+        //Adjust tNew if change in t is too small/large
+        T1 := tit*0.001;
+        T2 := tit*0.6;
+        AdCond1 := tNew < T1 ; //t < temp*1e-3
+        AdCond2 := tNew > T2; //t > temp*0.6
+        AdtNew := IF (AdCond1, T1, IF (AdCond2, T2, tNew));
+        //Calculate new f and g values
+        fPrvno := DATASET([{1,1,fNewit[1].value,5}], Mat.Types.MUElement);
+        tPrvno := DATASET([{1,1,tit,6}], Mat.Types.MUElement);
+        //calculate new f and g
+        xN := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),AdtNew)));
+        CGN := CostFunc (xN ,CostFunc_params,TrainData, TrainLabel);
+        gN := ExtractGrad (CGN);
+        fN := ExtractCost (CGN);
+        gNno := Mat.MU.To (ML.Types.ToMatrix(gN),2);
+        fNno := DATASET([{1,1,fN,1}], Mat.Types.MUElement);
+        FEalno := DATASET([{1,1,FEval+1,3}], Mat.Types.MUElement);
+        tNno := DATASET([{1,1,AdtNew,4}], Mat.Types.MUElement);
+        //sum(abs(t*d))???? to be calculated
+        sumA := 3;
+        brk := IF(sumA<=tolX,1,0);
+        brkno := DATASET([{1,1,brk,7}], Mat.Types.MUElement);
+        RETURN fNno + gNno + FEalno + tNno + fPrvno +  tPrvno + brkno;
+      END;
+      //f_new > fr + c1*t*gtd || ~isLegal(f_new)
+      LoopResult := LOOP (toPass, (Mat.MU.From (ROWS(LEFT),7)[1].value = 0) & (IsNotLegal (Mat.MU.From (ROWS(LEFT),1)) & (Mat.MU.From (ROWS(LEFT),1)[1].value < LoopTerm ) ), Armijo(ROWS(LEFT)));
+      BCond := Mat.MU.From (LoopResult,7)[1].value = 1;
+      //[t,f_new,g_new,funEvals] return x_new too????
+      RegularResult := LoopResult (no=4) + LoopResult (no=1) + LoopResult (no=2) + LoopResult (no=3);
+      Breakresult := DATASET([{1,1,0,4}], Mat.Types.MUElement) + DATASET([{1,1,f,1}], Mat.Types.MUElement) + Mat.MU.To (ML.Types.ToMatrix(g),2) + LoopResult (no=3);
+      FinalResult := IF (BCond, Breakresult, RegularResult);
+    RETURN FinalResult;
+  END; // END ArmijoBacktrack
 END;// END Optimization
