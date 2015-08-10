@@ -323,6 +323,10 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     //d: old dir values ("y" in the book)
     //Hdiag value to initialize Hessian0 as Hdiag*I
     EXPORT lbfgs (DATASET(Mat.Types.Element) g, DATASET(Mat.Types.Element) s, DATASET(Mat.Types.Element) d, DATASET(Mat.Types.Element) Hdiag) := FUNCTION
+      //Functions needed in calculations
+      PBblas.Types.value_t Reciprocal(PBblas.Types.value_t v, 
+                                      PBblas.Types.dimension_t r, 
+                                      PBblas.Types.dimension_t c) := 1/v;
       //maps used
       MainMap := PBblas.Matrix_Map (P,K,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
       ddist := DMAT.Converted.FromElement(d,MainMap);
@@ -341,7 +345,8 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       Ones_Vec := DATASET(P, gen(COUNTER, 1));
       Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
       stepdir_sumcol := PBblas.PB_dgemm(FALSE, FALSE, 1.0, Ones_VecMap, Ones_Vecdist, MainMap, stepdir, ColMap);
-      rho := ML.DMat.Converted.FromPart2Elm (stepdir_sumcol); //rho is in Mat.element format so we can retrive the ith rho values as rho(y=i)[1].value
+      stepdir_sumcol_Reciprocal := PBblas.Apply2Elements(ColMap, stepdir_sumcol, Reciprocal);
+      rho := ML.DMat.Converted.FromPart2Elm (stepdir_sumcol_Reciprocal); //rho is in Mat.element format so we can retrive the ith rho values as rho(y=i)[1].value
       // // Algorithm 9.1 (L-BFGS two-loop recursion)
       //first loop : q calculation
       q0 := g;
@@ -349,7 +354,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       q0distno := PBblas.MU.TO(q0dist,0);
       loop1 (DATASET(PBblas.Types.MUElement) inputin, INTEGER coun) := FUNCTION
         q := PBblas.MU.FROM(inputin,0);
-        i := K-coun+1;//assumption is that in the steps and dir matrices the highest index the recent the vector is
+        i := K-coun+1;//assumption is that in the steps and dir matrices the highest the index the more recent the vector is
         si := PROJECT(s(y=i),TRANSFORM(Mat.Types.Element,SELF.y :=1;SELF:=LEFT));//retrive the ith column and the y value should be 1 (not sure if it is important or not)???
         sidist := DMAT.Converted.FromElement(si,RowMap);//any way to extract sidist directly from sdist?
         //ai=rhoi*siT*q
@@ -362,7 +367,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
         qoutno := PBblas.MU.TO(qout,0);
         RETURN qoutno+inputin(no>0)+PBblas.MU.TO(ai,i);
       END;
-      R1 := LOOP(q0distno, COUNTER <= 2, loop1(ROWS(LEFT),COUNTER));
+      R1 := LOOP(q0distno, COUNTER <= K, loop1(ROWS(LEFT),COUNTER));
       finalq := PBblas.MU.from(R1(no=0),0);
       Aivalues := R1(no>0);
       //by now tested by Matlab
@@ -381,9 +386,9 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
         rout := PBblas.PB_daxpy(aiM[1].value-biM[1].value, sidist, r);
       RETURN rout;
       END;
-      R2 := LOOP(r0, COUNTER <= 2, loop2(ROWS(LEFT),COUNTER));
-      R2_ := PBblas.PB_dscal(-1, R2) ;
-      RETURN R2_;
+      R2 := LOOP(r0, COUNTER <= K, loop2(ROWS(LEFT),COUNTER));
+      //R2_ := PBblas.PB_dscal(-1, R2) ;
+      RETURN R2;
     END;// END lbfgs
     //This function adds the most recent vector (vec) to the matrix (old_mat) and removes the oldest vector from the matrix
     //old_mat can be a P*K matrix that each column can be a parameter vector or a gradient vector in lbfgs algorithm i.e. Steps and Dirs matrices respectively
@@ -393,6 +398,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     // old_dirs = [old_dirs(:,2:corrections) s];
     // old_stps = [old_stps(:,2:corrections) y];
     //corr in the namae of the fucntion stands for "corrections"
+    // implemnet this condition : if ys > 1e-10 ????????????????
     EXPORT lbfgsUpdate_corr (DATASET(Mat.Types.Element) vec_pre, DATASET(Mat.Types.Element) vec_next, DATASET(Mat.Types.Element) old_mat) := FUNCTION
       //vec = vec_next-vec_pre
       vec_predist := DMAT.Converted.FromElement(vec_pre, RowMap);
@@ -414,16 +420,21 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     END;//END lbfgsUpdate_corr
     //Calculate the next Hessian diagonal value for the next iteration of the lbfgs algorithm based on the current parameter vector (s) and gradient vector (y)
     //Formula 9.6 in the book :  Hdiag = y'*s/(y'*y);
-    EXPORT lbfgsUpdate_Hdiag (DATASET(Mat.Types.Element) s, DATASET(Mat.Types.Element) y) := FUNCTION
-      sdist := DMAT.Converted.FromElement(s,RowMap);
-      ydist := DMAT.Converted.FromElement(y,RowMap);
+    EXPORT lbfgsUpdate_Hdiag (DATASET(Mat.Types.Element) s1, DATASET(Mat.Types.Element) s2, DATASET(Mat.Types.Element) y1, DATASET(Mat.Types.Element) y2) := FUNCTION
+      vec_predist := DMAT.Converted.FromElement(s1, RowMap);
+      vec_nextdist := DMAT.Converted.FromElement(s2, RowMap);
+      sdist := PBblas.PB_daxpy(-1, vec_predist, vec_nextdist);
+      vec_predist2 := DMAT.Converted.FromElement(y1, RowMap);
+      vec_nextdist2 := DMAT.Converted.FromElement(y2, RowMap);
+      ydist := PBblas.PB_daxpy(-1, vec_predist2, vec_nextdist2);
+
       first_term := PBblas.PB_dgemm (TRUE, FALSE, 1.0, RowMap, ydist, RowMap, sdist, OnevalueMap );
       first_term_M := ML.DMat.Converted.FromPart2Elm (first_term);
       Second_Term := PBblas.PB_dgemm (TRUE, FALSE, 1.0, RowMap, ydist, RowMap, ydist, OnevalueMap );
       Second_Term_M := ML.DMat.Converted.FromPart2Elm (Second_Term);
       HD := First_Term_M[1].value/Second_Term_M[1].value;
       RETURN HD;
-    END;
+    END; // END lbfgsUpdate_Hdiag
   END;//END Limited_Memory_BFGS
   //
   //WolfeLineSearch

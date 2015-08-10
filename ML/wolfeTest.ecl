@@ -7,7 +7,7 @@ IMPORT PBblas;
 emptyC := DATASET([], Types.NumericField);
 //x=[15, 80, 40, 39];
 x := DATASET([
-{1, 1, 150},
+{1, 1, 15},
 {2,1,80},
 {3,1,40},
 {4,1,39}],
@@ -48,9 +48,9 @@ gtd := gtdT[1].value;
 
 WResult := Optimization (0, 0, 0, 0).WolfeLineSearch(x,1,d,f,g,gtd,0.0001,0.9,2,0.000000001,emptyC, emptyC, emptyC,myfunc2,0,0,0,0);
 //OUTPUT(gtd,named('gtd'));
-OUTPUT(WResult,NAMED('WResult'));
+//OUTPUT(WResult,NAMED('WResult'));
 WWWresult := Optimization (0, 0, 0, 0).WolfeOut_FromField(WResult);
-OUTPUT (WWWresult , named ('wwwresult'));
+//OUTPUT (WWWresult , named ('wwwresult'));
 // funresult := myfunc2 ( x, emptyC, emptyC , emptyC);
 // OUTPUT(funresult, NAMED('funresults'));
 
@@ -58,9 +58,61 @@ OUTPUT (WWWresult , named ('wwwresult'));
 // pol2 :=  Optimization (0, 0, 0, 0).polyinterp_noboundry (10.0000  , 12.8652 ,  -1.3527,100.0000 ,  12.9898 ,   1.0860);
 // pol3 := Optimization (0, 0, 0, 0).polyinterp_img ( 0 , 1.0000 , 19.0000 ,8.0000,2.0000,8 );
 
-  // Mr :=  MinFUNCALAKI(x, myfunc2, emptyC, emptyC , emptyC, 3, 0.00001, 5, 2,0, 0, 0,0);  
+   Mr :=  MinFUNCALAKI(x, myfunc2, emptyC, emptyC , emptyC, 3, 0.00001, 5, 3,0, 0, 0,0);  
+   OUTPUT(Mr);
+
+
+   
+   
+   
+   
+   // lbg := DATASET([
+// {1, 1,  -0.3604},
+// {2,1,-0.2707},
+// {3,1, 0.0872},
+// {4,1,-0.9317}],
+// Mat.Types.Element);
+
+ 
+    
+   
+   
+   
+   // old_dir0 := DATASET([
+// {1,1,0},
+// {2,1,0},
+// {3,1,0},
+// {4,1,0},
+// {1,2, 2.6474},
+// {2,2,0.3847},
+// {3,2, 2.3242},
+// {4,2,-0.9292}],
+// Mat.Types.Element);
+
+ 
+    
+    
+    
+    
+     // old_step0 := DATASET([
+// {1,1,0},
+// {2,1,0},
+// {3,1,0},
+// {4,1,0},
+// {1,2, 1.1200},
+// {2,2,0.3810},
+// {3,2, 0.5797},
+// {4,2,0.6651}],
+// Mat.Types.Element);
+
+
+
+// HDIG := DATASET([
+// {1,1, 1.7636}],
+// Mat.Types.Element);
+// lb := Optimization (0, 0, 0, 0).Limited_Memory_BFGS (4, 2).lbfgs ( lbg, old_dir0, old_step0,  HDIG);  
   
- //OUTPUT(Mr);
+// OUTPUT (lb);
 
 
 

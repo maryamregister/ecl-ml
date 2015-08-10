@@ -29,39 +29,45 @@ Layout_Part := PBblas.Types.Layout_Part;
 EXPORT MinFUNCALAKI(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, INTEGER MaxIter, REAL8 tolFun, INTEGER maxFunEvals, INTEGER corrections, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
 //#option ('divideByZero', 'nan'); //In all operation I want to f or g get nan value if it is devided by zero
 //initial parameters
+tolX := 0.000000001;
+
 P := Max (x0, id); //the length of the parameters vector
-
-
-
 //Optimization Module
 O := Optimization (prows, pcols, Maxrows, Maxcols).Limited_Memory_BFGS (P, corrections);
-
-
-
 //initialize Hdiag,old_dir,old_steps, gradient and cost
 //The size of the old_dir and old_steps matrices are "number of parameters" * "number of corrections to store in memory (corrections)"
 // old_dir0 := Mat.Zeros(P, corrections);
 // old_steps0 := old_dir0;
-old_dir0 := DATASET([
-{1, 1, 1},
-{2,1,2},
-{3,1,3},
-{4,1,4},
-{1,2,5},
-{2,2,6},
-{3,2,7},
-{4,2,8}],
-Mat.Types.Element);
-old_steps0 := DATASET([
-{1, 1, 11},
-{2,1,12},
-{3,1,13},
-{4,1,14},
-{1,2,15},
-{2,2,16},
-{3,2,17},
-{4,2,18}],
-Mat.Types.Element);
+
+ //New Matrix Generator
+Mat.Types.Element gen(UNSIGNED4 c, UNSIGNED4 NumRows, REAL8 v=0) := TRANSFORM
+  SELF.x := ((c-1) % NumRows) + 1;
+  SELF.y := ((c-1) DIV NumRows) + 1;
+  SELF.value := v;
+END;
+// MyVec := DATASET(P * corrections, gen(COUNTER, P));
+old_dir0 := DATASET(P * corrections, gen(COUNTER, P));
+old_steps0 := DATASET(P * corrections, gen(COUNTER, P));
+// old_dir0 := DATASET([
+// {1,1,1},
+// {2,1,2},
+// {3,1,3},
+// {4,1,4},
+// {1,2,5},
+// {2,2,6},
+// {3,2,7},
+// {4,2,8}],
+// Mat.Types.Element);
+// old_steps0 := DATASET([
+// {1, 1, 11},
+// {2,1,12},
+// {3,1,13},
+// {4,1,14},
+// {1,2,15},
+// {2,2,16},
+// {3,2,17},
+// {4,2,18}],
+// Mat.Types.Element);
 Hdiag0no := DATASET([{1,1,1,5}], Mat.Types.MUElement); //initialize hessian diag as 1
 //Evaluate Initial Point
 CostGrad0 := CostFunc (x0,CostFunc_params,TrainData, TrainLabel);
@@ -91,23 +97,22 @@ Topass := x0no + g0n0 + old_steps0no + old_dir0no + Hdiag0no + C0n0 + FunEvalno 
 step (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
   x_pre := Mat.MU.From (inputp,1);// x_pre : x previouse : parameter vector from the last iteration (to be updated)
   g_pre := Mat.MU.From (inputp,2);
+  g_pre_ := ML.Mat.Scale (g_pre , -1);
   Step_pre := Mat.MU.From (inputp,3);
   Dir_pre := Mat.MU.From (inputp,4);
   H_pre := Mat.MU.From (inputp,5);
   f_pre := Mat.MU.From (inputp,6)[1].value;
   FunEval_pre := Mat.MU.From (inputp,7)[1].value;
-  HG_ :=  IF (coun = 1, O.Steepest_Descent (g_pre), O.lbfgs(g_pre,Step_pre,Dir_pre,H_pre));//the result is the approximate inverse Hessian, multiplied by the gradient, multiplied by -1 and it is in PBblas.layout format
+  HG_ :=  IF (coun = 1, O.Steepest_Descent (g_pre), O.lbfgs(g_pre_,Dir_pre, Step_pre,H_pre));//the result is the approximate inverse Hessian, multiplied by the gradient and it is in PBblas.layout format
   d := ML.DMat.Converted.FromPart2DS(HG_);
+  d_Nextno := Mat.MU.To (ML.Types.ToMatrix(d),8);
   //check if d is legal 940 //??????
   //HG_ is actually search direction in fromual 3.1
   // ************Compute Step Length **************
-  
   //Directional Derivative : gtd = g'*d;
   gtd := ML.Mat.Mul(ML.Mat.Trans((g_pre)),ML.Types.ToMatrix(d));
-  
   // Select Initial Guess
   t := IF (coun = 1,0.5544,1); //to be calculated ????
-  t0 := 1; // select initial guess
   //calculate gtd to be passed to the wolfe algortihm
   //find point satisfiying wolfe
   //[t,f,g,LSfunEvals] = WolfeLineSearch(x,t,d,f,g,gtd,c1,c2,LS,25,tolX,debug,doPlot,1,funObj,varargin{:});
@@ -115,37 +120,45 @@ step (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
   no_t_t_ := Optimization (prows, pcols, Maxrows, Maxcols).WolfeOut_FromField(t_neworig);
   //Check that progress can be made along direction : if gtd > -tolX
   //update the parameter vector:x_new = xold+alpha*HG_
-  t_new := 1.2;
-  //For now consider the newx as the oldx????
+  t_new := Mat.MU.FROM (no_t_t_,1)[1].value;
+  
+  t_newno := DATASET([{1,1,t_new,10}], Mat.Types.MUElement);
+  FunEval_Wolfe := Mat.MU.FROM (no_t_t_,4)[1].value;
+  
   x_pre_updated :=  ML.Mat.Add((x_pre),ML.Mat.Scale(ML.Types.ToMatrix(d),t_new));
   x_Next := ML.Types.FromMatrix(x_pre_updated);
-  FunEval_new := FunEval_pre + 1;
-
-  CostGrad_Next := CostFunc (x_Next,CostFunc_params,TrainData, TrainLabel);
-  g_Next := CostGrad_Next (id<=P);
-  Cost_Next := CostGrad_Next (id = P+1)[1].value;
-  x_Next_no := Mat.MU.To (ML.Types.ToMatrix(x_Next),1);//??? should be modified when the true updated x is calculated above
-  g_Nextno := Mat.MU.To (ML.Types.ToMatrix(g_Next),2);
+  FunEval_new := FunEval_pre + FunEval_Wolfe;
+  // CostGrad_Next := CostFunc (x_Next,CostFunc_params,TrainData, TrainLabel);
+  // g_Next := CostGrad_Next (id<=P);
+  // Cost_Next := CostGrad_Next (id = P+1)[1].value;
+  g_Next := Mat.MU.FROM (no_t_t_,3);
+  Cost_Next := Mat.MU.FROM (no_t_t_,2)[1].value;
+  fpre_fnext := Cost_Next - f_pre;
+  fpre_fnextno := DATASET([{1,1,fpre_fnext,9}], Mat.Types.MUElement);
+  x_Next_no := Mat.MU.To (ML.Types.ToMatrix(x_Next),1);
+  g_Nextno := Mat.MU.To (g_Next,2);
   C_Nextno := DATASET([{1,1,Cost_Next,6}], Mat.Types.MUElement);
   //calculate new Hessian diag, dir and steps
-  Step_Next := O.lbfgsUpdate_corr(x_pre, x_pre_updated, Step_pre);
+  Step_Next :=  O.lbfgsUpdate_corr (g_pre, g_Next, Step_pre);
   Step_Nextno := Mat.MU.To (Step_Next, 3);
-  Dir_Next := O.lbfgsUpdate_corr (g_pre, ML.Types.ToMatrix(g_Next), Dir_pre);
+  Dir_Next := O.lbfgsUpdate_corr(x_pre, x_pre_updated, Dir_pre);
   Dir_Nextno := Mat.MU.To (Dir_Next, 4);
-  H_Next := O.lbfgsUpdate_Hdiag (x_pre, g_pre);
+  //H_Next := O.lbfgsUpdate_Hdiag (x_pre, g_pre);
+  H_Next := O.lbfgsUpdate_Hdiag (x_pre, x_pre_updated, g_pre, g_Next);
   H_Nextno := DATASET([{1,1,H_Next,5}], Mat.Types.MUElement);
-  
   //update FunEval (FunEval = funEval + FunEvalLS
-  FunEval_Next := 10; //felan ???
+  FunEval_Next := FunEval_New; //felan ???
+  FunEval_Nextno := DATASET([{1,1,FunEval_Next,7}], Mat.Types.MUElement);
   //creat the return value which is appending all the values that need to be passed
-  HG_field := ML.DMat.Converted.FromPart2DS(HG_);
+  ToReturn := x_Next_no + g_Nextno + Step_Nextno + Dir_Nextno + H_Nextno+  C_Nextno + FunEval_Nextno + d_Nextno + fpre_fnextno + t_newno;
   //RETURN  Mat.MU.To (ML.Types.ToMatrix(HG_field),1);
-  //RETURN Mat.MU.To ((x_pre),1) + DATASET([{1,1,t,2}], Mat.Types.MUElement) + Mat.MU.To (ML.Types.ToMatrix(d),3) + DATASET([{1,1,f_pre,4}], Mat.Types.MUElement) + Mat.MU.To ((g_pre),5) + DATASET([{1,1,gtd[1].value,6}], Mat.Types.MUElement) + t_new;
-  RETURN no_t_t_;
-//ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 10, 0.000000001  
- 
+  //RETURN Mat.MU.To ((x_pre),1) + DATASET([{1,1,t,2}], Mat.Types.MUElement) + Mat.MU.To (ML.Types.ToMatrix(d),3) + DATASET([{1,1,f_pre,4}], Mat.Types.MUElement) + Mat.MU.To ((g_pre),5) + DATASET([{1,1,gtd[1].value,6}], Mat.Types.MUElement) ;
+  //RETURN DATASET([{1,1,FunEval_new,2}], Mat.Types.MUElement);
+  RETURN ToReturn;
+//ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 10, 0.000000001
+//RETURN IF (coun =1 , ToReturn,  Mat.MU.To(g_pre,1) + Mat.MU.To(Dir_pre,2) + Mat.MU.To(Step_pre,3) + Mat.MU.To(H_pre,4));  
 END; //END step
-myout := LOOP(topass, COUNTER <= 1, step(ROWS(LEFT),COUNTER));
+myout := LOOP(topass, COUNTER <= 8, step(ROWS(LEFT),COUNTER));
 //Check Wethere the calculated d is legal
 IsLegald (DATASET (Mat.Types.MUElement) q) := FUNCTION //??????????
   d_temp := Mat.MU.From (q,8);
@@ -156,27 +169,41 @@ END;
 // Check Optimality Condition: if sum(abs(g)) <= tolFun ????????????
 OptimalityCond (DATASET (Mat.Types.MUElement) q) := FUNCTION
   g_temp := Mat.MU.From (q,2);
-  RETURN TRUE;
+  r := RECORD
+    Mat.Types.t_Index x := 1 ;
+    Mat.Types.t_Index y := g_temp.y;
+    Mat. Types.t_Value value := SUM(GROUP,ABS(g_temp.value));
+  END;
+  SumABSCol := TABLE(g_temp,r,g_temp.y);
+  RETURN IF( SumABSCol[1].value < tolFun , TRUE, FALSE);
 END;
 
 // Check Lack of Progress 
 //1-if sum(abs(t*d)) <= tolX ??????
 LackofProgress1 (DATASET (Mat.Types.MUElement) q) := FUNCTION
-  RETURN TRUE;
+  d_temp := Mat.MU.From (q,8);
+  t_temp := Mat.MU.From (q,10)[1].value;
+  r := RECORD
+    Mat.Types.t_Index x := 1 ;
+    Mat.Types.t_Index y := d_temp.y;
+    Mat. Types.t_Value value := SUM(GROUP,ABS(d_temp.value * t_temp));
+  END;
+  SumABSCol := TABLE(d_temp,r,d_temp.y);
+  RETURN IF( SumABSCol[1].value < tolX , TRUE, FALSE);
 END;
 
 
 //2- if abs(f-f_old) < tolX
 LackofProgress2 (DATASET (Mat.Types.MUElement) q) := FUNCTION
-  f_f_temp := Mat.MU.From (q,9);
-  RETURN TRUE;
+  f_f_temp := Mat.MU.From (q,9)[1].value;
+  RETURN IF (ABS (f_f_temp) < tolX, TRUE, FALSE);
 END;
 
 //Check for going over evaluation limit
+//if funEvals*funEvalMultiplier > maxFunEvals   (funEvalMultiplier=1)
 EvaluationLimit (DATASET (Mat.Types.MUElement) q) := FUNCTION
   fun_temp := Mat.MU.From (q,7)[1].value;
-  ISitfff := (fun_temp = 10) ;
-  RETURN TRUE;
+  RETURN IF (fun_temp > maxFunEvals, TRUE, FALSE);
 END;
 //xout := IF (IsInitialPointOptimal, x0, step(Topass,1));
 //loopcond := COUNTER <MaxItr & ~IsLegald () & ~OptimalityCond & ~LackofProgress1 & ~LackofProgress2 & ~EvaluationLimit
