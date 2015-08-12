@@ -758,6 +758,10 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
    // RETURN DATASET([{1,1,Zoom_Max_Itr,200}], Mat.Types.MUElement) ;
   // RETURN ZOOMInterval;
   END;// END WolfeLineSearch
+  //no = 1 : t
+  //no = 2 : f
+  //no = 3 : g
+  //no = 4 : FuncEval : number of times the cost fucntion has been evaluated in the Wolfe fucntion
   EXPORT WolfeOut_FromField(DATASET(Types.NumericField) mod) := FUNCTION
     modelD_Map :=	DATASET([{'id','ID'},{'x','1'},{'y','2'},{'value','3'},{'no','4'}], {STRING orig_name; STRING assigned_name;});
     FromField(mod,Mat.Types.MUElement,dOut,modelD_Map);
@@ -854,4 +858,200 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       FinalResult := IF (BCond, Breakresult, RegularResult);
     RETURN FinalResult;
   END; // END ArmijoBacktrack
+
+//LBFGS algorithm
+//Returns final updated parameter: numericField foramt
+//x0: input parameter vector (column)
+//CostFunc : function handler , it should return a Cost value and the gradient values which is a vector with the same size of x0
+//The output of the CostFunc function should be in numericField format where the last id's value (the maximum id) represents the rest
+//represent the gradient vector
+//So basically CostFunc should recive all its parameters in one single numericField structure + training data + training labels and return a vector of the gradients+costvalue
+//Cost function should have a universal interface, so it recives all parameters in numericfield format and returns in numericfield format
+//CostFunc_params : parameters that need to be passed to the CostFunc
+//TrainData : Train data in numericField format
+//TrainLabel : labels asigned to the train data ( if it is an un-supervised task this parameter would be '')
+//MaxIter: Maximum number of iteration allowed in the optimization algorithm
+//tolFun : Termination tolerance on the first-order optimality (1e-5)
+//TolX : Termination tolerance on progress in terms of function/parameter changes (1e-9)
+//maxFunEvals : Maximum number of function evaluations allowed (1000)
+//corrections : number of corrections to store in memory (default: 100) higher numbers converge faster but use more memory)
+//this Macro recives all the parameters in numeric field fromat and returns in numeric field format
+//prows and maxrows related to "numer of parameters (P)" which is actually the length of the x0 vector
+//pcols and Maxcols are relaetd to "number of correstions to store in the memory (corrections)" which is in the MethodOptions
+//In all operation I want to f or g get nan value if it is devided by zero (do I need to include #option on top of the CostFunc)????????
+EXPORT MinFUNCkk(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, INTEGER MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
+//#option ('divideByZero', 'nan'); //In all operation I want to f or g get nan value if it is devided by zero
+//Functions used
+SumABSg (DATASET (Types.NumericField) g_temp) := FUNCTION
+  r := RECORD
+    t_RecordID id := 1 ;
+    t_FieldNumber number := 1;
+    t_FieldReal value := SUM(GROUP,ABS(g_temp.value));
+  END;
+  SumABSCol := TABLE(g_temp,r);
+  RETURN SumABSCol[1].value;
+END;
+SumABSg_matrix (DATASET (Mat.Types.Element) g_temp) := FUNCTION
+  r := RECORD
+    Mat.Types.t_Index x := 1 ;
+    Mat.Types.t_Index y := 1;
+    Mat.Types.t_value value := SUM(GROUP,ABS(g_temp.value));
+  END;
+  SumABSCol := TABLE(g_temp,r);
+  RETURN SumABSCol[1].value;
+END;
+// Check Optimality Condition: if sum(abs(g)) <= tolFun return True
+OptimalityCond (DATASET (Types.NumericField) g_temp) := FUNCTION
+  sag := SumABSg (g_temp);
+  RETURN IF( sag <= tolFun , TRUE, FALSE);
+END;
+//Check Optimality Condition for the Loop : if sum(abs(g)) <= tolFun return TRUE
+OptimalityCond_Loop (DATASET (Mat.Types.MUElement) q) := FUNCTION
+  g_t := Mat.MU.From (q,2);
+  sag := SumABSg_matrix (g_t);
+  RETURN IF( sag <= tolFun , TRUE, FALSE);
+END;//END OptimalityCond_Loop
+//Check for lack of progress 1: if sum(abs(t*d)) <= tolX return TRUE
+LackofProgress1 (DATASET (Mat.Types.MUElement) q) := FUNCTION
+  d_temp := Mat.MU.From (q,8);
+  t_temp := Mat.MU.From (q,10)[1].value;
+  r := RECORD
+    Mat.Types.t_Index x := 1 ;
+    Mat.Types.t_Index y := d_temp.y;
+    Mat. Types.t_Value value := SUM(GROUP,ABS(d_temp.value * t_temp));
+  END;
+  SumABSCol := TABLE(d_temp,r,d_temp.y);
+  RETURN IF( SumABSCol[1].value < tolX , TRUE, FALSE);
+END;
+//Check for lack of progress 2: if abs(f-f_old) < tolX return TRUE
+LackofProgress2 (DATASET (Mat.Types.MUElement) q) := FUNCTION
+  f_f_temp := Mat.MU.From (q,9)[1].value;
+  RETURN IF (ABS (f_f_temp) < tolX, TRUE, FALSE);
+END;
+//Check for going over evaluation limit
+//if funEvals*funEvalMultiplier > maxFunEvals   (funEvalMultiplier=1)
+EvaluationLimit (DATASET (Mat.Types.MUElement) q) := FUNCTION
+  fun_temp := Mat.MU.From (q,7)[1].value;
+  RETURN IF (fun_temp > maxFunEvals, TRUE, FALSE);
+END;
+IsLegal (DATASET (Types.NumericField) inp) := FUNCTION //???to be defined
+  RETURN 1;
+END;
+//the length of the parameters vector (for example in an neural network algorith, all the weight parameters are passed in ONE vector
+//to the optimization algorithm to get updated
+P := Max (x0, id);
+ExtractGrad (DATASET(Types.NumericField) inp) := FUNCTION
+  RETURN inp (id <= P);
+END;
+ExtractCost (DATASET(Types.NumericField) inp) := FUNCTION
+  RETURN inp (id = (P+1))[1].value;
+END;
+//Evaluate Initial Point
+CostGrad0 := CostFunc (x0,CostFunc_params,TrainData, TrainLabel);
+g0 := ExtractGrad (CostGrad0);
+Cost0 := ExtractCost (CostGrad0);
+//Check the optimality of the initial point (if sum(abs(g)) <= tolFun)
+IsInitialPointOptimal := OptimalityCond (g0);
+output_x0_cost0 := x0 + CostGrad0 (id = (P+1));
+//LBFGS Module
+O := Limited_Memory_BFGS (P, corrections);
+//initialize Hdiag,old_dir,old_steps, gradient and cost
+//The size of the old_dir and old_steps matrices are "number of parameters" * "number of corrections to store in memory (corrections)"
+// old_dir0 := Mat.Zeros(P, corrections);
+// old_steps0 := old_dir0;
+//New Matrix Generator
+Mat.Types.Element gen(UNSIGNED4 c, UNSIGNED4 NumRows, REAL8 v=0) := TRANSFORM
+  SELF.x := ((c-1) % NumRows) + 1;
+  SELF.y := ((c-1) DIV NumRows) + 1;
+  SELF.value := v;
+END;
+// Initialize dirs and steps matrices
+old_dir0   := DATASET(P * corrections, gen(COUNTER, P));
+old_steps0 := DATASET(P * corrections, gen(COUNTER, P));
+//initialize hessian diag as 1
+Hdiag0no := DATASET([{1,1,1,5}], Mat.Types.MUElement);
+//number of times the cost function is evaluated
+FunEval := 1; 
+//Perform up to a maximum of 'maxIter' descent steps:
+//put all the parameters that need to be sent to the step fucntion in a Mat.Types.MUElement format
+x0no := Mat.MU.To (ML.Types.ToMatrix(x0),1);
+g0n0 := Mat.MU.To (ML.Types.ToMatrix(g0),2);
+old_steps0no := Mat.MU.To (old_steps0,3);
+old_dir0no := Mat.MU.To (old_dir0,4);
+C0n0 := DATASET([{1,1,Cost0,6}], Mat.Types.MUElement);
+FunEvalno := DATASET([{1,1,FunEval,7}], Mat.Types.MUElement);
+dno := DATASET([{1,1,-1,8}], Mat.Types.MUElement);
+f_fno := DATASET([{1,1,100 +tolFun ,9}], Mat.Types.MUElement); //f_new-f_old in that iteration
+tno := DATASET([{1,1,1,10}], Mat.Types.MUElement);//initial step value
+dLegalno := DATASET([{1,1,1,11}], Mat.Types.MUElement);
+Topass := x0no + g0n0 + old_steps0no + old_dir0no + Hdiag0no + C0n0 + FunEvalno + dno +f_fno + tno + dLegalno;
+//updating step function
+step (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
+  x_pre := Mat.MU.From (inputp,1);// x_pre : x previouse : parameter vector from the last iteration (to be updated)
+  g_pre := Mat.MU.From (inputp,2);
+  g_pre_ := ML.Mat.Scale (g_pre , -1);
+  Step_pre := Mat.MU.From (inputp,3);
+  Dir_pre := Mat.MU.From (inputp,4);
+  H_pre := Mat.MU.From (inputp,5);
+  f_pre := Mat.MU.From (inputp,6)[1].value;
+  FunEval_pre := Mat.MU.From (inputp,7)[1].value;
+  //HG_ is actually search direction in fromual 3.1
+  HG_ :=  IF (coun = 1, O.Steepest_Descent (g_pre), O.lbfgs(g_pre_,Dir_pre, Step_pre,H_pre));//the result is the approximate inverse Hessian, multiplied by the gradient and it is in PBblas.layout format
+  d := ML.DMat.Converted.FromPart2DS(HG_);
+  dlegalstep := IsLegal (d);
+  dlegalstepno := DATASET([{1,1,dlegalstep,11}], Mat.Types.MUElement);
+  d_Nextno := Mat.MU.To (ML.Types.ToMatrix(d),8);
+  // ************Compute Step Length **************
+  //Directional Derivative : gtd = g'*d;
+  //calculate gtd to be passed to the wolfe algortihm
+  gtd := ML.Mat.Mul(ML.Mat.Trans((g_pre)),ML.Types.ToMatrix(d));
+  //Check that progress can be made along direction : if gtd > -tolX then break!
+  gtdprogress := IF (gtd[1].value > -1*tolX, 0, 1);
+  gtdprogressno := DATASET([{1,1,gtdprogress,12}], Mat.Types.MUElement);
+  // Select Initial Guess If coun =1 then t = min(1,1/sum(abs(g)));
+  t := IF (coun = 1,MIN ([1, 1/SumABSg (ML.Types.FromMatrix (g_pre))]),1);
+  //find point satisfiying wolfe
+  //[t,f,g,LSfunEvals] = WolfeLineSearch(x,t,d,f,g,gtd,c1,c2,LS,25,tolX,debug,doPlot,1,funObj,varargin{:});
+  t_neworig := WolfeLineSearch(ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 10, 0.000000001, CostFunc_params, TrainData , TrainLabel, CostFunc , prows, pcols, Maxrows, Maxcols);
+  no_t_t_ := WolfeOut_FromField(t_neworig);
+  //update the parameter vector:x_new = xold+alpha*HG_ : x = x + t*d
+  t_new := Mat.MU.FROM (no_t_t_,1)[1].value; 
+  t_newno := DATASET([{1,1,t_new,10}], Mat.Types.MUElement);
+  x_pre_updated :=  ML.Mat.Add((x_pre),ML.Mat.Scale(ML.Types.ToMatrix(d),t_new));
+  x_Next := ML.Types.FromMatrix(x_pre_updated);
+  //Update FunEval
+  FunEval_Wolfe := Mat.MU.FROM (no_t_t_,4)[1].value; 
+  FunEval_next := FunEval_pre + FunEval_Wolfe;
+  FunEval_Nextno := DATASET([{1,1,FunEval_next,7}], Mat.Types.MUElement);
+  g_Next := Mat.MU.FROM (no_t_t_,3);
+  Cost_Next := Mat.MU.FROM (no_t_t_,2)[1].value;
+  fpre_fnext := Cost_Next - f_pre;
+  fpre_fnextno := DATASET([{1,1,fpre_fnext,9}], Mat.Types.MUElement);
+  x_Next_no := Mat.MU.To (ML.Types.ToMatrix(x_Next),1);
+  g_Nextno := Mat.MU.To (g_Next,2);
+  C_Nextno := DATASET([{1,1,Cost_Next,6}], Mat.Types.MUElement);
+  //calculate new Hessian diag, dir and steps
+  Step_Next :=  O.lbfgsUpdate_corr (g_pre, g_Next, Step_pre);
+  Step_Nextno := Mat.MU.To (Step_Next, 3);
+  Dir_Next := O.lbfgsUpdate_corr(x_pre, x_pre_updated, Dir_pre);
+  Dir_Nextno := Mat.MU.To (Dir_Next, 4);
+  //H_Next := O.lbfgsUpdate_Hdiag (x_pre, g_pre);
+  H_Next := O.lbfgsUpdate_Hdiag (x_pre, x_pre_updated, g_pre, g_Next);
+  H_Nextno := DATASET([{1,1,H_Next,5}], Mat.Types.MUElement);
+  //creat the return value which is appending all the values that need to be passed
+  ToReturn := x_Next_no + g_Nextno + Step_Nextno + Dir_Nextno + H_Nextno+  C_Nextno + FunEval_Nextno + d_Nextno + fpre_fnextno + t_newno + dlegalstepno + gtdprogressno;
+  ToReturn_dnotLegal := inputp (no=1) + inputp (no=6) + dlegalstepno + gtdprogressno;
+  RETURN IF (dlegalstep=1 AND gtdprogress =1, ToReturn, ToReturn_dnotLegal);  
+END; //END step
+stepout := LOOP(topass, COUNTER <= 2 AND Mat.MU.From (ROWS(LEFT),11)[1].value = 1 AND Mat.MU.From (ROWS(LEFT),12)[1].value = 1, step(ROWS(LEFT),COUNTER));
+//xout := IF (IsInitialPointOptimal, x0, step(Topass,1));
+//loopcond := COUNTER <MaxItr & ~IsLegald () & ~OptimalityCond & ~LackofProgress1 & ~LackofProgress2 & ~EvaluationLimit
+xfinal := ML.Types.FromMatrix (Mat.MU.From (stepout,1));
+costfinal := DATASET ([{P+1,1,Mat.MU.From (stepout,6)[1].value}],Types.NumericField);
+output_xfinal_costfinal := xfinal + costfinal;
+FinalResult := IF(IsInitialPointOptimal,output_x0_cost0 ,output_xfinal_costfinal);
+//RETURN FinalResult; orig
+RETURN stepout;
+END;
+  
 END;// END Optimization

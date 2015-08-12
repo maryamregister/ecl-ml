@@ -58,9 +58,11 @@ WWWresult := Optimization (0, 0, 0, 0).WolfeOut_FromField(WResult);
 // pol2 :=  Optimization (0, 0, 0, 0).polyinterp_noboundry (10.0000  , 12.8652 ,  -1.3527,100.0000 ,  12.9898 ,   1.0860);
 // pol3 := Optimization (0, 0, 0, 0).polyinterp_img ( 0 , 1.0000 , 19.0000 ,8.0000,2.0000,8 );
 
-   Mr :=  MinFUNCALAKI(x, myfunc2, emptyC, emptyC , emptyC, 3, 0.00001, 5, 3,0, 0, 0,0);  
-   OUTPUT(Mr);
-
+   // Mr :=  MinFUNCALAKI(x, myfunc2, emptyC, emptyC , emptyC, 3, 0.00001, 5, 3,0, 0, 0,0);  
+   // OUTPUT(Mr);
+   
+   man:= Optimization (0, 0, 0, 0).MinFUNCkk (x, myfunc2, emptyC, emptyC , emptyC, 3, 0.00001, 0.000000001,5, 3,0, 0, 0,0);  
+OUTPUT (man);
 
    
    
