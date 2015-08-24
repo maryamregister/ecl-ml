@@ -1,10 +1,12 @@
-﻿IMPORT ML;
+﻿//#option ('divideByZero', 'nan');
+IMPORT ML;
 IMPORT * FROM $;
 IMPORT $.Mat;
 IMPORT * FROM ML.Types;
 IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
+
 //Func : handle to the function we want to minimize it, its output should be the error cost and the error gradient
 EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
 
@@ -304,15 +306,12 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     SHARED RowMap := PBblas.Matrix_Map (P,1,sizeTable[1].f_b_rows, 1);
     SHARED OnevalueMap := PBblas.Matrix_Map (1,1,1, 1);
 
-    //this function is used for the very first step in lbfgs algorithm
+    //this function is used for the very first iteration in lbfgs algorithm
     EXPORT Steepest_Descent (DATASET(Mat.Types.Element) g) := FUNCTION
       gdist := DMAT.Converted.FromElement(g, RowMap);
       gdist_ := PBblas.PB_dscal(-1, gdist);
       RETURN gdist_;
     END;
-
-
-
     //Implementation of Limited_Memory BFGS algorithm
     //The implementation is done based on "Numerical Optimization Authors: Nocedal, Jorge, Wright, Stephen"
     //corrections : number of corrections to store in memory
@@ -326,7 +325,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       //Functions needed in calculations
       PBblas.Types.value_t Reciprocal(PBblas.Types.value_t v, 
                                       PBblas.Types.dimension_t r, 
-                                      PBblas.Types.dimension_t c) := 1/v;
+                                      PBblas.Types.dimension_t c) := IF (v!=0, 1/v, 0); //based on the current implementation of the lbfgs fucntion, I want the values to be zero where Reciprocal is used and division by zero occurs. Even though this is the default behaviour of ECL, I have changed this default behaviour to produce NAN when division by zero occurs in the entire MinFunc so here I explecitly have to say that if division by zero occures it should equal to 0.
       //maps used
       MainMap := PBblas.Matrix_Map (P,K,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
       ddist := DMAT.Converted.FromElement(d,MainMap);
@@ -355,7 +354,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       loop1 (DATASET(PBblas.Types.MUElement) inputin, INTEGER coun) := FUNCTION
         q := PBblas.MU.FROM(inputin,0);
         i := K-coun+1;//assumption is that in the steps and dir matrices the highest the index the more recent the vector is
-        si := PROJECT(s(y=i),TRANSFORM(Mat.Types.Element,SELF.y :=1;SELF:=LEFT));//retrive the ith column and the y value should be 1 (not sure if it is important or not)???
+        si := PROJECT(s(y=i),TRANSFORM(Mat.Types.Element,SELF.y :=1;SELF:=LEFT));//retrive the ith column and the y value should be 1
         sidist := DMAT.Converted.FromElement(si,RowMap);//any way to extract sidist directly from sdist?
         //ai=rhoi*siT*q
         ai := PBblas.PB_dgemm(TRUE, FALSE, rho(y=i)[1].value, RowMap, sidist, RowMap, q, OnevalueMap);
@@ -390,7 +389,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       //R2_ := PBblas.PB_dscal(-1, R2) ;
       RETURN R2;
     END;// END lbfgs
-    //This function adds the most recent vector (vec) to the matrix (old_mat) and removes the oldest vector from the matrix
+    //This function adds the most recent vectors differences (vec_next-vec_pre) to the matrix (old_mat) and removes the oldest vector from the matrix
     //old_mat can be a P*K matrix that each column can be a parameter vector or a gradient vector in lbfgs algorithm i.e. Steps and Dirs matrices respectively
     //in each step of the lbfgs algorithm Steps and Dirs matrices should be updated. The most recent vector should be added and the oldest vector should be removed
     //The most recent vector should apear as the last column in the matrix and the oldest vector is actually the first column that should be removed
@@ -420,21 +419,42 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     END;//END lbfgsUpdate_corr
     //Calculate the next Hessian diagonal value for the next iteration of the lbfgs algorithm based on the current parameter vector (s) and gradient vector (y)
     //Formula 9.6 in the book :  Hdiag = y'*s/(y'*y);
-    EXPORT lbfgsUpdate_Hdiag (DATASET(Mat.Types.Element) s1, DATASET(Mat.Types.Element) s2, DATASET(Mat.Types.Element) y1, DATASET(Mat.Types.Element) y2) := FUNCTION
+    EXPORT lbfgsUpdate_Hdiag (DATASET(Mat.Types.Element) s1, DATASET(Mat.Types.Element) s2, DATASET(Mat.Types.Element) y1, DATASET(Mat.Types.Element) y2, REAL8 hdiaginput) := FUNCTION
       vec_predist := DMAT.Converted.FromElement(s1, RowMap);
       vec_nextdist := DMAT.Converted.FromElement(s2, RowMap);
       sdist := PBblas.PB_daxpy(-1, vec_predist, vec_nextdist);
       vec_predist2 := DMAT.Converted.FromElement(y1, RowMap);
       vec_nextdist2 := DMAT.Converted.FromElement(y2, RowMap);
       ydist := PBblas.PB_daxpy(-1, vec_predist2, vec_nextdist2);
-
       first_term := PBblas.PB_dgemm (TRUE, FALSE, 1.0, RowMap, ydist, RowMap, sdist, OnevalueMap );
       first_term_M := ML.DMat.Converted.FromPart2Elm (first_term);
       Second_Term := PBblas.PB_dgemm (TRUE, FALSE, 1.0, RowMap, ydist, RowMap, ydist, OnevalueMap );
       Second_Term_M := ML.DMat.Converted.FromPart2Elm (Second_Term);
-      HD := First_Term_M[1].value/Second_Term_M[1].value;
+      HD := IF (First_Term_M[1].value>0.0000000001, First_Term_M[1].value/Second_Term_M[1].value, hdiaginput);
       RETURN HD;
     END; // END lbfgsUpdate_Hdiag
+    EXPORT lbfgsUpdate_Dirs (DATASET(Mat.Types.Element) s1, DATASET(Mat.Types.Element) s2, DATASET(Mat.Types.Element) y1, DATASET(Mat.Types.Element) y2, DATASET(Mat.Types.Element) old_dir_mat) := FUNCTION
+      vec_predist := DMAT.Converted.FromElement(s1, RowMap);
+      vec_nextdist := DMAT.Converted.FromElement(s2, RowMap);
+      sdist := PBblas.PB_daxpy(-1, vec_predist, vec_nextdist);
+      vec_predist2 := DMAT.Converted.FromElement(y1, RowMap);
+      vec_nextdist2 := DMAT.Converted.FromElement(y2, RowMap);
+      ydist := PBblas.PB_daxpy(-1, vec_predist2, vec_nextdist2);
+      ys_term := PBblas.PB_dgemm (TRUE, FALSE, 1.0, RowMap, ydist, RowMap, sdist, OnevalueMap );
+      ys_term_M := ML.DMat.Converted.FromPart2Elm (ys_term);
+      RETURN IF(ys_term_M[1].value>0.0000000001,lbfgsUpdate_corr (s1, s2, old_dir_mat) ,old_dir_mat );
+    END; // END lbfgsUpdate_Dirs
+    EXPORT lbfgsUpdate_Stps (DATASET(Mat.Types.Element) s1, DATASET(Mat.Types.Element) s2, DATASET(Mat.Types.Element) y1, DATASET(Mat.Types.Element) y2, DATASET(Mat.Types.Element) old_stp_mat) := FUNCTION
+      vec_predist := DMAT.Converted.FromElement(s1, RowMap);
+      vec_nextdist := DMAT.Converted.FromElement(s2, RowMap);
+      sdist := PBblas.PB_daxpy(-1, vec_predist, vec_nextdist);
+      vec_predist2 := DMAT.Converted.FromElement(y1, RowMap);
+      vec_nextdist2 := DMAT.Converted.FromElement(y2, RowMap);
+      ydist := PBblas.PB_daxpy(-1, vec_predist2, vec_nextdist2);
+      ys_term := PBblas.PB_dgemm (TRUE, FALSE, 1.0, RowMap, ydist, RowMap, sdist, OnevalueMap );
+      ys_term_M := ML.DMat.Converted.FromPart2Elm (ys_term);
+      RETURN IF(ys_term_M[1].value>0.0000000001,lbfgsUpdate_corr (y1, y2, old_stp_mat) ,old_stp_mat );
+    END; // END lbfgsUpdate_Stps
   END;//END Limited_Memory_BFGS
   //
   //WolfeLineSearch
@@ -478,17 +498,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     ArmijoBacktrack4 (DATASET (Mat.Types.MUElement) inputpp) := FUNCTION // to be defined with recieving real parameters (should be a macro similar to this one)
       RETURN inputpp;
     END;
-    // polyinterp (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
-      // d1 := gtd_1 + gtd_2 - (3*((f_1-f_2)/(t_1-t_2)));
-      // d2 := SQRT ((d1*d1)-(gtd_1*gtd_2));
-      // d2real := TRUE; //check it ???
-      // temp := IF (d2real,t_2 - ((t_2-t_1)*((gtd_2+d2-d1)/(gtd_2-gtd_1+(2*d2)))),-100);
-      // temp100 := temp =-100;
-      // polResult := IF (temp100,(t_1+t_2)/2,MIN([MAX([temp,t_1]),t_2]));
-      // RETURN polResult;
-    // END;
 
-    //OK
     WolfeBracketing ( Real8 fNew, Real8 fPrev, Real8 gtdNew, REAL8 gtdPrev, REAL8 tt, REAL8 tPrev, DATASET(Mat.Types.Element) gNew, DATASET(Mat.Types.Element) gPrev, UNSIGNED8 inputFunEval, UNSIGNED8 BrackLSiter) := FUNCTION
       SetBrackets (REAL8 t1, REAL8 t2, REAL8 fval1, REAL8 fval2, DATASET(Mat.Types.Element) gval1 , DATASET(Mat.Types.Element) gval2) := FUNCTION
         t1no := DATASET([{1,1,t1,10}], Mat.Types.MUElement); //the result of the bracketing algorithm
@@ -574,7 +584,6 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       // Compute new trial value
       //t = polyinterp([bracket(1) bracketFval(1) bracketGval(:,1)'*d bracket(2) bracketFval(2) bracketGval(:,2)'*d],doPlot);
       tTmp := polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
-      //tTmp := IF (coun=1,52.4859, IF(coun=2, 30.5770, IF(coun=3,19.5981, IF(coun=4,17.2821, IF(coun=5,19.4093,IF(coun=6,19.3919, IF(coun=7,19.3902,19.3901)))))));
       //Test that we are making sufficient progress
       insufProgress := (BOOLEAN)Mat.MU.From (WI,300)[1].value;
       BList := [t_first,t_second];
@@ -665,9 +674,9 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       //RETURN DATASET([{1,1,tTmp,1}], Mat.Types.MUElement);
       //RETURN DATASET([{1,1,t_first,1},{2,1,f_first,1},{3,1,gtd_first[1].value,1},{4,1,t_second,1},{5,1,f_second,1},{6,1,gtd_second[1].value ,1}], Mat.Types.MUElement);
     END;// END WolfeZooming
+    //% Evaluate the Objective and Gradient at the Initial Step
     //x_new = x+t*d
     x_new := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t)));
-    // Evaluate the cost and Gradient at the Initial Step
     CostGrad_new := CostFunc (x_new ,CostFunc_params,TrainData, TrainLabel);
     g_new := ExtractGrad (CostGrad_new);
     f_new := ExtractCost (CostGrad_new);
@@ -717,7 +726,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       gtdi_prev := Mat.MU.From (inputp,8);
       gtdi_new := Mat.MU.From (inputp,9);
       AreTheyLegal := IsNotLegal(fi_new) | IsNotLegal(gi_new);
-      //armijo only returns final t results and then the loop will stop becasue bracket1 would be ~-1
+      //armijo only returns final t results and then the loop will stop becasue bracket1 would be ~-1 nad the wolfelinesearch has to return
       WolfeH := WolfeBracketing ( fi_new[1].value, fi_prev[1].value, gtdi_new[1].value, gtdi_prev[1].value, ti[1].value, ti_prev[1].value, gi_new, gi_prev, FunEvalsi[1].value, (coun-1));
       Bracketing_Result := IF (AreTheyLegal, ArmijoBacktrack4(inputp), WolfeH );
       tobereturn := Bracketing_Result + DATASET([{1,1,coun-1,100}], Mat.Types.MUElement);
@@ -754,7 +763,8 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     WolfeOut := IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2);
     AppendID(WolfeOut, id, WolfeOut_id);
     ToField (WolfeOut_id, WolfeOut_id_out, id, 'x,y,value,no');//WolfeOut_id_out is the numeric field format of WolfeOut
-    RETURN WolfeOut_id_out;
+    //RETURN WolfeOut_id_out; orig
+    RETURN ML.Types.FromMatrix(gtd_new);
    // RETURN DATASET([{1,1,Zoom_Max_Itr,200}], Mat.Types.MUElement) ;
   // RETURN ZOOMInterval;
   END;// END WolfeLineSearch
@@ -929,7 +939,7 @@ LackofProgress2 (DATASET (Mat.Types.MUElement) q) := FUNCTION
   RETURN IF (ABS (f_f_temp) < tolX, TRUE, FALSE);
 END;
 //Check for going over evaluation limit
-//if funEvals*funEvalMultiplier > maxFunEvals   (funEvalMultiplier=1)
+//if funEvals*funEvalMultiplier > maxFunEvals return TRUE  (funEvalMultiplier=1)
 EvaluationLimit (DATASET (Mat.Types.MUElement) q) := FUNCTION
   fun_temp := Mat.MU.From (q,7)[1].value;
   RETURN IF (fun_temp > maxFunEvals, TRUE, FALSE);
@@ -984,7 +994,8 @@ dno := DATASET([{1,1,-1,8}], Mat.Types.MUElement);
 f_fno := DATASET([{1,1,100 +tolFun ,9}], Mat.Types.MUElement); //f_new-f_old in that iteration
 tno := DATASET([{1,1,1,10}], Mat.Types.MUElement);//initial step value
 dLegalno := DATASET([{1,1,1,11}], Mat.Types.MUElement);
-Topass := x0no + g0n0 + old_steps0no + old_dir0no + Hdiag0no + C0n0 + FunEvalno + dno +f_fno + tno + dLegalno;
+ProgressAlongDirectionno := DATASET([{1,1,1,12}], Mat.Types.MUElement); ;//Check that progress can be made along direction ( if gtd > -tolX)
+Topass := x0no + g0n0 + old_steps0no + old_dir0no + Hdiag0no + C0n0 + FunEvalno + dno +f_fno + tno + dLegalno + ProgressAlongDirectionno;
 //updating step function
 step (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
   x_pre := Mat.MU.From (inputp,1);// x_pre : x previouse : parameter vector from the last iteration (to be updated)
@@ -1031,19 +1042,32 @@ step (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
   g_Nextno := Mat.MU.To (g_Next,2);
   C_Nextno := DATASET([{1,1,Cost_Next,6}], Mat.Types.MUElement);
   //calculate new Hessian diag, dir and steps
-  Step_Next :=  O.lbfgsUpdate_corr (g_pre, g_Next, Step_pre);
+  //Step_Next :=  O.lbfgsUpdate_corr (g_pre, g_Next, Step_pre);
+  Step_Next := O.lbfgsUpdate_Stps (x_pre, x_pre_updated, g_pre, g_Next, Step_pre);
   Step_Nextno := Mat.MU.To (Step_Next, 3);
-  Dir_Next := O.lbfgsUpdate_corr(x_pre, x_pre_updated, Dir_pre);
+  //Dir_Next := O.lbfgsUpdate_corr(x_pre, x_pre_updated, Dir_pre);
+  Dir_Next := O.lbfgsUpdate_Dirs (x_pre, x_pre_updated, g_pre, g_Next, Dir_pre);
   Dir_Nextno := Mat.MU.To (Dir_Next, 4);
-  //H_Next := O.lbfgsUpdate_Hdiag (x_pre, g_pre);
-  H_Next := O.lbfgsUpdate_Hdiag (x_pre, x_pre_updated, g_pre, g_Next);
+  H_Next := O.lbfgsUpdate_Hdiag (x_pre, x_pre_updated, g_pre, g_Next, H_pre[1].value);
   H_Nextno := DATASET([{1,1,H_Next,5}], Mat.Types.MUElement);
   //creat the return value which is appending all the values that need to be passed
   ToReturn := x_Next_no + g_Nextno + Step_Nextno + Dir_Nextno + H_Nextno+  C_Nextno + FunEval_Nextno + d_Nextno + fpre_fnextno + t_newno + dlegalstepno + gtdprogressno;
   ToReturn_dnotLegal := inputp (no=1) + inputp (no=6) + dlegalstepno + gtdprogressno;
   RETURN IF (dlegalstep=1 AND gtdprogress =1, ToReturn, ToReturn_dnotLegal);  
 END; //END step
-stepout := LOOP(topass, COUNTER <= 2 AND Mat.MU.From (ROWS(LEFT),11)[1].value = 1 AND Mat.MU.From (ROWS(LEFT),12)[1].value = 1, step(ROWS(LEFT),COUNTER));
+//The tests need to be done in the LOOP:
+//Mat.MU.From (ROWS(LEFT),11)[1].value = 1 : check whether d is real
+//Mat.MU.From (ROWS(LEFT),12)[1].value = 1 : Check gtd to see whetehr progress is possible along the direction
+// ~OptimalityCond_Loop (ROWS(LEFT)) : Check Optimality Condition
+//~LackofProgress1 (ROWS(LEFT)) AND ~LackofProgress2(ROWS(LEFT)) : Check for lack of progress
+// ~EvaluationLimit (ROWS(LEFT)) :  Check for going over evaluation limit
+stepout := LOOP(topass, COUNTER <= 1     AND
+Mat.MU.From (ROWS(LEFT),11)[1].value = 1 AND
+Mat.MU.From (ROWS(LEFT),12)[1].value = 1 AND
+~OptimalityCond_Loop (ROWS(LEFT))        AND
+~LackofProgress1 (ROWS(LEFT))            AND
+~LackofProgress2(ROWS(LEFT))             AND
+~EvaluationLimit (ROWS(LEFT)), step(ROWS(LEFT),COUNTER));
 //xout := IF (IsInitialPointOptimal, x0, step(Topass,1));
 //loopcond := COUNTER <MaxItr & ~IsLegald () & ~OptimalityCond & ~LackofProgress1 & ~LackofProgress2 & ~EvaluationLimit
 xfinal := ML.Types.FromMatrix (Mat.MU.From (stepout,1));

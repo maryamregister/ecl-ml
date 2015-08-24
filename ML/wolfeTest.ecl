@@ -48,7 +48,7 @@ gtd := gtdT[1].value;
 
 WResult := Optimization (0, 0, 0, 0).WolfeLineSearch(x,1,d,f,g,gtd,0.0001,0.9,2,0.000000001,emptyC, emptyC, emptyC,myfunc2,0,0,0,0);
 //OUTPUT(gtd,named('gtd'));
-//OUTPUT(WResult,NAMED('WResult'));
+OUTPUT(WResult,NAMED('WResult'));
 WWWresult := Optimization (0, 0, 0, 0).WolfeOut_FromField(WResult);
 //OUTPUT (WWWresult , named ('wwwresult'));
 // funresult := myfunc2 ( x, emptyC, emptyC , emptyC);
@@ -61,11 +61,11 @@ WWWresult := Optimization (0, 0, 0, 0).WolfeOut_FromField(WResult);
    // Mr :=  MinFUNCALAKI(x, myfunc2, emptyC, emptyC , emptyC, 3, 0.00001, 5, 3,0, 0, 0,0);  
    // OUTPUT(Mr);
    
-   man:= Optimization (0, 0, 0, 0).MinFUNCkk (x, myfunc2, emptyC, emptyC , emptyC, 3, 0.00001, 0.000000001,5, 3,0, 0, 0,0);  
-OUTPUT (man);
+   man:= Optimization (0, 0, 0, 0).MinFUNCkk (x, myfunc2, emptyC, emptyC , emptyC, 3, 0.00001, 0.000000001,1000, 3,0, 0, 0,0);  
+//OUTPUT (man);
 
    
-   
+  // ASSERT (FALSE, 'yes it is');
    
    
    // lbg := DATASET([
