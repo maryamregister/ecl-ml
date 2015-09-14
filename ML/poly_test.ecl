@@ -61,8 +61,10 @@ emptyC := DATASET([], Types.NumericField);
       A_part := ML.DMat.Converted.FromNumericFieldDS (A, A_map);
       b_part := ML.DMat.Converted.FromNumericFieldDS (b, b_map);
       //params = A\b;
-      params_part := DMAT.solvelinear (A_map,  A_part, FALSE, b_map, b_part) ; // for now
+      params_part := DMAT.solvelinear (A_map,  A_part, FALSE, b_map, b_part) ; // Takes around 12 seconds to be calculated
       params := DMat.Converted.FromPart2DS (params_part);
+      //If I just assign some constant value to "params" parameter in order to avoid using DMAT.solvelinear  in calculation of this parameter for the sake of comparing the 
+      //overall algorithm time with/without using DMAT.solvelinear  then the algorithm takes no time to be run.
       // params := DATASET([
       // {1,1,0.28},
       // {2,1,-3.04},
