@@ -65,6 +65,12 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       //params = A\b;
       params_part := DMAT.solvelinear (A_map,  A_part, FALSE, b_map, b_part) ; // for now
       params := DMat.Converted.FromPart2DS (params_part);
+      // params := DATASET([
+      // {1,1,0.6611},
+      // {2,1,-0.0191},
+      // {3,1, -3.9996},
+      // {4,1,12.0400}],
+      // Types.NumericField);
       params1 := params(id=1)[1].value;
       params2 := params(id=2)[1].value;
       params3 := params(id=3)[1].value;
@@ -109,7 +115,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
         // fCP = polyval(params,xCP);
         fCP := params1*POWER(xCP,3)+params2*POWER(xCP,2)+params3*xCP+params4;
         //if imag(fCP)==0 && fCP < fmin
-        cond2 := coun=1 OR fCP<f_min;//???
+        cond2 := (coun=1 OR fCP<f_min) AND ISrootsreal; // If the roots are imaginary so is FCP
         rr := IF (cond,IF (cond2, xCP, inr),inr);
         ff := IF (cond,IF (cond2, fCP, f_min),f_min);
         RETURN DATASET([{1,1,rr},{2,1,ff}], Types.NumericField);
@@ -157,7 +163,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     polResult := poly1;
     RETURN polResult;
   END;//end polyinterp_both
-  //polyinterp when no boundry values is provided
+  //polyinterp when no boundry values are provided
   EXPORT  polyinterp_noboundry (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
       tmin := IF (t_1<t_2,t_1 , t_2);
       tmax := IF (t_1<t_2,t_2 , t_1);
@@ -269,7 +275,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       // fCP = polyval(params,xCP);
       fCP := params1*POWER(xCP,2)+params2*xCP+params3;
       //if imag(fCP)==0 && fCP < fmin
-      cond2 := coun=1 OR fCP<f_min;//???
+      cond2 := (coun=1 OR fCP<f_min) AND ISrootsreal; // If the roots are imaginary so is fCP
       rr := IF (cond,IF (cond2, xCP, minPos),minPos);
       ff := IF (cond,IF (cond2, fCP, f_min),f_min);
       RETURN DATASET([{1,1,rr},{2,1,ff}], Types.NumericField);
@@ -354,22 +360,21 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       loop1 (DATASET(PBblas.Types.MUElement) inputin, INTEGER coun) := FUNCTION
         q := PBblas.MU.FROM(inputin,0);
         i := K-coun+1;//assumption is that in the steps and dir matrices the highest the index the more recent the vector is
-        si := PROJECT(s(y=i),TRANSFORM(Mat.Types.Element,SELF.y :=1;SELF:=LEFT));//retrive the ith column and the y value should be 1
+        si := PROJECT(s(y=i),TRANSFORM(Mat.Types.Element,SELF.y :=1;SELF:=LEFT));//retrive the ith column (the y value should be 1)
         sidist := DMAT.Converted.FromElement(si,RowMap);//any way to extract sidist directly from sdist?
         //ai=rhoi*siT*q
         ai := PBblas.PB_dgemm(TRUE, FALSE, rho(y=i)[1].value, RowMap, sidist, RowMap, q, OnevalueMap);
-        aiM := ML.DMat.Converted.FromPart2Elm (ai);//any easier way to retrive ai value?
+        aiValue := ai[1].mat_part[1];
         //q=q-ai*yi
-        yi := PROJECT(d(y=i),TRANSFORM(Mat.Types.Element,SELF.y :=1;SELF:=LEFT));//retrive the ith column and the y value should be 1 (not sure if it is important or not)???
-        yidist := DMAT.Converted.FromElement(yi,RowMap);//any way to extract sidist directly from sdist?
-        qout := PBblas.PB_daxpy(-1*aiM[1].value, yidist, q);
+        yi := PROJECT(d(y=i),TRANSFORM(Mat.Types.Element,SELF.y :=1;SELF:=LEFT));//retrive the ith column and the y value should be 1
+        yidist := DMAT.Converted.FromElement(yi,RowMap);//any way to extract yidist directly from ydist?
+        qout := PBblas.PB_daxpy(-1*aiValue, yidist, q);
         qoutno := PBblas.MU.TO(qout,0);
         RETURN qoutno+inputin(no>0)+PBblas.MU.TO(ai,i);
       END;
       R1 := LOOP(q0distno, COUNTER <= K, loop1(ROWS(LEFT),COUNTER));
       finalq := PBblas.MU.from(R1(no=0),0);
       Aivalues := R1(no>0);
-      //by now tested by Matlab
       //r=Hdiag*q
       r0 := PBblas.PB_dscal(Hdiag[1].value, finalq);
       loop2 (DATASET(Layout_Part) r, INTEGER coun) := FUNCTION
@@ -377,12 +382,12 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
         yi := PROJECT(d(y=i),TRANSFORM(Mat.Types.Element,SELF.y :=1;SELF:=LEFT));
         yidist := DMAT.Converted.FromElement(yi,RowMap);
         bi := PBblas.PB_dgemm(TRUE, FALSE, rho(y=i)[1].value, RowMap, yidist, RowMap, r, OnevalueMap);
-        biM := ML.DMat.Converted.FromPart2Elm (bi);
+        bivalue := bi[1].mat_part[1];
         ai := PBblas.MU.From(Aivalues,i);
-        aiM := ML.DMat.Converted.FromPart2Elm (ai);
+        aivalue := ai[1].mat_part[1];
         si := PROJECT(s(y=i),TRANSFORM(Mat.Types.Element,SELF.y :=1;SELF:=LEFT));
         sidist := DMAT.Converted.FromElement(si,RowMap);
-        rout := PBblas.PB_daxpy(aiM[1].value-biM[1].value, sidist, r);
+        rout := PBblas.PB_daxpy(aivalue-bivalue, sidist, r);
       RETURN rout;
       END;
       R2 := LOOP(r0, COUNTER <= K, loop2(ROWS(LEFT),COUNTER));
@@ -397,7 +402,6 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     // old_dirs = [old_dirs(:,2:corrections) s];
     // old_stps = [old_stps(:,2:corrections) y];
     //corr in the namae of the fucntion stands for "corrections"
-    // implemnet this condition : if ys > 1e-10 ????????????????
     EXPORT lbfgsUpdate_corr (DATASET(Mat.Types.Element) vec_pre, DATASET(Mat.Types.Element) vec_next, DATASET(Mat.Types.Element) old_mat) := FUNCTION
       //vec = vec_next-vec_pre
       vec_predist := DMAT.Converted.FromElement(vec_pre, RowMap);
@@ -480,18 +484,40 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
   EXPORT WolfeLineSearch(DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
     //initial parameters
     P_num := Max (x, id); //the length of the parameters vector (number of parameters)
-    
+    emptyE := DATASET([], Mat.Types.Element);
+    LSiter := 0;
+    Bracket1no := DATASET([{1,1,-1,10}], Mat.Types.MUElement); //the result of the bracketing algorithm
+    Bracket2no := DATASET([{1,1,-1,11}], Mat.Types.MUElement); //the result of the bracketing algorithm
+    calculate_gtdNew (DATASET(Types.NumericField) g_in, DATASET(Types.NumericField) d_in) := FUNCTION
+      Types.NumericField Mu(g_in le,d_in ri) := TRANSFORM
+        SELF.id := le.id;
+        SELF.number := ri.number;
+        SELF.value := le.value * ri.value;
+      END;
+      element_mul := JOIN(g_in,d_in,LEFT.id=RIGHT.id,Mu(LEFT,RIGHT));
+      r := RECORD
+        t_RecordID id := 1 ;
+        t_FieldNumber number := 1;
+        t_FieldReal value := SUM(GROUP,element_mul.value);
+      END;
+      SumMulElm := TABLE(element_mul,r);
+      RETURN SumMulElm[1].value;
+    END;
+    calculate_xNew (DATASET(Types.NumericField) d_in, REAL8 t_in) := FUNCTION
+      //x_new = x+t*d
+      Types.NumericField xnew_tran (x l, d_in r):= TRANSFORM
+        SELF.value := l.value+(t_in*r.value);
+        SELF := l;
+      END;
+      Result := JOIN(x,d_in,LEFT.id=RIGHT.id AND LEFT.number=RIGHT.number,xnew_tran(LEFT,RIGHT));
+      RETURN Result;
+    END;
     ExtractGrad (DATASET(Types.NumericField) inp) := FUNCTION
       RETURN inp (id <= P_num);
     END;
     ExtractCost (DATASET(Types.NumericField) inp) := FUNCTION
       RETURN inp (id = (P_num+1))[1].value;
     END;
-    Bracket1no := DATASET([{1,1,-1,10}], Mat.Types.MUElement); //the result of the bracketing algorithm
-    Bracket2no := DATASET([{1,1,-1,11}], Mat.Types.MUElement); //the result of the bracketing algorithm
-
-    emptyE := DATASET([], Mat.Types.Element);
-    LSiter := 0;
     IsNotLegal (DATASET (Mat.Types.Element) Mat) := FUNCTION //???to be defined
       RETURN FALSE;
     END;
@@ -528,7 +554,8 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
         gPrevno := Mat.MU.To (gNew,3);
         gtdPrevno:= DATASET([{1,1,gtdNew,8}], Mat.Types.MUElement);
         //calculate fnew gnew gtdnew
-        xNew := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),newt)));
+        //xNew := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),newt))); orig
+        xNew := calculate_xNew (d, newt);
         CostGradNew := CostFunc (xNew ,CostFunc_params,TrainData, TrainLabel);
         gNewwolfe := ExtractGrad (CostGradNew);
         fNewWolfe := ExtractCost (CostGradNew);
@@ -676,13 +703,15 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     END;// END WolfeZooming
     //% Evaluate the Objective and Gradient at the Initial Step
     //x_new = x+t*d
-    x_new := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t)));
+    //x_new := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t))); orig
+    x_new := calculate_xNew (d,t);
     CostGrad_new := CostFunc (x_new ,CostFunc_params,TrainData, TrainLabel);
     g_new := ExtractGrad (CostGrad_new);
     f_new := ExtractCost (CostGrad_new);
     funEvals := 1;
     //gtd_new = g_new'*d;
-    gtd_new := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(g_new)),ML.Types.ToMatrix(d));
+    //gtd_new := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(g_new)),ML.Types.ToMatrix(d)); orig
+    gtd_new := calculate_gtdNew (g_new, d);
     
     // Bracket an Interval containing a point satisfying the Wolfe Criteria
     t_prev := 0;
@@ -700,7 +729,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     t_prevno := DATASET([{1,1,t_prev,6}], Mat.Types.MUElement);
     funEvalsno := DATASET([{1,1,funEvals,7}], Mat.Types.MUElement);
     gtd_prevno := DATASET([{1,1,gtd_prev,8}], Mat.Types.MUElement);
-    gtd_newno := DATASET([{1,1,gtd_new[1].value,9}], Mat.Types.MUElement);
+    gtd_newno := DATASET([{1,1,gtd_new,9}], Mat.Types.MUElement);
     //at the begining no interval or final t value is found so the assigned values to Bracket1no and Bracket2no are -1
     //In each iteration these two values are checked to see if the interval is found (both should be ~-1) or the final t is found (just the first one should be ~-1)
     // f_prev 1
@@ -714,7 +743,8 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     // gtd_new 9
     // bracket1 10
     // bracket2 11
-    Topass := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no  ;
+    //Topass := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no + Mat.MU.To (ML.Types.ToMatrix(x_new),103);
+    Topass := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
     Bracketing (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
       fi_prev :=  Mat.MU.From (inputp,1);
       fi_new := Mat.MU.From (inputp,2);
@@ -760,11 +790,13 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     WolfeT2 := DATASET([{1,1,FinalBracket(no=11)[1].value,1},
     {1,1,FinalBracket(no=13)[1].value,2},
     {1,1,FinalBracket(no=7)[1].value,4}], Mat.Types.MUElement) + Mat.MU.To (Mat.MU.FROM (FinalBracket,15),3) ;;
-    WolfeOut := IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2);
+    //WolfeOut := IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2); orig
+    Topass2 := f_prevno +  f_newno+ g_prevno  + tno + t_prevno +  gtd_prevno  + Bracket1no + Bracket2no;
+    topass3 := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
+    WolfeOut := Topass; 
     AppendID(WolfeOut, id, WolfeOut_id);
     ToField (WolfeOut_id, WolfeOut_id_out, id, 'x,y,value,no');//WolfeOut_id_out is the numeric field format of WolfeOut
-    //RETURN WolfeOut_id_out; orig
-    RETURN ML.Types.FromMatrix(gtd_new);
+    RETURN WolfeOut_id_out;
    // RETURN DATASET([{1,1,Zoom_Max_Itr,200}], Mat.Types.MUElement) ;
   // RETURN ZOOMInterval;
   END;// END WolfeLineSearch
@@ -889,7 +921,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
 //prows and maxrows related to "numer of parameters (P)" which is actually the length of the x0 vector
 //pcols and Maxcols are relaetd to "number of correstions to store in the memory (corrections)" which is in the MethodOptions
 //In all operation I want to f or g get nan value if it is devided by zero (do I need to include #option on top of the CostFunc)????????
-EXPORT MinFUNCkk(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, INTEGER MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
+EXPORT MinFUNCkk(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, INTEGER MaxIter = 500, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
 //#option ('divideByZero', 'nan'); //In all operation I want to f or g get nan value if it is devided by zero
 //Functions used
 SumABSg (DATASET (Types.NumericField) g_temp) := FUNCTION
@@ -994,7 +1026,7 @@ dno := DATASET([{1,1,-1,8}], Mat.Types.MUElement);
 f_fno := DATASET([{1,1,100 +tolFun ,9}], Mat.Types.MUElement); //f_new-f_old in that iteration
 tno := DATASET([{1,1,1,10}], Mat.Types.MUElement);//initial step value
 dLegalno := DATASET([{1,1,1,11}], Mat.Types.MUElement);
-ProgressAlongDirectionno := DATASET([{1,1,1,12}], Mat.Types.MUElement); ;//Check that progress can be made along direction ( if gtd > -tolX)
+ProgressAlongDirectionno := DATASET([{1,1,1,12}], Mat.Types.MUElement);//Check that progress can be made along direction ( if gtd > -tolX)
 Topass := x0no + g0n0 + old_steps0no + old_dir0no + Hdiag0no + C0n0 + FunEvalno + dno +f_fno + tno + dLegalno + ProgressAlongDirectionno;
 //updating step function
 step (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
@@ -1023,8 +1055,17 @@ step (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
   t := IF (coun = 1,MIN ([1, 1/SumABSg (ML.Types.FromMatrix (g_pre))]),1);
   //find point satisfiying wolfe
   //[t,f,g,LSfunEvals] = WolfeLineSearch(x,t,d,f,g,gtd,c1,c2,LS,25,tolX,debug,doPlot,1,funObj,varargin{:});
-  t_neworig := WolfeLineSearch(ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 10, 0.000000001, CostFunc_params, TrainData , TrainLabel, CostFunc , prows, pcols, Maxrows, Maxcols);
+  t_neworig := WolfeLineSearch(ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 25, 0.000000001, CostFunc_params, TrainData , TrainLabel, CostFunc , prows, pcols, Maxrows, Maxcols);
   no_t_t_ := WolfeOut_FromField(t_neworig);
+  // no_t_t_ := DATASET([
+  // { 1,	1,	1.52316841663803	,1},
+  // {1,	1	,8.04810059244658,	2},
+  // {1,	1	,2.0,	4},
+  // {1,	1	,0.1546146566020936	,3},
+  // {2,	1	,0.1546146566020936	,3},
+  // {3	,1	,0.1546146566020936,	3},{
+// 4	,1	,0.1546146566020936,	3}],Mat.Types.MUElement);
+
   //update the parameter vector:x_new = xold+alpha*HG_ : x = x + t*d
   t_new := Mat.MU.FROM (no_t_t_,1)[1].value; 
   t_newno := DATASET([{1,1,t_new,10}], Mat.Types.MUElement);
@@ -1053,7 +1094,9 @@ step (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
   //creat the return value which is appending all the values that need to be passed
   ToReturn := x_Next_no + g_Nextno + Step_Nextno + Dir_Nextno + H_Nextno+  C_Nextno + FunEval_Nextno + d_Nextno + fpre_fnextno + t_newno + dlegalstepno + gtdprogressno;
   ToReturn_dnotLegal := inputp (no=1) + inputp (no=6) + dlegalstepno + gtdprogressno;
-  RETURN IF (dlegalstep=1 AND gtdprogress =1, ToReturn, ToReturn_dnotLegal);  
+  //RETURN IF (dlegalstep=1 AND gtdprogress =1, ToReturn, ToReturn_dnotLegal); orig
+  RETURN no_t_t_;
+  //RETURN DATASET([{1,1,t,7}], Mat.Types.MUElement)+Mat.MU.To (g_pre,2)+Mat.MU.To (x_pre,1)+Mat.MU.To (ML.Types.ToMatrix(d),3)+DATASET([{1,1,f_pre,5}], Mat.Types.MUElement)+DATASET([{1,1,gtd[1].value,15}], Mat.Types.MUElement);
 END; //END step
 //The tests need to be done in the LOOP:
 //Mat.MU.From (ROWS(LEFT),11)[1].value = 1 : check whether d is real
@@ -1061,13 +1104,14 @@ END; //END step
 // ~OptimalityCond_Loop (ROWS(LEFT)) : Check Optimality Condition
 //~LackofProgress1 (ROWS(LEFT)) AND ~LackofProgress2(ROWS(LEFT)) : Check for lack of progress
 // ~EvaluationLimit (ROWS(LEFT)) :  Check for going over evaluation limit
-stepout := LOOP(topass, COUNTER <= 1     AND
+stepout := LOOP(topass, COUNTER <= 1   AND
 Mat.MU.From (ROWS(LEFT),11)[1].value = 1 AND
 Mat.MU.From (ROWS(LEFT),12)[1].value = 1 AND
 ~OptimalityCond_Loop (ROWS(LEFT))        AND
 ~LackofProgress1 (ROWS(LEFT))            AND
 ~LackofProgress2(ROWS(LEFT))             AND
 ~EvaluationLimit (ROWS(LEFT)), step(ROWS(LEFT),COUNTER));
+
 //xout := IF (IsInitialPointOptimal, x0, step(Topass,1));
 //loopcond := COUNTER <MaxItr & ~IsLegald () & ~OptimalityCond & ~LackofProgress1 & ~LackofProgress2 & ~EvaluationLimit
 xfinal := ML.Types.FromMatrix (Mat.MU.From (stepout,1));
