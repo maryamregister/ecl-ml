@@ -28,8 +28,8 @@ emptyC := DATASET([], Types.NumericField);
         SELF.value := 10;
       END;
       //Create Ones Vector for the calculations in the step fucntion
-      Ones_Vec := DATASET(10, gen(COUNTER, 1));
-      ten_vec  := DATASET(10, gen10(COUNTER, 1));
+      Ones_Vec := DATASET(10000, gen(COUNTER, 1));
+      ten_vec  := DATASET(10000, gen10(COUNTER, 1));
 
 //OUTPUT(ones_vec);
 //OUTPUT(ten_vec);
@@ -72,16 +72,16 @@ OUTPUT (d, named('dddd'));
 //OUTPUT(wolfeout);
 
 WResult := Optimization (0, 0, 0, 0).WolfeLineSearch(x,1,d,f,g,gtd,0.0001,0.9,1,0.000000001,emptyC, emptyC, emptyC,myfunc2,0,0,0,0);
-//OUTPUT(gtd,named('gtd'));
-//OUTPUT(WResult,NAMED('WResult'));
+
+OUTPUT(WResult,NAMED('WResult'));
 WWWresult := Optimization (0, 0, 0, 0).WolfeOut_FromField(WResult);
-//OUTPUT (WWWresult , named ('wwwresult'));
-a :=  Mat.MU.FROM (WWWresult, 1);
- aa := p_um;
+OUTPUT (WWWresult , named ('wwwresult'));
+// a :=  Mat.MU.FROM (WWWresult, 1);
+ // aa := p_um;
  
  
   
-OUTPUT(WWWresult(no>4));
+//OUTPUT(WWWresult,NAMED('WWWresult'));
 //OUTPUT (WWWresult,, 'maryam::output1');
 
 // funresult := myfunc2 ( x, emptyC, emptyC , emptyC);
@@ -99,3 +99,7 @@ OUTPUT(WWWresult(no>4));
    //MinFUNCkk(x0, CostFunc ,  CostFunc_params,  TrainData ,  TrainLabel, MaxIter = 500,  tolFun = 0.00001,  TolX = 0.000000001,  maxFunEvals = 1000,  corrections = 100, =0, =0, =0, =0) := FUNCTION
 //OUTPUT (man);
 
+
+//how much cost function takes time?
+// costfun := myfunc2 (x ,emptyC,emptyC, emptyC);
+// OUTPUT(costfun);

@@ -703,14 +703,14 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     END;// END WolfeZooming
     //% Evaluate the Objective and Gradient at the Initial Step
     //x_new = x+t*d
-    //x_new := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t))); orig
+    //x_new := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t)));
     x_new := calculate_xNew (d,t);
     CostGrad_new := CostFunc (x_new ,CostFunc_params,TrainData, TrainLabel);
     g_new := ExtractGrad (CostGrad_new);
     f_new := ExtractCost (CostGrad_new);
     funEvals := 1;
     //gtd_new = g_new'*d;
-    //gtd_new := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(g_new)),ML.Types.ToMatrix(d)); orig
+    //gtd_new := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(g_new)),ML.Types.ToMatrix(d));
     gtd_new := calculate_gtdNew (g_new, d);
     
     // Bracket an Interval containing a point satisfying the Wolfe Criteria
@@ -793,7 +793,8 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     //WolfeOut := IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2); orig
     Topass2 := f_prevno +  f_newno+ g_prevno  + tno + t_prevno +  gtd_prevno  + Bracket1no + Bracket2no;
     topass3 := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
-    WolfeOut := Topass; 
+    //WolfeOut := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
+    WolfeOut := Bracketing_Result; 
     AppendID(WolfeOut, id, WolfeOut_id);
     ToField (WolfeOut_id, WolfeOut_id_out, id, 'x,y,value,no');//WolfeOut_id_out is the numeric field format of WolfeOut
     RETURN WolfeOut_id_out;
@@ -1094,8 +1095,7 @@ step (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
   //creat the return value which is appending all the values that need to be passed
   ToReturn := x_Next_no + g_Nextno + Step_Nextno + Dir_Nextno + H_Nextno+  C_Nextno + FunEval_Nextno + d_Nextno + fpre_fnextno + t_newno + dlegalstepno + gtdprogressno;
   ToReturn_dnotLegal := inputp (no=1) + inputp (no=6) + dlegalstepno + gtdprogressno;
-  //RETURN IF (dlegalstep=1 AND gtdprogress =1, ToReturn, ToReturn_dnotLegal); orig
-  RETURN no_t_t_;
+  RETURN IF (dlegalstep=1 AND gtdprogress =1, ToReturn, ToReturn_dnotLegal);
   //RETURN DATASET([{1,1,t,7}], Mat.Types.MUElement)+Mat.MU.To (g_pre,2)+Mat.MU.To (x_pre,1)+Mat.MU.To (ML.Types.ToMatrix(d),3)+DATASET([{1,1,f_pre,5}], Mat.Types.MUElement)+DATASET([{1,1,gtd[1].value,15}], Mat.Types.MUElement);
 END; //END step
 //The tests need to be done in the LOOP:
@@ -1118,8 +1118,7 @@ xfinal := ML.Types.FromMatrix (Mat.MU.From (stepout,1));
 costfinal := DATASET ([{P+1,1,Mat.MU.From (stepout,6)[1].value}],Types.NumericField);
 output_xfinal_costfinal := xfinal + costfinal;
 FinalResult := IF(IsInitialPointOptimal,output_x0_cost0 ,output_xfinal_costfinal);
-//RETURN FinalResult; orig
-RETURN stepout;
+RETURN FinalResult;
 END;
   
 END;// END Optimization
