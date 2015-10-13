@@ -13,6 +13,8 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
   //polyinterp when the boundry values are provided
   EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
     poly1 := FUNCTION
+    //orig
+    /*
       setp1 := FUNCTION
         points := DATASET([{1,1,t_1},{2,1,t_2},{3,1,f_1},{4,1,f_2},{5,1,gtd_1},{6,2,gtd_2}], Types.NumericField);
         RETURN points;
@@ -28,56 +30,86 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       fmax := orderedp (id=4)[1].value;
       gtdmin := orderedp (id=5)[1].value;
       gtdmax := orderedp (id=6)[1].value;
+      
+      */
+      
+
+      points_t1 :=[t_1,t_2,f_1,f_2,gtd_1,gtd_2];
+
+      points_t2 := [t_2,t_1,f_2,f_1,gtd_2,gtd_1];
+      orderedp := IF (t_1<t_2,points_t1 , points_t2);
+      
+      tmin := orderedp [1];
+      tmax := orderedp [2];
+      fmin := orderedp [3];
+      fmax := orderedp [4];
+      gtdmin := orderedp [5];
+      gtdmax := orderedp [6];
+      
+      
       // A= [t_1^3 t_1^2 t_1 1
       //    t_2^3 t_2^2 t_2 1
       //    3*t_1^2 2*t_1 t_1 0
       //    3*t_2^2 2*t_2 t_2 0]
       //b = [f_1 f_2 dtg_1 gtd_2]'
-      A := DATASET([
-      {1,1,POWER(t_1,3)},
-      {1,2,POWER(t_1,2)},
-      {1,3,POWER(t_1,3)},
-      {1,4,1},
-      {2,1,POWER(t_2,3)},
-      {2,2,POWER(t_2,2)},
-      {2,3,POWER(t_2,1)},
-      {2,4,1},
-      {3,1,3*POWER(t_1,2)},
-      {3,2,2*t_1},
-      {3,3,1},
-      {3,4,0},
-      {4,1,3*POWER(t_2,2)},
-      {4,2,2*t_2},
-      {4,3,1},
-      {4,4,0}],
-      Types.NumericField);
-      b := DATASET([
-      {1,1,f_1},
-      {2,1,f_2},
-      {3,1,gtd_1},
-      {4,1,gtd_2}],
-      Types.NumericField);
+      // A := DATASET([
+      // {1,1,POWER(t_1,3)},
+      // {1,2,POWER(t_1,2)},
+      // {1,3,POWER(t_1,3)},
+      // {1,4,1},
+      // {2,1,POWER(t_2,3)},
+      // {2,2,POWER(t_2,2)},
+      // {2,3,POWER(t_2,1)},
+      // {2,4,1},
+      // {3,1,3*POWER(t_1,2)},
+      // {3,2,2*t_1},
+      // {3,3,1},
+      // {3,4,0},
+      // {4,1,3*POWER(t_2,2)},
+      // {4,2,2*t_2},
+      // {4,3,1},
+      // {4,4,0}],
+      // Types.NumericField);
+      Aset := [POWER(t_1,3),POWER(t_2,3),3*POWER(t_1,2),3*POWER(t_2,2),
+      POWER(t_1,2),POWER(t_2,2), 2*t_1,2*t_2,
+      POWER(t_1,3),POWER(t_2,1), 1, 1,
+      1, 1, 0, 0]; // A 4*4 Matrix      
+      // b := DATASET([
+      // {1,1,f_1},
+      // {2,1,f_2},
+      // {3,1,gtd_1},
+      // {4,1,gtd_2}],
+      // Types.NumericField);
+      Bset := [f_1, f_2, gtd_1, gtd_2]; // A 4*1 Matrix
       // Find interpolating polynomial
+      
+      //params = A\b;
+      //orig
+      /*
       A_map := PBblas.Matrix_Map(4, 4, 4, 4);
       b_map := PBblas.Matrix_Map(4, 1, 4, 1);
       A_part := ML.DMat.Converted.FromNumericFieldDS (A, A_map);
       b_part := ML.DMat.Converted.FromNumericFieldDS (b, b_map);
-      //params = A\b;
-      params_part := DMAT.solvelinear (A_map,  A_part, FALSE, b_map, b_part) ; // for now
+      params_part := DMAT.solvelinear (A_map,  A_part, FALSE, b_map, b_part);
       params := DMat.Converted.FromPart2DS (params_part);
-      // params := DATASET([
-      // {1,1,0.6611},
-      // {2,1,-0.0191},
-      // {3,1, -3.9996},
-      // {4,1,12.0400}],
-      // Types.NumericField);
       params1 := params(id=1)[1].value;
       params2 := params(id=2)[1].value;
       params3 := params(id=3)[1].value;
       params4 := params(id=4)[1].value;
       dParams1 := 3*params(id=1)[1].value;
       dparams2 := 2*params(id=2)[1].value;
-      dparams3 := params(id=3)[1].value;
+      dparams3 := params(id=3)[1].value;*/
+      params_partset := PBblas.BLAS.solvelinear (Aset, Bset, 4,1,4,4);
+      //params_partset := [1,2,3,4];
+      params1 := params_partset[1];
+      params2 := params_partset[2];
+      params3 := params_partset[3];
+      params4 := params_partset[4];
+      
+      dParams1 := 3*params_partset[1];
+      dparams2 := 2*params_partset[2];
+      dparams3 := params_partset[3];
+
       Rvalues := roots (dParams1, dparams2, dparams3);
       // Compute Critical Points
       INANYINF := FALSE; //????for now
@@ -220,17 +252,23 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     {3,2,1},
     {3,3,0}],
     Types.NumericField);
+    Aset := [POWER(t_1,2), POWER(t_2,2), 2*t_1,
+    POWER(t_1,3), POWER(t_2,1), 1,
+    1, 1, 0];
     b := DATASET([
     {1,1,f_1},
     {2,1,f_2},
     {3,1,gtd_1}],
     Types.NumericField);
+    Bset := [f_1, f_2, gtd_1];
     // Find interpolating polynomial
     A_map := PBblas.Matrix_Map(3, 3, 3, 3);
     b_map := PBblas.Matrix_Map(3, 1, 3, 1);
     A_part := ML.DMat.Converted.FromNumericFieldDS (A, A_map);
     b_part := ML.DMat.Converted.FromNumericFieldDS (b, b_map);
     //params = A\b;
+    //orig
+    /*
     params_part := DMAT.solvelinear (A_map,  A_part, FALSE, b_map, b_part) ; // for now
     params := DMat.Converted.FromPart2DS (params_part);
     params1 := params(id=1)[1].value;
@@ -238,7 +276,17 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     params3 := params(id=3)[1].value;
     dParams1 := 2*params(id=1)[1].value;
     dparams2 := params(id=2)[1].value;
-
+    
+    */
+    params_partset := PBblas.BLAS.solvelinear (Aset, Bset, 3, 1, 3 , 3);
+    params1 := params_partset[1];
+    params2 := params_partset[2];
+    params3 := params_partset[3];
+    dParams1 := 2*params_partset[1];
+    dparams2 := params_partset[2];
+    
+    
+    
     Rvalues := -1*dparams2/dParams1;
 
     // Compute Critical Points
@@ -762,7 +810,9 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       tobereturn := Bracketing_Result + DATASET([{1,1,coun-1,100}], Mat.Types.MUElement);
       RETURN tobereturn;  
     END;
-    Bracketing_Result := LOOP(Topass, COUNTER <= maxLS AND Mat.MU.From (ROWS(LEFT),10)[1].value = -1, Bracketing(ROWS(LEFT),COUNTER));
+    Bracketing_Result := LOOP(Topass, COUNTER <= maxLS AND Mat.MU.From (ROWS(LEFT),10)[1].value = -1, Bracketing(ROWS(LEFT),COUNTER)); 
+    
+    //Bracketing_Result := Bracketing(Topass,1); //the problem is loop
     
     
     FoundInterval := Bracketing_Result (no = 10) + Bracketing_Result (no = 11) + Bracketing_Result (no = 12) + Bracketing_Result (no = 13) + Bracketing_Result (no = 14) + Bracketing_Result (no = 15);
@@ -791,10 +841,10 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     {1,1,FinalBracket(no=13)[1].value,2},
     {1,1,FinalBracket(no=7)[1].value,4}], Mat.Types.MUElement) + Mat.MU.To (Mat.MU.FROM (FinalBracket,15),3) ;;
     //WolfeOut := IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2); orig
-    Topass2 := f_prevno +  f_newno+ g_prevno  + tno + t_prevno +  gtd_prevno  + Bracket1no + Bracket2no;
-    topass3 := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
+    //Topass2 := f_prevno +  f_newno+ g_prevno  + tno + t_prevno +  gtd_prevno  + Bracket1no + Bracket2no;
+    //topass3 := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
     //WolfeOut := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
-    WolfeOut := Bracketing_Result; 
+    WolfeOut := WolfeT1 + WolfeT2; 
     AppendID(WolfeOut, id, WolfeOut_id);
     ToField (WolfeOut_id, WolfeOut_id_out, id, 'x,y,value,no');//WolfeOut_id_out is the numeric field format of WolfeOut
     RETURN WolfeOut_id_out;

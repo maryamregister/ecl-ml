@@ -28,8 +28,8 @@ emptyC := DATASET([], Types.NumericField);
         SELF.value := 10;
       END;
       //Create Ones Vector for the calculations in the step fucntion
-      Ones_Vec := DATASET(10000, gen(COUNTER, 1));
-      ten_vec  := DATASET(10000, gen10(COUNTER, 1));
+      Ones_Vec := DATASET(5, gen(COUNTER, 1));
+      ten_vec  := DATASET(5, gen10(COUNTER, 1));
 
 //OUTPUT(ones_vec);
 //OUTPUT(ten_vec);

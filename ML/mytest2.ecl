@@ -6,7 +6,7 @@ Part := Types.Layout_Part;
 Side := Types.Side;
 Triangle := Types.Triangle;
 Diagonal := Types.Diagonal;
-
+value_t     := Types.value_t;
 IMPORT ML;
 IMPORT * FROM $;
 IMPORT $.Mat;
@@ -30,7 +30,7 @@ K:= 4;
 sideSw := Side.Ax;
 
   Cset := PBblas.BLAS.dgemm(TRUE, FALSE,K, K, lda, 1.0, Aset, Aset, 0.0); 
-  Fset := PBblas.LAPACK.dpotf2(Triangle.Lower, 4, Cset);
+  Fset := PBblas.LAPACK.dpotf2(Triangle.Lower, K, Cset);
   ATBset := PBblas.BLAS.dgemm(TRUE, FALSE, K, N, lda, 1.0, Aset, Bset, 0.0);
   Sset := PBblas.BLAS.dtrsm(sideSw, Triangle.Lower, FALSE, Diagonal.NotUnitTri, K,  N,  K, 1.0, Fset, ATBset);
   Fsize := K*K;
@@ -48,7 +48,14 @@ sideSw := Side.Ax;
   FSet_TR := SET (Ftr, number);
 
   Tset := PBblas.BLAS.dtrsm (sideSw, Triangle.Upper, FALSE, Diagonal.NotUnitTri, K,N,  K, 1.0, FSet_TR, Sset);
-
-OUTPUT(Fset);
+cell :=  {value_t v};
+testset := [1,2,3,4,5,6,7,8,9,10,11,12];
+d := DATASET(testset, cell);
+coll = 4;
+cell tran8 (cell inp, UNSIGNED c) := TRANSFORM
+  SELF.v := inp.v;
+END;
+h := d[1];
+OUTPUT(PBblas.Block.trans(3,4,testset));
 //cset = Aset'*Aset;
   

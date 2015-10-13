@@ -18,30 +18,10 @@ Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
 emptyC := DATASET([], Types.NumericField);
 
-// onemap := PBblas.Matrix_Map (1,1,1, 1);
-// x := DATASET([
-// {1, 1, 7675}],
-// Mat.Types.Element);
-//output(x);
-// xdist := DMAT.Converted.FromElement(x,onemap);
-//output(xdist);
-// output(xdist[1].mat_part[1]);
-
-  // no_t_t_ := DATASET([
-  // { 1,	1,	1.52316841663803	,1},
-  // {1,	1	,8.04810059244658,	2},
-  // {1,	1	,2.0,	4},
-  // {1,	1	,0.1546146566020936	,3},
-  // {2,	1	,0.1546146566020936	,3},
-  // {3	,1	,0.1546146566020936,	3},{
-// 4	,1	,0.1546146566020936,	3}],Mat.Types.MUElement);
-
-  // t_new := Mat.MU.FROM (no_t_t_,1)[1].value; 
-  
-  // output(no_t_t_);
-  
-  EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
+EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
     poly1 := FUNCTION
+    //orig
+    /*
       setp1 := FUNCTION
         points := DATASET([{1,1,t_1},{2,1,t_2},{3,1,f_1},{4,1,f_2},{5,1,gtd_1},{6,2,gtd_2}], Types.NumericField);
         RETURN points;
@@ -51,165 +31,178 @@ emptyC := DATASET([], Types.NumericField);
         RETURN points;
       END;
       orderedp := IF (t_1<t_2,setp1 , setp2);
-      //Find the min and max values
       tmin := orderedp (id=1)[1].value;
       tmax := orderedp (id=2)[1].value;
       fmin := orderedp (id=3)[1].value;
       fmax := orderedp (id=4)[1].value;
       gtdmin := orderedp (id=5)[1].value;
       gtdmax := orderedp (id=6)[1].value;
-      //build A and B matrices
+      
+      */
+      
+
+      points_t1 :=[t_1,t_2,f_1,f_2,gtd_1,gtd_2];
+
+      points_t2 := [t_2,t_1,f_2,f_1,gtd_2,gtd_1];
+      orderedp := IF (t_1<t_2,points_t1 , points_t2);
+      
+      tmin := orderedp [1];
+      tmax := orderedp [2];
+      fmin := orderedp [3];
+      fmax := orderedp [4];
+      gtdmin := orderedp [5];
+      gtdmax := orderedp [6];
+      
+      
       // A= [t_1^3 t_1^2 t_1 1
       //    t_2^3 t_2^2 t_2 1
       //    3*t_1^2 2*t_1 t_1 0
       //    3*t_2^2 2*t_2 t_2 0]
       //b = [f_1 f_2 dtg_1 gtd_2]'
-      AA := DATASET([
-      {1,1,POWER(t_1,3)},
-      {1,2,POWER(t_1,2)},
-      {1,3,POWER(t_1,3)},
-      {1,4,1},
-      {2,1,POWER(t_2,3)},
-      {2,2,POWER(t_2,2)},
-      {2,3,POWER(t_2,1)},
-      {2,4,1},
-      {3,1,3*POWER(t_1,2)},
-      {3,2,2*t_1},
-      {3,3,1},
-      {3,4,0},
-      {4,1,3*POWER(t_2,2)},
-      {4,2,2*t_2},
-      {4,3,1},
-      {4,4,0}],
-      Types.NumericField);
-      bb := DATASET([
-      {1,1,f_1},
-      {2,1,f_2},
-      {3,1,gtd_1},
-      {4,1,gtd_2}],
-      Types.NumericField);
+      // A := DATASET([
+      // {1,1,POWER(t_1,3)},
+      // {1,2,POWER(t_1,2)},
+      // {1,3,POWER(t_1,3)},
+      // {1,4,1},
+      // {2,1,POWER(t_2,3)},
+      // {2,2,POWER(t_2,2)},
+      // {2,3,POWER(t_2,1)},
+      // {2,4,1},
+      // {3,1,3*POWER(t_1,2)},
+      // {3,2,2*t_1},
+      // {3,3,1},
+      // {3,4,0},
+      // {4,1,3*POWER(t_2,2)},
+      // {4,2,2*t_2},
+      // {4,3,1},
+      // {4,4,0}],
+      // Types.NumericField);
+      Aset := [POWER(t_1,3),POWER(t_2,3),3*POWER(t_1,2),3*POWER(t_2,2),
+      POWER(t_1,2),POWER(t_2,2), 2*t_1,2*t_2,
+      POWER(t_1,3),POWER(t_2,1), 1, 1,
+      1, 1, 0, 0]; // A 4*4 Matrix      
+      // b := DATASET([
+      // {1,1,f_1},
+      // {2,1,f_2},
+      // {3,1,gtd_1},
+      // {4,1,gtd_2}],
+      // Types.NumericField);
+      Bset := [f_1, f_2, gtd_1, gtd_2]; // A 4*1 Matrix
       // Find interpolating polynomial
+      
+      //params = A\b;
+      //orig
+      /*
       A_map := PBblas.Matrix_Map(4, 4, 4, 4);
       b_map := PBblas.Matrix_Map(4, 1, 4, 1);
-      A_part := ML.DMat.Converted.FromNumericFieldDS (AA, A_map);
-      b_part := ML.DMat.Converted.FromNumericFieldDS (bb, b_map);
-      //params = A\b;
-
-      params_part := DMAT.solvelinear (A_map,  A_part, FALSE, b_map, b_part) ; // for now
+      A_part := ML.DMat.Converted.FromNumericFieldDS (A, A_map);
+      b_part := ML.DMat.Converted.FromNumericFieldDS (b, b_map);
+      params_part := DMAT.solvelinear (A_map,  A_part, FALSE, b_map, b_part);
+      params := DMat.Converted.FromPart2DS (params_part);
+      params1 := params(id=1)[1].value;
+      params2 := params(id=2)[1].value;
+      params3 := params(id=3)[1].value;
+      params4 := params(id=4)[1].value;
+      dParams1 := 3*params(id=1)[1].value;
+      dparams2 := 2*params(id=2)[1].value;
+      dparams3 := params(id=3)[1].value;*/
+      params_partset := PBblas.BLAS.solvelinear (Aset, Bset, 4,1,4,4);
+      //params_partset := [1,2,3,4];
+      params1 := params_partset[1];
+      params2 := params_partset[2];
+      params3 := params_partset[3];
+      params4 := params_partset[4];
       
-      
-      //solvelinear(IMatrix_Map map_a, DATASET(Part) A, BOOLEAN findLeft=FALSE, IMatrix_Map map_b, DATASET(Part) B) 
-      map_a := A_map;
-      A := A_part;
-      findLeft := FALSE;
-      map_b := b_map;
-      B := b_part;      
-      map_at := PBblas.Matrix_Map(map_a.matrix_cols, map_a.matrix_rows,
-                             map_a.part_cols(1), map_a.part_rows(1));
-      AT := PBblas.PB_dtran(map_a, map_at, 1.0, A);
-      C_cols := map_at.matrix_cols;
-      C_rows := map_at.matrix_rows;
-      C_pcol := map_at.part_rows(1);
-      C_prow := map_at.part_cols(1);
-      map_c  := PBblas.Matrix_Map(C_rows, C_cols, C_prow, C_pcol);
-      C := PBblas.PB_dgemm(TRUE, FALSE, 1.0, map_at, A, map_a, A, map_c);
-      F := PBblas.PB_dpotrf(Triangle.Lower, map_c, C);
-      sideSw := Side.Ax;
-      map_ATB := PBblas.Matrix_Map(map_at.matrix_rows, map_b.matrix_cols, map_at.part_rows(1), map_b.part_cols(1));
-      ATB := PBblas.PB_dgemm(TRUE, FALSE, 1.0, map_a, A, map_b, B, map_ATB);
-      S := PBblas.PB_dtrsm(sideSw, Triangle.Lower, FALSE,
-                           Diagonal.NotUnitTri, 1.0, map_c, F, map_ATB, ATB);
-      T := PBblas.PB_dtrsm(sideSw, Triangle.Upper, TRUE,
-                           Diagonal.NotUnitTri, 1.0, map_c, F, map_ATB, S);
-                           
-     //set
-     Aset := SET(AA,value);
-     Bset := SET (bb, value);
-     //cset = Aset'*Aset;
-     Cset := PBblas.BLAS.dgemm(FALSE, TRUE,
-                      4, 4, 4,
-                      1.0, Aset, Aset,
-                      0.0); //wierd, I wanted ASet (transpose) by Aset, I had to put the second transpose at True though
-            //Bblas.PB_dpotrf(Triangle.Lower, map_c, C);          
-     Fset := PBblas.LAPACK.dpotf2(Triangle.Lower, 4, Cset); // this is actually F(transpose)
-     ATBset := PBblas.BLAS.dgemm(FALSE, TRUE,
-                      4, 1, 4,
-                      1.0, Aset, Bset,
-                      0.0);
-             
-// S := PBblas.PB_dtrsm(sideSw, Triangle.Lower, FALSE,
-                           // Diagonal.NotUnitTri, 1.0, map_c, F, map_ATB, ATB);
-      // T := PBblas.PB_dtrsm(sideSw, Triangle.Upper, TRUE,
-                           // Diagonal.NotUnitTri, 1.0, map_c, F, map_ATB, S);             
-             
-             
-     Sset := PBblas.BLAS.dtrsm(sideSw, Triangle.Lower,
-                      FALSE, Diagonal.NotUnitTri,
-                       4,  1,  4,
-                      1.0, Fset, ATBset);
-    
-    
-    //transpose F
-    Fsize := 16;
-R := 4;
-coll := Fsize/R;
-myrec := RECORD
-REAL number;
-END; 
-  
-  
-        myrec tran(UNSIGNED4 c) := TRANSFORM
-        SELF.number := Fset[(coll*((c-1)%coll))+((c-1) DIV coll)+1];
+      dParams1 := 3*params_partset[1];
+      dparams2 := 2*params_partset[2];
+      dparams3 := params_partset[3];
 
+      Rvalues := roots (dParams1, dparams2, dparams3);
+      // Compute Critical Points
+      INANYINF := FALSE; //????for now
+      cp1 := xminBound;
+      cp2 := xmaxBound;
+      cp3 := t_1;
+      cp4 := t_2;
+      cp5 := Rvalues (id=2)[1].value;
+      cp6 := Rvalues (id=3)[1].value;
+      ISrootsreal := (BOOLEAN) Rvalues (id=1)[1].value;
+      cp_real := DATASET([
+      {1,1,cp1},
+      {2,1,cp2},
+      {3,1,cp3},
+      {4,1,cp4},
+      {5,1,cp5},
+      {6,1,cp6}],
+      Types.NumericField);
+      cp_imag := DATASET([
+      {1,1,cp1},
+      {2,1,cp2},
+      {3,1,cp3},
+      {4,1,cp4}],
+      Types.NumericField);
+      cp := IF (ISrootsreal, cp_real, cp_imag);
+      itr := IF (ISrootsreal, 6, 4);
+      // Test Critical Points
+      topa :=  DATASET([{1,1,(xminBound+xmaxBound)/2},{2,1,1000000}], Types.NumericField);//send minpos and fmin value to Resultsstep
+      Resultstep (DATASET(Types.NumericField) x, UNSIGNED coun) := FUNCTION
+        inr := x(id=1)[1].value;
+        f_min := x(id=2)[1].value;
+        // if imag(xCP)==0 && xCP >= xminBound && xCP <= xmaxBound
+        xCP := cp(id=coun)[1].value;
+        cond := xCP >= xminBound AND xCP <= xmaxBound; //???
+        // fCP = polyval(params,xCP);
+        fCP := params1*POWER(xCP,3)+params2*POWER(xCP,2)+params3*xCP+params4;
+        //if imag(fCP)==0 && fCP < fmin
+        cond2 := (coun=1 OR fCP<f_min) AND ISrootsreal; // If the roots are imaginary so is FCP
+        rr := IF (cond,IF (cond2, xCP, inr),inr);
+        ff := IF (cond,IF (cond2, fCP, f_min),f_min);
+        RETURN DATASET([{1,1,rr},{2,1,ff}], Types.NumericField);
       END;
-      
-      Ftr := DATASET(Fsize, tran(COUNTER));
-      
-      FSet_TR := SET (Ftr, number);
-      
-    Tset := PBblas.BLAS.dtrsm (sideSw, Triangle.Upper,
-                      FALSE, Diagonal.NotUnitTri,
-                      4,1,  4,
-                      1.0, FSet, Sset);
- Aset2 := [1,216,3,108, 1, 36, 2, 12, 1, 6, 1,1,1,1,0,0 ];
- 
-
-  // Cset2 := PBblas.BLAS.dgemm(TRUE, FALSE,
-                      // 4, 4, 4,
-                      // 1.0, Aset2, Aset2,
-                      // 0.0);
- // Fset2 := PBblas.LAPACK.dpotf2(Triangle.Lower, 4, Cset2);
- 
-  // ATBset2 := PBblas.BLAS.dgemm(TRUE, FALSE,
-                      // 4, 1, 4,
-                      // 1.0, Aset2, Bset,
-                      // 0.0);
-                      
-     // Sset2 := PBblas.BLAS.dtrsm(sideSw, Triangle.Lower,
-    // FALSE, Diagonal.NotUnitTri,
-     // 4,  1,  4,
-    // 1.0, Fset2, ATBset2);
-    
-      // Tset2 := PBblas.BLAS.dtrsm (sideSw, Triangle.Upper,
-                      // FALSE, Diagonal.NotUnitTri,
-                      // 4,1,  4,
-                      // 1.0, Fset2, Sset2);
-//RETURN DMat.Converted.FromPart2Elm(T);
-
-//solvelinear (matrix_t Aset, matrix_t Bset, dimension_t M, dimension_t N,  dimension_t lda, dimension_t K)
-bss := [ 42.5000,  137.7000  ,276.7000];
-ass :=  [ 10 ,   13  ,  90,
-    11 ,   12 ,   91,
-    14,    43 ,   92,
-    15,    56 ,   93];
-
-tt := PBblas.BLAS.solvelinear (ass, bss, 3,1,3,4);
-   RETURN tt;
+      finalresult := LOOP(topa, COUNTER <= itr, Resultstep(ROWS(LEFT),COUNTER));
+      //RETURN finalresult;
+      //RETURN IF(t_1=0, 10, 100);
+      // RETURN DATASET([
+      // {1,1,dParams1},
+      // {2,1,dParams2},
+      // {3,1,dParams3}],
+      // Types.NumericField);
+     RETURN finalresult(id=1)[1].value;
     END;//END poly1
+     poly2 := FUNCTION
+        setp1 := FUNCTION
+          points := DATASET([{1,1,t_1},{2,1,t_2},{3,1,f_1},{4,1,f_2},{5,1,gtd_1},{6,2,gtd_2}], Types.NumericField);
+          RETURN points;
+        END;
+        setp2 := FUNCTION
+          points := DATASET([{2,1,t_1},{1,1,t_2},{4,1,f_1},{3,1,f_2},{6,1,gtd_1},{5,2,gtd_2}], Types.NumericField);
+          RETURN points;
+        END;
+        orderedp := IF (t_1<t_2,setp1 , setp2);
+        tmin := orderedp (id=1)[1].value;
+        tmax := orderedp (id=2)[1].value;
+        fmin := orderedp (id=3)[1].value;
+        fmax := orderedp (id=4)[1].value;
+        gtdmin := orderedp (id=5)[1].value;
+        gtdmax := orderedp (id=6)[1].value;
+        // d1 = points(minPos,3) + points(notMinPos,3) - 3*(points(minPos,2)-points(notMinPos,2))/(points(minPos,1)-points(notMinPos,1));
+        d1 := gtdmin + gtdmax - (3*((fmin-fmax)/(tmin-tmax)));
+        //d2 = sqrt(d1^2 - points(minPos,3)*points(notMinPos,3));
+        d2 := SQRT ((d1*d1)-(gtdmin*gtdmax));
+        d2real := TRUE; //check it ???
+        //t = points(notMinPos,1) - (points(notMinPos,1) - points(minPos,1))*((points(notMinPos,3) + d2 - d1)/(points(notMinPos,3) - points(minPos,3) + 2*d2));
+        temp := tmax - ((tmax-tmin)*((gtdmax+d2-d1)/(gtdmax-gtdmin+(2*d2))));
+        //min(max(t,points(minPos,1)),points(notMinPos,1));
+        minpos1 := MIN([MAX([temp,tmin]),tmax]);
+        minpos2 := (t_1+t_2)/2;
+        pol1Result := IF (d2real,minpos1,minpos2);
+        RETURN pol1Result;
+        //RETURN IF(t_1=0, 10, 100);
+      END;//END poly2
     polResult := poly1;
     RETURN polResult;
   END;//end polyinterp_both
-  
-  newt := polyinterp_both (1, 0,5, 6, 5, 4, 2, 1);
+   
+  newt := polyinterp_both (0 ,  15.05 ,  49.9975,  1.0  , 12.2381 , -41.6795, 1.01, 10);
   output(newt, named('newt'));
 

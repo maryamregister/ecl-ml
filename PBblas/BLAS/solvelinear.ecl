@@ -10,6 +10,7 @@ matrix_t    := Types.matrix_t;
 Side := Types.Side;
 Triangle := Types.Triangle;
 Diagonal := Types.Diagonal;
+
 //B is M*N
 //A is lda * K
   EXPORT  solvelinear (matrix_t Aset, matrix_t Bset, dimension_t M, dimension_t N,  dimension_t lda, dimension_t K) := FUNCTION
@@ -23,8 +24,8 @@ Diagonal := Types.Diagonal;
     //transpose F
     Fsize := K*K;
     coll := K;
-      myrec := RECORD
-      REAL number;
+    myrec := RECORD
+      value_t number;
     END; 
     
     myrec tran(UNSIGNED4 c) := TRANSFORM
@@ -33,8 +34,8 @@ Diagonal := Types.Diagonal;
 
     Ftr := DATASET(Fsize, tran(COUNTER));
 
-    FSet_TR := SET (Ftr, number);
-
+    //FSet_TR := SET (Ftr, number);
+    Fset_TR := PBblas.Block.trans (lda,K,Fset);
     Tset := PBblas.BLAS.dtrsm (sideSw, Triangle.Upper, FALSE, Diagonal.NotUnitTri, K,N,  K, 1.0, FSet_TR, Sset);
     RETURN Tset;
   END;//END solvelinear
