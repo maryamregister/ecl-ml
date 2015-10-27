@@ -219,5 +219,48 @@ EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2
     
 hihihi := Optimization (0, 0, 0, 0).polyinterp_noboundry ( 1.0000 ,  12.2381 , -41.6795 ,1.3432 ,  18.8396   ,32.0273);
 man := roots (1, 2, 4);
- output(man);
+ //output(man);
 
+theta := DATASET([
+{1,1,1},
+{2,2,2},
+{3,3,3},
+{4,4,4},
+{5,5,5},
+{6,6,6},
+{7,7,7},
+{8,8,8},
+{9,9,9},
+{10,10,10},
+{11,11,11},
+{12,12,12},
+{13,13,13},
+{14,14,14},
+{15,15,15},
+{16,16,16},
+{17,17,17}
+], Types.NumericField);
+    nf := 3;
+    nh := 2;
+    nfh := nf*nh;
+    nfh_2 := 2*nfh;
+    Mat.Types.MUElement Wreshape (Types.NumericField l) := TRANSFORM
+      no_temp := (l.id DIV (nfh+1))+1;
+      SELF.no := no_temp;
+      //SELF.x := IF (no_temp =1 ,((l.id-1)%nh)+1, ((l.id-1-nfh)%nh)+1);
+      SELF.x := IF (no_temp=1, 1+((l.id-1)%nh) , 1+((l.id-1-nfh)%nf));
+      SELF.y := IF (no_temp=1, ((l.id-1) DIV nh)+1, ((l.id-1-nfh) DIV nf)+1);
+      SELF.value := l.value;
+    END;
+    SA_W := PROJECT (theta(id<=2*nfh),Wreshape(LEFT));
+    Mat.Types.MUElement Breshape (Types.NumericField l) := TRANSFORM
+      no_temp := IF (l.id-nfh_2<=nh,1,2);
+      SELF.no := no_temp;
+      SELF.x := IF (no_temp =1 ,l.id-nfh_2, l.id-nfh_2-nh);
+      SELF.y := 1;
+      SELF := l;
+    END;
+    SA_B := PROJECT (theta(id>nfh_2),Breshape(LEFT));
+OUTPUT(theta,NAMED('theta'));
+OUTPUT(SA_W,NAMED('SA_W'));
+OUTPUT(SA_B,NAMED('SA_B'));

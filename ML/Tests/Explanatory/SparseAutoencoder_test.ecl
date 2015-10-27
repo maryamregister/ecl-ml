@@ -46,7 +46,7 @@ Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
 OUTPUT(IntW,ALL, named ('IntW'));
 OUTPUT(IntB,ALL, named ('IntB'));
 //trainer module
-SA :=DeepLearning.Sparse_Autoencoder(prows, pcols, Maxrows,  Maxcols);
+SA :=DeepLearning.Sparse_Autoencoder(f,hl,prows, pcols, Maxrows,  Maxcols);
 
 LearntModel := SA.LearnC(indepDataC,IntW, Intb,BETA, sparsityParam, LAMBDA, ALPHA, MaxIter);
 OUTPUT(LearntModel, named ('LearntModel'));

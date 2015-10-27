@@ -41,7 +41,7 @@ END;
 // - pcols: an optional parameter used to set the number of cols in partition blocks (Should be used in conjuction with prows)
 // - Maxrows: an optional parameter used to set maximum rows allowed per block when using AutoBVMap
 // - Maxcols: an optional parameter used to set maximum cols allowed per block when using AutoBVMap
-EXPORT Sparse_Autoencoder (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
+EXPORT Sparse_Autoencoder (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLayerNodes, UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
   //this is a un-supervised learning algorithm, no need for the labled data
   SHARED SA(DATASET(Types.NumericField) X, DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 BETA=0.1, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100) := MODULE
     dt := Types.ToMatrix (X);
@@ -284,6 +284,52 @@ EXPORT Sparse_Autoencoder (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxro
       bg1_mat_no := Mat.MU.TO(bg1_mat,3);
       bg2_mat_no := Mat.MU.TO(bg2_mat,4);
       prm_MUE := wg1_mat_no + wg2_mat_no + bg1_mat_no + bg2_mat_no;
+
+      
+      
+      //calculate cost
+      //PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1, dmap, ddist, b1map, b1m, 1.0);
+      // squared_error_cost= 0.5*sum(sum((x-a3).^2));
+      // cost=(1/m)*squared_error_cost+(lambda/2)*(sum(W2(:).^2)+sum(W1(:).^2))+beta*sum(KL(sparsityParam,rhohat));
+      squared_error_cost := 0.5*PBblas.SumElements(PBblas.Apply2Elements(dmap, PBblas.PB_daxpy(-1.0, a3, ddist), pow2));
+      cost_term1 := (1/m)*squared_error_cost;
+      cost_term2 := (lambda/2)* PBblas.SumElements(PBblas.Apply2Elements(dmap, w2m, pow2));
+      cost_term3 := (lambda/2)* PBblas.SumElements(PBblas.Apply2Elements(dmap, w1m, pow2));
+      PBblas.Types.value_t klterm(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := sparsityParam * LN(sparsityParam/v) + (1-sparsityParam) * LN ((1-sparsityParam)/(1-v));
+      KL := PBblas.Apply2Elements (Hiddmap,rohat_a2,klterm);
+      cost_term4 := beta * PBblas.SumElements(KL);
+      cost := cost_term1 + cost_term2 + cost_term3 +cost_term4;    
+      costfield := DATASET ([{1,1,cost,5}],ML.Mat.Types.MUElement);
+      //first sort the retunring values, this makes sure that they are going to be retrived correctly later in SparseAutoencoderCost
+      sorted_prm_MUE := SORT (prm_MUE+costfield,no, y, x);
+      AppendID(sorted_prm_MUE, id, prm_MUE_id);
+      
+      ToField (prm_MUE_id, costgrad_out, id, 'x,y,value,no');
+      RETURN costgrad_out(number=3);//return only value fields
+    END;//END SparseParam_CostGradients
+    SparseParam_CostGradients2 :=  FUNCTION
+      w1m := w1dist;
+      w2m := w2dist;
+      b1v := b1vecdist;
+      b2v := b2vecdist;
+      a2 := FF2 (w1m, b1v);
+      a3 := FF3 (w2m, b2v, a2);
+      d3 := DELTA3 (a3);
+      rohat_a2 := rohat(a2);
+      d2 := DELTA2 (w2m, a2, d3,rohat_a2);
+      wg1 := WeightGrad1 (w1m, d2);
+      wg2 := WeightGrad2 (w2m, d3, a2);
+      bg1 := BiasGrad1 (d2);
+      bg2 := BiasGrad2 (d3);
+      wg1_mat := DMat.Converted.FromPart2Elm (wg1);
+      wg2_mat := DMat.Converted.FromPart2Elm (wg2);
+      bg1_mat := DMat.Converted.FromPart2Elm (bg1);
+      bg2_mat := DMat.Converted.FromPart2Elm (bg2);
+      wg1_mat_no := Mat.MU.TO(wg1_mat,1);
+      wg2_mat_no := Mat.MU.TO(wg2_mat,2);
+      bg1_mat_no := Mat.MU.TO(bg1_mat,3);
+      bg2_mat_no := Mat.MU.TO(bg2_mat,4);
+      prm_MUE := wg1_mat_no + wg2_mat_no + bg1_mat_no + bg2_mat_no;
       AppendID(prm_MUE, id, prm_MUE_id);
       
       
@@ -303,8 +349,11 @@ EXPORT Sparse_Autoencoder (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxro
       
       ToField (costidfield+prm_MUE_id, costgrad_out, id, 'x,y,value,no');
       RETURN costgrad_out;
-    END;//END SparseParam_CostGradients   
-    //if learning_param=1 then mod = SAprm_MUE_out, if learning_param = lbfgs then mod = SparseParam_CostGradients
+    END;//END SparseParam_CostGradients2
+    
+    
+    
+    //if learning_param=simple then mod = SAprm_MUE_out, if learning_param = lbfgs then mod = SparseParam_CostGradients
     //EXPORT Mod := SAprm_MUE_out; orig , also make sure where "mod" is used and change them accordingly (mod is used in SparseAutoencoderCost)
     EXPORT mod := SparseParam_CostGradients;
   END;//END SA
@@ -312,26 +361,52 @@ EXPORT Sparse_Autoencoder (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxro
   
   
 
-  //theta includes the weight and bias matrices for the SparseAutoencoder in a numericfield dataset, by converting this dataset to Mat.Types.MUElement the actual weight and bias matrices can be extracted
-  //in a format that no=1 is w1, no=2 is w2, no =3 is b1 and no = 4 is b4
+  //theta includes the weight and bias matrices for the SparseAutoencoder in a numericfield dataset,below it is explained how this dataset is aquired
+  //1- there is a Mat.Types.MUElement  dataset where that no=1 is w1, no=2 is w2, no =3 is b1 and no = 4 is b4
+  //2-this dataset gets sorted based on (no->y->x)
+  //3-the dataset is then converted to numeric field format
+  //4-only the recordsets where number =3 (the corresponding "value" field in the Mat.Types.MUElement record) are returned 
   //CostFunc_params includes the parameters that the sparse autoencoder algortihm need : REAL8 BETA, REAL8 sparsityParam, , REAL8 LAMBDA,
   // CostFunc_params = DATASET([{1, 1, BETA},{2,1,sparsityParam},{3,1,LAMBDA}], Types.NumericField);
   SparseAutoencoderCost (DATASET(Types.NumericField) theta, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel=emptyC):= FUNCTION
-    //Extract weights and bias matrices 
-    thetalD_Map :=	DATASET([{'id','ID'},{'x','1'},{'y','2'},{'value','3'},{'no','4'}], {STRING orig_name; STRING assigned_name;});
-    FromField(theta,Mat.Types.MUElement,params,thetalD_Map);
-    SA_weights := params (no<3);
-    B := params (no>2 AND no<5);
-    Mat.Types.MUElement Bno (Mat.Types.MUElement l) := TRANSFORM
-      SELF.no := l.no-2;
-      SELF := l;
+    //Extract weights and bias matrices by using the numebr of hidden and visible nodes
+    nf := 3;
+    nh := 2;
+    nfh := nf*nh;
+    nfh_2 := 2*nfh;
+    Mat.Types.MUElement Wreshape (Types.NumericField l) := TRANSFORM
+      no_temp := (l.id DIV (nfh+1))+1;
+      SELF.no := no_temp;
+      //SELF.x := IF (no_temp =1 ,((l.id-1)%nh)+1, ((l.id-1-nfh)%nh)+1);
+      SELF.x := IF (no_temp=1, 1+((l.id-1)%nh) , 1+((l.id-1-nfh)%nf));
+      SELF.y := IF (no_temp=1, ((l.id-1) DIV nh)+1, ((l.id-1-nfh) DIV nf)+1);
+      SELF.value := l.value;
     END;
-    SA_bias := PROJECT (B,Bno(LEFT));
+    SA_W := PROJECT (theta(id<=2*nfh),Wreshape(LEFT));
+    Mat.Types.MUElement Breshape (Types.NumericField l) := TRANSFORM
+      no_temp := IF (l.id-nfh_2<=nh,1,2);
+      SELF.no := no_temp;
+      SELF.x := IF (no_temp =1 ,l.id-nfh_2, l.id-nfh_2-nh);
+      SELF.y := 1;
+      SELF.value := l.value;
+    END;
+    SA_B := PROJECT (theta(id>nfh_2),Breshape(LEFT));
+
+    
+    // thetalD_Map :=	DATASET([{'id','ID'},{'x','1'},{'y','2'},{'value','3'},{'no','4'}], {STRING orig_name; STRING assigned_name;});
+    // FromField(theta,Mat.Types.MUElement,params,thetalD_Map);
+    // SA_weights := params (no<3);
+    // B := params (no>2 AND no<5);
+    // Mat.Types.MUElement Bno (Mat.Types.MUElement l) := TRANSFORM
+      // SELF.no := l.no-2;
+      // SELF := l;
+    // END;
+    // SA_bias := PROJECT (B,Bno(LEFT));
     //extract the sparseautoencoder parameters from CostFunc_params
     SA_BETA := CostFunc_params(id=1)[1].value;
     SA_sparsityparam := CostFunc_params(id=2)[1].value;
     SA_LAMBDA := CostFunc_params(id=3)[1].value;
-    Cost_Grad := SA(TrainData,SA_weights,SA_bias, SA_BETA,SA_sparsityparam,SA_LAMBDA).mod;//orig , if you change the output of mod, don't forget to change it here as well
+    Cost_Grad := SA(TrainData,SA_W,SA_B, SA_BETA,SA_sparsityparam,SA_LAMBDA).mod;//orig , if you change the output of mod, don't forget to change it here as well
     RETURN Cost_Grad;
   END; //end SparseAutoencoderCost
   EXPORT LearnC_lbfgs(DATASET(Types.NumericField) Indep,DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 BETA=0.1, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, UNSIGNED2 MaxIter=100) := FUNCTION
@@ -343,8 +418,13 @@ EXPORT Sparse_Autoencoder (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxro
       SELF := l;
     END;
     Intb_3_4 := PROJECT (Intb,Bno(LEFT)); //the no values in Intb is now 3 and 4 which correspond to b1 and b2 (bias matrices)
+    //1- there is a Mat.Types.MUElement  dataset where that no=1 is w1, no=2 is w2, no =3 is b1 and no = 4 is b4
+    //2-this dataset gets sorted based on (no->y->x)
+    //3-the dataset is then converted to numeric field format
+    //4-only the recordsets where number =3 (the corresponding "value" field in the Mat.Types.MUElement record) are returned 
     theta_MUE := IntW + Intb_3_4;
-    AppendID(theta_MUE, id, theta_MUE_id);
+    theta_MUE_sorted := SORT (theta_MUE,no,y,x);
+    AppendID(theta_MUE_sorted, id, theta_MUE_id);
     ToField (theta_MUE_id, theta_input, id, 'x,y,value,no');
     //CostFunc_params
     CostFunc_params_input := DATASET([{1, 1, BETA},{2,1,sparsityParam},{3,1,LAMBDA}], Types.NumericField);
@@ -532,7 +612,7 @@ EXPORT StackedSA (UNSIGNED4 NumSAs, DATASET(Types.DiscreteField) numHiddenNodes,
     hd1 := numHiddenNodes(id=(1))[1].value;//number of hidden nodes in the first SA
     IntW1 := Sparse_Autoencoder_IntWeights(NumFeatures,hd1);//initialize weights
     Intb1 := Sparse_Autoencoder_IntBias(NumFeatures,hd1);//initialize bias
-    SA1 := Sparse_Autoencoder (prows, pcols, Maxrows, Maxcols);//SA module for the first SA
+    SA1 := Sparse_Autoencoder (NumFeatures, hd1, prows, pcols, Maxrows, Maxcols);//SA module for the first SA
     //train the first Sparse Autoencoder
     LearntModel1 := SA1.LearnC(X,IntW1, Intb1, BETA, sparsityParam , LAMBDA, ALPHA, MaxIter); //learnt model in NumericFiled format
     Bias1 := SA1.ExtractBias (LearntModel1);
@@ -552,7 +632,7 @@ EXPORT StackedSA (UNSIGNED4 NumSAs, DATASET(Types.DiscreteField) numHiddenNodes,
       hdL := numHiddenNodes(id=(L))[1].value;
       IntWL := Sparse_Autoencoder_IntWeights(NFL,hdL);//initialize weights
       IntbL := Sparse_Autoencoder_IntBias(NFL,hdL);//initialize bias
-      SAL := Sparse_Autoencoder (prows, pcols, Maxrows, Maxcols);//SA module for the Lth SA
+      SAL := Sparse_Autoencoder (NFL, hdl, prows, pcols, Maxrows, Maxcols);//SA module for the Lth SA
       //Train the Lth SaprseAutoencoder (output of the last SA is fed as the input to the next SA)
       LearntModelL := SAL.LearnC(lastOutputF,IntWL, IntbL, BETA, sparsityParam , LAMBDA, ALPHA, MaxIter);
       BiasL := SAL.ExtractBias (LearntModelL);

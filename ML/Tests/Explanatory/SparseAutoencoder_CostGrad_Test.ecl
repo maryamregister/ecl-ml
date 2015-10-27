@@ -45,18 +45,19 @@ IntW := DeepLearning.Sparse_Autoencoder_IntWeights(f,hl);
 Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
 OUTPUT(IntW,ALL, named ('IntW'));
 OUTPUT(IntB,ALL, named ('IntB'));
+
 //trainer module
-SA :=DeepLearning.Sparse_Autoencoder(prows, pcols, Maxrows,  Maxcols);
+SA :=DeepLearning.Sparse_Autoencoder (f, hl, 0, 0,0,0);
 
 LearntModel := SA.LearnC(indepDataC,IntW, Intb,BETA, sparsityParam, LAMBDA, ALPHA, MaxIter);
-//OUTPUT(LearntModel, named ('LearntModel'));
+OUTPUT(LearntModel, named ('LearntModel'));
 
 MatrixModel := SA.Model (LearntModel);
-//OUTPUT(MatrixModel, named ('MatrixModel'));
+OUTPUT(MatrixModel, named ('MatrixModel'));
 
 lbfgs_model := SA.LearnC_lbfgs(indepDataC,IntW,  Intb, BETA,sparsityParam ,LAMBDA, MaxIter);
-OUTPUT(lbfgs_model,NAMED('lbfgs_model'));
-OUTPUT(SA.Model (lbfgs_model), named ('MatrixModel'));
+//OUTPUT(lbfgs_model,NAMED('lbfgs_model'));
+//OUTPUT(SA.Model (lbfgs_model), named ('MatrixModel'));
 
 // Out := SA.SAOutput (indepDataC, LearntModel);
 // OUTPUT(Out, named ('Out'));
