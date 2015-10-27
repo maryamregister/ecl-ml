@@ -73,9 +73,9 @@ OUTPUT (d, named('dddd'));
 
 WResult := Optimization (0, 0, 0, 0).WolfeLineSearch(x,1,d,f,g,gtd,0.0001,0.9,1,0.000000001,emptyC, emptyC, emptyC,myfunc2,0,0,0,0);
 
-OUTPUT(WResult,NAMED('WResult'));
+//OUTPUT(WResult,NAMED('WResult'));
 WWWresult := Optimization (0, 0, 0, 0).WolfeOut_FromField(WResult);
-OUTPUT (WWWresult , named ('wwwresult'));
+//OUTPUT (WWWresult , named ('wwwresult'));
 // a :=  Mat.MU.FROM (WWWresult, 1);
  // aa := p_um;
  
@@ -94,10 +94,10 @@ OUTPUT (WWWresult , named ('wwwresult'));
    // Mr :=  MinFUNCALAKI(x, myfunc2, emptyC, emptyC , emptyC, 3, 0.00001, 5, 3,0, 0, 0,0);  
    // OUTPUT(Mr);
    
-   man:= Optimization (0, 0, 0, 0).MinFUNCkk (x, myfunc2, emptyC, emptyC , emptyC, 500, 0.00001, 0.000000001,1000, 3,0, 0, 0,0);  
+   man:= Optimization (0, 0, 0, 0).MinFUNC (x, myfunc2, emptyC, emptyC , emptyC, 2, 0.00001, 0.000000001,1000, 3,0, 0, 0,0);  
    
    //MinFUNCkk(x0, CostFunc ,  CostFunc_params,  TrainData ,  TrainLabel, MaxIter = 500,  tolFun = 0.00001,  TolX = 0.000000001,  maxFunEvals = 1000,  corrections = 100, =0, =0, =0, =0) := FUNCTION
-//OUTPUT (man);
+OUTPUT (man);
 
 
 //how much cost function takes time?

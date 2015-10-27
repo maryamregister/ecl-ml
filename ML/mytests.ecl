@@ -1,6 +1,4 @@
-﻿
-
-IMPORT PBblas;
+﻿IMPORT PBblas;
 IMPORT PBblas.IMatrix_Map;
 IMPORT PBblas.Types;
 IMPORT ML.DMAT;
@@ -204,5 +202,22 @@ EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2
   END;//end polyinterp_both
    
   newt := polyinterp_both (0 ,  15.05 ,  49.9975,  1.0  , 12.2381 , -41.6795, 1.01, 10);
-  output(newt, named('newt'));
+  sideSw := Side.Ax;
+  Aset := [ 1 ,   2 ,    3,    90    , 3   , 80,    10   , 11 ,    8];
+  Asett := [  1,90,10,
+     2 ,3 , 11,
+     3, 80 ,8];
+  Bset := [ 231, 5996, 620];
+  Tset := PBblas.BLAS.dtrsm (sideSw, Triangle.Upper, FALSE, Diagonal.NotUnitTri, 3,1,  3, 1.0, Asett,Bset);
+  ah := PBblas.BLAS.solvelinear (Asett, Bset, 3, 1,  3, 3);
+ // output(ah, named('Tset'));
+ //polyinterp_noboundry (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2)
+ 
+  
+    
+
+    
+hihihi := Optimization (0, 0, 0, 0).polyinterp_noboundry ( 1.0000 ,  12.2381 , -41.6795 ,1.3432 ,  18.8396   ,32.0273);
+man := roots (1, 2, 4);
+ output(man);
 

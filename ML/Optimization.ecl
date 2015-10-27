@@ -13,103 +13,36 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
   //polyinterp when the boundry values are provided
   EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
     poly1 := FUNCTION
-    //orig
-    /*
-      setp1 := FUNCTION
-        points := DATASET([{1,1,t_1},{2,1,t_2},{3,1,f_1},{4,1,f_2},{5,1,gtd_1},{6,2,gtd_2}], Types.NumericField);
-        RETURN points;
-      END;
-      setp2 := FUNCTION
-        points := DATASET([{2,1,t_1},{1,1,t_2},{4,1,f_1},{3,1,f_2},{6,1,gtd_1},{5,2,gtd_2}], Types.NumericField);
-        RETURN points;
-      END;
-      orderedp := IF (t_1<t_2,setp1 , setp2);
-      tmin := orderedp (id=1)[1].value;
-      tmax := orderedp (id=2)[1].value;
-      fmin := orderedp (id=3)[1].value;
-      fmax := orderedp (id=4)[1].value;
-      gtdmin := orderedp (id=5)[1].value;
-      gtdmax := orderedp (id=6)[1].value;
-      
-      */
-      
-
       points_t1 :=[t_1,t_2,f_1,f_2,gtd_1,gtd_2];
-
       points_t2 := [t_2,t_1,f_2,f_1,gtd_2,gtd_1];
-      orderedp := IF (t_1<t_2,points_t1 , points_t2);
-      
+      orderedp := IF (t_1<t_2,points_t1 , points_t2);    
       tmin := orderedp [1];
       tmax := orderedp [2];
       fmin := orderedp [3];
       fmax := orderedp [4];
       gtdmin := orderedp [5];
       gtdmax := orderedp [6];
-      
-      
       // A= [t_1^3 t_1^2 t_1 1
       //    t_2^3 t_2^2 t_2 1
       //    3*t_1^2 2*t_1 t_1 0
       //    3*t_2^2 2*t_2 t_2 0]
       //b = [f_1 f_2 dtg_1 gtd_2]'
-      // A := DATASET([
-      // {1,1,POWER(t_1,3)},
-      // {1,2,POWER(t_1,2)},
-      // {1,3,POWER(t_1,3)},
-      // {1,4,1},
-      // {2,1,POWER(t_2,3)},
-      // {2,2,POWER(t_2,2)},
-      // {2,3,POWER(t_2,1)},
-      // {2,4,1},
-      // {3,1,3*POWER(t_1,2)},
-      // {3,2,2*t_1},
-      // {3,3,1},
-      // {3,4,0},
-      // {4,1,3*POWER(t_2,2)},
-      // {4,2,2*t_2},
-      // {4,3,1},
-      // {4,4,0}],
-      // Types.NumericField);
       Aset := [POWER(t_1,3),POWER(t_2,3),3*POWER(t_1,2),3*POWER(t_2,2),
       POWER(t_1,2),POWER(t_2,2), 2*t_1,2*t_2,
       POWER(t_1,3),POWER(t_2,1), 1, 1,
       1, 1, 0, 0]; // A 4*4 Matrix      
-      // b := DATASET([
-      // {1,1,f_1},
-      // {2,1,f_2},
-      // {3,1,gtd_1},
-      // {4,1,gtd_2}],
-      // Types.NumericField);
       Bset := [f_1, f_2, gtd_1, gtd_2]; // A 4*1 Matrix
       // Find interpolating polynomial
-      
       //params = A\b;
-      //orig
-      /*
-      A_map := PBblas.Matrix_Map(4, 4, 4, 4);
-      b_map := PBblas.Matrix_Map(4, 1, 4, 1);
-      A_part := ML.DMat.Converted.FromNumericFieldDS (A, A_map);
-      b_part := ML.DMat.Converted.FromNumericFieldDS (b, b_map);
-      params_part := DMAT.solvelinear (A_map,  A_part, FALSE, b_map, b_part);
-      params := DMat.Converted.FromPart2DS (params_part);
-      params1 := params(id=1)[1].value;
-      params2 := params(id=2)[1].value;
-      params3 := params(id=3)[1].value;
-      params4 := params(id=4)[1].value;
-      dParams1 := 3*params(id=1)[1].value;
-      dparams2 := 2*params(id=2)[1].value;
-      dparams3 := params(id=3)[1].value;*/
       params_partset := PBblas.BLAS.solvelinear (Aset, Bset, 4,1,4,4);
       //params_partset := [1,2,3,4];
       params1 := params_partset[1];
       params2 := params_partset[2];
       params3 := params_partset[3];
       params4 := params_partset[4];
-      
       dParams1 := 3*params_partset[1];
       dparams2 := 2*params_partset[2];
       dparams3 := params_partset[3];
-
       Rvalues := roots (dParams1, dparams2, dparams3);
       // Compute Critical Points
       INANYINF := FALSE; //????for now
@@ -153,45 +86,8 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
         RETURN DATASET([{1,1,rr},{2,1,ff}], Types.NumericField);
       END;
       finalresult := LOOP(topa, COUNTER <= itr, Resultstep(ROWS(LEFT),COUNTER));
-      //RETURN finalresult;
-      //RETURN IF(t_1=0, 10, 100);
-      // RETURN DATASET([
-      // {1,1,dParams1},
-      // {2,1,dParams2},
-      // {3,1,dParams3}],
-      // Types.NumericField);
      RETURN finalresult(id=1)[1].value;
     END;//END poly1
-     poly2 := FUNCTION
-        setp1 := FUNCTION
-          points := DATASET([{1,1,t_1},{2,1,t_2},{3,1,f_1},{4,1,f_2},{5,1,gtd_1},{6,2,gtd_2}], Types.NumericField);
-          RETURN points;
-        END;
-        setp2 := FUNCTION
-          points := DATASET([{2,1,t_1},{1,1,t_2},{4,1,f_1},{3,1,f_2},{6,1,gtd_1},{5,2,gtd_2}], Types.NumericField);
-          RETURN points;
-        END;
-        orderedp := IF (t_1<t_2,setp1 , setp2);
-        tmin := orderedp (id=1)[1].value;
-        tmax := orderedp (id=2)[1].value;
-        fmin := orderedp (id=3)[1].value;
-        fmax := orderedp (id=4)[1].value;
-        gtdmin := orderedp (id=5)[1].value;
-        gtdmax := orderedp (id=6)[1].value;
-        // d1 = points(minPos,3) + points(notMinPos,3) - 3*(points(minPos,2)-points(notMinPos,2))/(points(minPos,1)-points(notMinPos,1));
-        d1 := gtdmin + gtdmax - (3*((fmin-fmax)/(tmin-tmax)));
-        //d2 = sqrt(d1^2 - points(minPos,3)*points(notMinPos,3));
-        d2 := SQRT ((d1*d1)-(gtdmin*gtdmax));
-        d2real := TRUE; //check it ???
-        //t = points(notMinPos,1) - (points(notMinPos,1) - points(minPos,1))*((points(notMinPos,3) + d2 - d1)/(points(notMinPos,3) - points(minPos,3) + 2*d2));
-        temp := tmax - ((tmax-tmin)*((gtdmax+d2-d1)/(gtdmax-gtdmin+(2*d2))));
-        //min(max(t,points(minPos,1)),points(notMinPos,1));
-        minpos1 := MIN([MAX([temp,tmin]),tmax]);
-        minpos2 := (t_1+t_2)/2;
-        pol1Result := IF (d2real,minpos1,minpos2);
-        RETURN pol1Result;
-        //RETURN IF(t_1=0, 10, 100);
-      END;//END poly2
     polResult := poly1;
     RETURN polResult;
   END;//end polyinterp_both
@@ -840,11 +736,12 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     WolfeT2 := DATASET([{1,1,FinalBracket(no=11)[1].value,1},
     {1,1,FinalBracket(no=13)[1].value,2},
     {1,1,FinalBracket(no=7)[1].value,4}], Mat.Types.MUElement) + Mat.MU.To (Mat.MU.FROM (FinalBracket,15),3) ;;
-    //WolfeOut := IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2); orig
+    WolfeOut := IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2);
     //Topass2 := f_prevno +  f_newno+ g_prevno  + tno + t_prevno +  gtd_prevno  + Bracket1no + Bracket2no;
     //topass3 := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
     //WolfeOut := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
-    WolfeOut := WolfeT1 + WolfeT2; 
+    //WolfeOut := WolfeT1 + WolfeT2;
+    //WolfeOut := ZOOMInterval;
     AppendID(WolfeOut, id, WolfeOut_id);
     ToField (WolfeOut_id, WolfeOut_id_out, id, 'x,y,value,no');//WolfeOut_id_out is the numeric field format of WolfeOut
     RETURN WolfeOut_id_out;
@@ -956,13 +853,13 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
 //Returns final updated parameter: numericField foramt
 //x0: input parameter vector (column)
 //CostFunc : function handler , it should return a Cost value and the gradient values which is a vector with the same size of x0
-//The output of the CostFunc function should be in numericField format where the last id's value (the maximum id) represents the rest
+//The output of the CostFunc function should be in numericField format where the last id's value (the maximum id) represents cost value and the rest
 //represent the gradient vector
 //So basically CostFunc should recive all its parameters in one single numericField structure + training data + training labels and return a vector of the gradients+costvalue
 //Cost function should have a universal interface, so it recives all parameters in numericfield format and returns in numericfield format
 //CostFunc_params : parameters that need to be passed to the CostFunc
 //TrainData : Train data in numericField format
-//TrainLabel : labels asigned to the train data ( if it is an un-supervised task this parameter would be '')
+//TrainLabel : labels asigned to the train data ( if it is an un-supervised task this parameter would be empty dataset)
 //MaxIter: Maximum number of iteration allowed in the optimization algorithm
 //tolFun : Termination tolerance on the first-order optimality (1e-5)
 //TolX : Termination tolerance on progress in terms of function/parameter changes (1e-9)
@@ -972,7 +869,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
 //prows and maxrows related to "numer of parameters (P)" which is actually the length of the x0 vector
 //pcols and Maxcols are relaetd to "number of correstions to store in the memory (corrections)" which is in the MethodOptions
 //In all operation I want to f or g get nan value if it is devided by zero (do I need to include #option on top of the CostFunc)????????
-EXPORT MinFUNCkk(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, INTEGER MaxIter = 500, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
+EXPORT MinFUNC(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, INTEGER MaxIter = 500, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
 //#option ('divideByZero', 'nan'); //In all operation I want to f or g get nan value if it is devided by zero
 //Functions used
 SumABSg (DATASET (Types.NumericField) g_temp) := FUNCTION
@@ -1032,12 +929,13 @@ IsLegal (DATASET (Types.NumericField) inp) := FUNCTION //???to be defined
 END;
 //the length of the parameters vector (for example in an neural network algorith, all the weight parameters are passed in ONE vector
 //to the optimization algorithm to get updated
-P := Max (x0, id);
+P := COUNT (x0); // number of parameters
+maxid := Max (x0, id); // the maximum matrix id in the parameters numericfield dataset
 ExtractGrad (DATASET(Types.NumericField) inp) := FUNCTION
-  RETURN inp (id <= P);
+  RETURN inp (id <= maxid);
 END;
 ExtractCost (DATASET(Types.NumericField) inp) := FUNCTION
-  RETURN inp (id = (P+1))[1].value;
+  RETURN inp (id = (maxid+1))[1].value;
 END;
 //Evaluate Initial Point
 CostGrad0 := CostFunc (x0,CostFunc_params,TrainData, TrainLabel);
@@ -1045,7 +943,7 @@ g0 := ExtractGrad (CostGrad0);
 Cost0 := ExtractCost (CostGrad0);
 //Check the optimality of the initial point (if sum(abs(g)) <= tolFun)
 IsInitialPointOptimal := OptimalityCond (g0);
-output_x0_cost0 := x0 + CostGrad0 (id = (P+1));
+output_x0_cost0 := x0 + CostGrad0 (id = (maxid+1));
 //LBFGS Module
 O := Limited_Memory_BFGS (P, corrections);
 //initialize Hdiag,old_dir,old_steps, gradient and cost
@@ -1168,7 +1066,9 @@ xfinal := ML.Types.FromMatrix (Mat.MU.From (stepout,1));
 costfinal := DATASET ([{P+1,1,Mat.MU.From (stepout,6)[1].value}],Types.NumericField);
 output_xfinal_costfinal := xfinal + costfinal;
 FinalResult := IF(IsInitialPointOptimal,output_x0_cost0 ,output_xfinal_costfinal);
-RETURN FinalResult;
-END;
+//RETURN FinalResult; orig
+//RETURN DATASET([{1,1,P}], ML.Types.NumericField);
+RETURN x0;
+END;//END MinFUNC
   
 END;// END Optimization
