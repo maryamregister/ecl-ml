@@ -929,13 +929,13 @@ IsLegal (DATASET (Types.NumericField) inp) := FUNCTION //???to be defined
 END;
 //the length of the parameters vector (for example in an neural network algorith, all the weight parameters are passed in ONE vector
 //to the optimization algorithm to get updated
-P := COUNT (x0); // number of parameters
-maxid := Max (x0, id); // the maximum matrix id in the parameters numericfield dataset
+
+P := Max (x0, id); // the maximum matrix id in the parameters numericfield dataset
 ExtractGrad (DATASET(Types.NumericField) inp) := FUNCTION
-  RETURN inp (id <= maxid);
+  RETURN inp (id <= P);
 END;
 ExtractCost (DATASET(Types.NumericField) inp) := FUNCTION
-  RETURN inp (id = (maxid+1))[1].value;
+  RETURN inp (id = (P+1))[1].value;
 END;
 //Evaluate Initial Point
 CostGrad0 := CostFunc (x0,CostFunc_params,TrainData, TrainLabel);
@@ -943,7 +943,7 @@ g0 := ExtractGrad (CostGrad0);
 Cost0 := ExtractCost (CostGrad0);
 //Check the optimality of the initial point (if sum(abs(g)) <= tolFun)
 IsInitialPointOptimal := OptimalityCond (g0);
-output_x0_cost0 := x0 + CostGrad0 (id = (maxid+1));
+output_x0_cost0 := x0 + CostGrad0 (id = (P+1));
 //LBFGS Module
 O := Limited_Memory_BFGS (P, corrections);
 //initialize Hdiag,old_dir,old_steps, gradient and cost
