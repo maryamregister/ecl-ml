@@ -303,9 +303,54 @@ EXPORT Sparse_Autoencoder (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLay
       //first sort the retunring values, this makes sure that they are going to be retrived correctly later in SparseAutoencoderCost
       sorted_prm_MUE := SORT (prm_MUE+costfield,no, y, x);
       AppendID(sorted_prm_MUE, id, prm_MUE_id);
-      
       ToField (prm_MUE_id, costgrad_out, id, 'x,y,value,no');
-      RETURN costgrad_out(number=3);//return only value fields
+      toberetun :=costgrad_out(number=3);//return only value fields
+      
+      
+      
+      
+      // nf := NumberofFeatures;
+    // nh := NumberofHiddenLayerNodes;
+    // nfh := nf*nh;
+    // nfh_2 := 2*nfh;
+    // Mat.Types.MUElement Wreshape (Types.NumericField l) := TRANSFORM
+      // no_temp := (l.id DIV (nfh+1))+1;
+      // SELF.no := no_temp;
+      
+      // SELF.x := IF (no_temp=1, 1+((l.id-1)%nh) , 1+((l.id-1-nfh)%nf));
+      // SELF.y := IF (no_temp=1, ((l.id-1) DIV nh)+1, ((l.id-1-nfh) DIV nf)+1);
+      // SELF.value := l.value;
+    // END;
+    // SA_W := PROJECT (theta(id<=2*nfh),Wreshape(LEFT));
+    // Mat.Types.MUElement Breshape (Types.NumericField l) := TRANSFORM
+      // no_temp := IF (l.id-nfh_2<=nh,1,2);
+      // SELF.no := no_temp;
+      // SELF.x := IF (no_temp =1 ,l.id-nfh_2, l.id-nfh_2-nh);
+      // SELF.y := 1;
+      // SELF.value := l.value;
+    // END;
+    // SA_B := PROJECT (theta(id>nfh_2),Breshape(LEFT));
+    
+      nf := NumberofFeatures;
+      nh := NumberofHiddenLayerNodes;
+      nfh := nf*nh;
+      nfh_2 := 2*nfh;
+      Types.NumericField Wshape (Mat.Types.MUElement l) := TRANSFORM
+        SELF.id := IF (l.no=1,(l.y-1)*nh+l.x,nfh+(l.y-1)*nf+l.x);
+        SELF.number := 1;
+        SELF.value := l.value;
+      END;
+      W_field := PROJECT (wg1_mat_no + wg2_mat_no,Wshape(LEFT));
+      
+      Types.NumericField Bshape (Mat.Types.MUElement l) := TRANSFORM
+        SELF.id := IF (l.no=3,nfh_2+l.x,nfh_2+l.x+nh);
+        SELF.number := 1;
+        SELF.value := l.value;
+      END;
+      B_field := PROJECT (bg1_mat_no + bg2_mat_no,Bshape(LEFT));
+      cost_field := DATASET ([{nfh_2+nf+nh+1,1,cost}],Types.NumericField);
+      //RETURN toberetun; orig
+      RETURN W_field+B_field+cost_field;
     END;//END SparseParam_CostGradients
     SparseParam_CostGradients2 :=  FUNCTION
       w1m := w1dist;
@@ -370,8 +415,8 @@ EXPORT Sparse_Autoencoder (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLay
   // CostFunc_params = DATASET([{1, 1, BETA},{2,1,sparsityParam},{3,1,LAMBDA}], Types.NumericField);
   SparseAutoencoderCost (DATASET(Types.NumericField) theta, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel=emptyC):= FUNCTION
     //Extract weights and bias matrices by using the numebr of hidden and visible nodes
-    nf := 3;
-    nh := 2;
+    nf := NumberofFeatures;
+    nh := NumberofHiddenLayerNodes;
     nfh := nf*nh;
     nfh_2 := 2*nfh;
     Mat.Types.MUElement Wreshape (Types.NumericField l) := TRANSFORM
@@ -413,6 +458,7 @@ EXPORT Sparse_Autoencoder (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLay
     //prepare the parameters to be passed to MinFUNC
     //theta
     //convert IntW and Intb to NumericField format
+    /*
     Mat.Types.MUElement Bno (Mat.Types.MUElement l) := TRANSFORM
       SELF.no := l.no+2;
       SELF := l;
@@ -426,11 +472,28 @@ EXPORT Sparse_Autoencoder (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLay
     theta_MUE_sorted := SORT (theta_MUE,no,y,x);
     AppendID(theta_MUE_sorted, id, theta_MUE_id);
     ToField (theta_MUE_id, theta_input, id, 'x,y,value,no');
+    */
+    nf := NumberofFeatures;
+    nh := NumberofHiddenLayerNodes;
+    nfh := nf*nh;
+    nfh_2 := 2*nfh;
+    Types.NumericField Wshape (Mat.Types.MUElement l) := TRANSFORM
+      SELF.id := IF (l.no=1,(l.y-1)*nh+l.x,nfh+(l.y-1)*nf+l.x);
+      SELF.number := 1;
+      SELF.value := l.value;
+    END;
+    W_field := PROJECT (IntW,Wshape(LEFT));
+    
+    Types.NumericField Bshape (Mat.Types.MUElement l) := TRANSFORM
+      SELF.id := IF (l.no=1,nfh_2+l.x,nfh_2+l.x+nh);
+      SELF.number := 1;
+      SELF.value := l.value;
+    END;
+    B_field := PROJECT (Intb,Bshape(LEFT));    
+    
     //CostFunc_params
     CostFunc_params_input := DATASET([{1, 1, BETA},{2,1,sparsityParam},{3,1,LAMBDA}], Types.NumericField);
-    LearntMod:=  Optimization (0, 0, 0, 0).MinFUNC (theta_input, SparseAutoencoderCost, CostFunc_params_input, Indep , emptyC, 1, 0.00001, 0.000000001,10, 3,0, 0, 0,0);  
- 
-  //RETURN LearntMod; orig
+    LearntMod:=  Optimization (0, 0, 0, 0).MinFUNC (W_field+B_field, SparseAutoencoderCost, CostFunc_params_input, Indep , emptyC, 1, 0.00001, 0.000000001,10, 3,0, 0, 0,0);
   RETURN LearntMod;
   END;
   
