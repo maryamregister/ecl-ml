@@ -2,7 +2,7 @@
 IMPORT * FROM $;
 
 //Set Parameters
-LoopNum := 100; // Number of iterations in softmax algortihm
+LoopNum := 2; // Number of iterations in softmax algortihm
 LAMBDA := 0.0001; // weight decay parameter in  claculation of SoftMax Cost fucntion
 ALPHA := 0.01; // //Learning Rate for updating SoftMax parameters
 

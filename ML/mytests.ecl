@@ -261,6 +261,30 @@ theta := DATASET([
       SELF := l;
     END;
     SA_B := PROJECT (theta(id>nfh_2),Breshape(LEFT));
-OUTPUT(theta,NAMED('theta'));
-OUTPUT(SA_W,NAMED('SA_W'));
-OUTPUT(SA_B,NAMED('SA_B'));
+//OUTPUT(theta,NAMED('theta'));
+//OUTPUT(SA_W,NAMED('SA_W'));
+//OUTPUT(SA_B,NAMED('SA_B'));
+
+
+myrecord := RECORD
+real8 x;
+DATASET(ML.Mat.Types.Element) m;
+DATASET(ML.Mat.Types.Element) m2;
+END;
+hkl := DATASET([{1,1,2},{1,2,4}],ML.Mat.Types.Element);
+hkl2 := DATASET([{1,1,2},{1,2,4},{3,4,10}],ML.Mat.Types.Element);
+myrecdata := DATASET ([{0.1,hkl,hkl2}],myrecord);
+my := DATASET ([],myrecord);
+h := myrecdata.m2;
+
+my[1].x := 10;
+my[1].m := hkl2;
+output(my);
+myrecord CalcAges(myrecord l) := TRANSFORM
+  SELF.x := 10 - l.x;
+  SELF.m := ML.Mat.Scale(l.m,10);
+  SELF := l;
+END;
+xx := PROJECT(myrecdata,CalcAges(LEFT));
+output(xx.m2);
+

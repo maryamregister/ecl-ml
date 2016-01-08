@@ -8,7 +8,7 @@ Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
 
 //Func : handle to the function we want to minimize it, its output should be the error cost and the error gradient
-EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
+EXPORT Optimization2 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
 
   //polyinterp when the boundry values are provided
   EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
@@ -455,6 +455,9 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
     IsNotLegal (DATASET (Mat.Types.Element) Mat) := FUNCTION //???to be defined
       RETURN FALSE;
     END;
+    IsNotLegal_real (REAL8 v) := FUNCTION //???to be defined
+      RETURN FALSE;
+    END;
     ArmijoBacktrack4 (DATASET (Mat.Types.MUElement) inputpp) := FUNCTION // to be defined with recieving real parameters (should be a macro similar to this one)
       RETURN inputpp;
     END;
@@ -567,8 +570,8 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       //
       // Evaluate new point with tZoom
       x_td := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),tZOOM)));
-      CG_New := CostFunc (x_td ,CostFunc_params,TrainData, TrainLabel);
- /*     
+      //CG_New := CostFunc (x_td ,CostFunc_params,TrainData, TrainLabel); orig
+      
 CF_new_mine := DATASET ([  
  { 1  ,  1  ,  0.0014},
    { 2 ,   1  ,  0.0003},
@@ -594,7 +597,7 @@ CF_new_mine := DATASET ([
       // CFP := IF (cccc=11,CostFunc_params_test,CostFunc_params);
       // CG_New := CostFunc (x_td ,CFP,TrainData, TrainLabel);
       CG_New := IF (cccc=11,CF_new_mine, CostFunc (x_td ,CostFunc_params,TrainData, TrainLabel)); 
-     */ 
+      
       gNew := ExtractGrad (CG_New);
       fNew := ExtractCost(CG_New);
       gtdNew := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(gNew)),ML.Types.ToMatrix(d));
@@ -655,18 +658,19 @@ CF_new_mine := DATASET ([
 
       ZOOOMResult := IF (ZoomCon1, SetIntervalIF1, (IF(ZOOMCon1_1, SETIntervalELSE1_1, IF (ZOOMCon1_2,SETIntervalELSE1_2, SetIntervalELSE1 ))));
       //~done && abs((bracket(1)-bracket(2))*gtd_new) < tolX
-      ZOOMTermination :=( (Mat.MU.FROM (ZOOOMResult,200)[1].value = 0) & (ABS((gtdNew[1].value * (Mat.MU.From (ZOOOMResult,10)[1].value-Mat.MU.From (ZOOOMResult,11)[1].value)))<tolX) ) | (Mat.MU.FROM (ZOOOMResult,200)[1].value = 1);
+       ZOOMTermination :=( (Mat.MU.FROM (ZOOOMResult,200)[1].value = 0) & (ABS((gtdNew[1].value * (Mat.MU.From (ZOOOMResult,10)[1].value-Mat.MU.From (ZOOOMResult,11)[1].value)))<tolX) ) | (Mat.MU.FROM (ZOOOMResult,200)[1].value = 1);
+      //ZOOMTermination :=( (Mat.MU.FROM (ZOOOMResult,200)[1].value = 0) & (ABS((gtdNew[1].value * (t_first-t_second)))<tolX) ) | (Mat.MU.FROM (ZOOOMResult,200)[1].value = 1); orig
       //ZOOMTermination_num := (INTEGER)ZOOMTermination; orig
       ZOOMTermination_num := IF(ZOOMTermination,1,0);
       ZOOMFinalResult := ZOOOMResult (no<200) + DATASET([{1,1,ZOOMTermination_num,200}], Mat.Types.MUElement)+ DATASET([{1,1,insufProgress_new,300}], Mat.Types.MUElement) +ZoomFunEvalno ;
-      RETURN ZOOMFinalResult;
+      //RETURN ZOOMFinalResult; orig
       //t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value
       //RETURN IF(cccc=11,WI(no=12)+DATASET([{1,1,t_first,5},{2,1,f_first,6},{3,1,gtd_first[1].value,7},{4,1,t_second,8},{5,1,f_second,9},{6,1,gtd_second[1].value ,10}], Mat.Types.MUElement)+DATASET([{1,1,tTmp,1}], Mat.Types.MUElement) +DATASET([{1,1,IF(ZoomCon1,3.1,4.1),2}], Mat.Types.MUElement)+DATASET([{1,1,IF(ZOOMCon1_1,3.1,4.1),3}], Mat.Types.MUElement)+DATASET([{1,1,IF(ZOOMCon1_2,3.1,4.1),4}], Mat.Types.MUElement) , ZOOMFinalResult);
 //RETURN IF (cccc=11, DATASET([{2,1,8,60},{5,1,8,90},{4,3,tTmp,10}], Mat.Types.MUElement), ZOOMFinalResult); 
 // RETURN IF (cccc=11, DATASET([{2,1,f_first,60},{5,1,f_second,90},{4,3,tTmp,10}], Mat.Types.MUElement), ZOOMFinalResult); // 0 0 0.3236 
 //IF (cccc=11, DATASET([{50,1,(REAL8)WI(no=12)[1].value,60}], Mat.Types.MUElement), ZOOMFinalResult);  0
-//WI12 := WI(no=12);
-//RETURN WI;
+WI12 := WI(no=12);
+RETURN WI;
 //RETURN DATASET ([{1,1,WI(no=12)[1].value,10}],Mat.Types.MUElement);
 //RETURN WI(n=12)+ DATASET ([{1,1,WI(no=12)[1].value,10}],Mat.Types.MUElement);
 //IF(COUNT(ds) > 0, ds[1].x, 0);
@@ -699,6 +703,28 @@ CF_new_mine := DATASET ([
     gtd_prev := gtd;
 
     //Bracketing algorithm, either produces the final t value or a bracket that contains the final t value
+    
+    bracketing_record := RECORD
+    REAL8 f_prev_;
+    REAL8 f_new_;
+    DATASET(Mat.Types.Element) g_prev_;
+    DATASET(Mat.Types.Element) g_new_;
+    REAL8 t_;
+    REAL8 t_prev_;
+    REAL8 funEvals_;
+    REAL8 gtd_prev_;
+    REAL8 gtd_new_;
+    REAL8 bracket1_;
+    REAL8 bracket2_;
+    REAL8 bracket1_f_;
+    REAL8 bracket2_f_;
+    DATASET(Mat.Types.Element) bracket1_g_;
+    DATASET(Mat.Types.Element) bracket2_g_;
+    INTEGER8 c; //Counter
+    END;
+    
+    ToPass_bracketing := DATASET ([{f_prev,f_new,ML.Types.ToMatrix(g_prev),ML.Types.ToMatrix(g_new),t,t_prev,funEvals,gtd_prev,gtd_new,-1,-1,-1,-1,emptyE,emptyE,0 }],bracketing_record);
+    
     //prepare the parameters to be passed to the bracketing algorithm
     f_prevno := DATASET([{1,1,f_prev,1}], Mat.Types.MUElement);
     f_newno := DATASET([{1,1,f_new,2}], Mat.Types.MUElement);
@@ -724,6 +750,95 @@ CF_new_mine := DATASET ([
     // bracket2 11
     //Topass := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no + Mat.MU.To (ML.Types.ToMatrix(x_new),103);
     Topass := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
+    
+    BracketingStep (DATASET (bracketing_record) inputp, INTEGER coun) := FUNCTION
+      AreTheyLegal := IsNotLegal_real(inputp.f_new_) | IsNotLegal(inputp.g_new_);
+      WolfeStep := FUNCTION
+        fNew := inputp[1].f_new_;
+        fPrev := inputp[1].f_prev_;
+        gtdNew := inputp[1].gtd_new_;
+        gtdPrev := inputp[1].gtd_prev_;
+        tt := inputp[1].t_;
+        tPrev := inputp[1].t_prev_;
+        gNew := inputp[1].g_new_;
+        gPrev := inputp[1].g_prev_;
+        inputFunEval := inputp[1].funEvals_;
+        BrackLSiter := coun-1;
+        
+        //If the strong wolfe conditions satisfies then retun the final t or the bracket, otherwise do the next iteration
+        //f_new > f + c1*t*gtd || (LSiter > 1 && f_new >= f_prev)
+        con1 := (fNew > f + c1 * tt* gtd)| ((BrackLSiter > 1) & (fNew >= fPrev)) ;
+        //abs(gtd_new) <= -c2*gtd
+        con2 := ABS(gtdNew) <= (-1*c2*gtd);
+        // gtd_new >= 0
+        con3 := gtdNew >= 0;
+        bracketing_record bracketing_con1_3 (bracketing_record l) := TRANSFORM
+        /* bracket = [t_prev t];
+        bracketFval = [f_prev f_new];
+        bracketGval = [g_prev g_new];*/
+          SELF.bracket1_ := tPrev;
+          SELF.bracket2_ := tt;
+          SELF.bracket1_f_ := fPrev;
+          SELF.bracket2_f_ := fNew;
+          SELF.bracket1_g_ := gPrev;
+          SELF.bracket2_g_ := gNew;
+          SELF.c := coun;
+          SELF := l;
+        END;
+        bracketing_record bracketing_con2 (bracketing_record l) := TRANSFORM
+        /*  bracket = t;
+        bracketFval = f_new;
+        bracketGval = g_new;
+        done = 1;*/
+          SELF.bracket1_ := tt;
+          SELF.bracket2_ := -1;
+          SELF.bracket1_f_ := fNew;
+          SELF.bracket2_f_ := -1;
+          SELF.bracket1_g_ := gNew;
+          SELF.c := coun;
+          SELF := l;
+        END;
+
+        bracketing_record bracketing_Nocon (bracketing_record l) := TRANSFORM
+          //calculate new t
+          minstep := tt + 0.01* (tt-tPrev);
+          maxstep := tt*10;
+          newt := polyinterp_both (tPrev, fPrev,gtdPrev, tt, fNew, gtdNew, minstep, maxstep);
+          //calculate fnew gnew gtdnew
+          xNew := calculate_xNew (d, newt);
+          CostGradNew := CostFunc (xNew ,CostFunc_params,TrainData, TrainLabel);
+          gNewwolfe := ExtractGrad (CostGradNew);
+          fNewWolfe := ExtractCost (CostGradNew);
+          gtdNewWolfe := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(gNewwolfe)),ML.Types.ToMatrix(d));
+          SELF.t_prev_ := tt; //t_prev = t;
+          SELF.f_prev_ := fNew;
+          SELF.g_prev_ := gNew;
+          SELF.gtd_prev_ := gtdNew;
+          SELF.t_ := newt;
+          SELF.f_new_ := fNewWolfe;
+          SELF.g_new_ := ML.Types.ToMatrix(gNewwolfe);
+          SELF.gtd_new_ := gtdNewWolfe[1].value;
+          SELF.bracket1_ := -1;
+          SELF.bracket2_ := -1;
+          SELF.funEvals_ := inputFunEval+1;
+          SELF.c := coun;
+          SELF := l;
+        END;
+        con1_3_output := PROJECT(inputp,bracketing_con1_3(LEFT));
+        con2_output := PROJECT(inputp,bracketing_con2(LEFT));
+        Nocon_output := PROJECT(inputp,bracketing_Nocon(LEFT));
+        RETURN IF (con1, con1_3_output, IF (con2, con2_output, IF (con3, con1_3_output, Nocon_output)));
+      END;//END WolfeStep
+      ArmijoStep := FUNCTION
+        RETURN inputp;
+      END;// END ArmijoStep
+      WolfeBracket := WolfeStep;
+      ArmijoBracket := ArmijoStep;
+      RETURN IF(AreTheyLegal,ArmijoBracket,WolfeBracket);
+    END; // END BracketingStep
+    
+    BracketingResult := LOOP(ToPass_bracketing, COUNTER <= maxLS AND ROWS(LEFT)[1].bracket1_ = -1, BracketingStep(ROWS(LEFT),COUNTER));
+    
     Bracketing (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
       fi_prev :=  Mat.MU.From (inputp,1);
       fi_new := Mat.MU.From (inputp,2);
@@ -781,8 +896,9 @@ CF_new_mine := DATASET ([
     WolfeT2 := DATASET([{1,1,FinalBracket(no=11)[1].value,1},
     {1,1,FinalBracket(no=13)[1].value,2},
     {1,1,FinalBracket(no=7)[1].value,4}], Mat.Types.MUElement) + Mat.MU.To (Mat.MU.FROM (FinalBracket,15),3);
-    WolfeOut := IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2);
+    //WolfeOut := IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2); orig
     //WOlfeOut := IF (cccc=11, ZOOMInterval, IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
+    Wolfeout := Bracketing_Result;
     //WOlfeOut := IF (cccc=11, Bracketing_Result (no = 11 OR no=10 OR no=7 OR no=12 OR no=13), IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
 FoundInterval_funcount := Bracketing_Result(no = 11 OR no=10 OR no=7 OR no=12 OR no=13 OR no =14 OR no=15);
 //W // WOlfeOut := IF (cccc=11, DATASET([{1,1,0,200}], Mat.Types.MUElement) + DATASET([{1,1,0,300}], Mat.Types.MUElement), IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
@@ -835,6 +951,464 @@ WolfeOut11:= DATASET([{1,1,  0.3236,1},
    // RETURN DATASET([{1,1,Zoom_Max_Itr,200}], Mat.Types.MUElement) ;
   // RETURN ZOOMInterval;
   END;// END WolfeLineSearch
+  
+   EXPORT WolfeLineSearch2(INTEGER cccc, DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
+    //initial parameters
+    P_num := Max (x, id); //the length of the parameters vector (number of parameters)
+    emptyE := DATASET([], Mat.Types.Element);
+    LSiter := 0;
+    Bracket1no := DATASET([{1,1,-1,10}], Mat.Types.MUElement); //the result of the bracketing algorithm
+    Bracket2no := DATASET([{1,1,-1,11}], Mat.Types.MUElement); //the result of the bracketing algorithm
+    calculate_gtdNew (DATASET(Types.NumericField) g_in, DATASET(Types.NumericField) d_in) := FUNCTION
+      Types.NumericField Mu(g_in le,d_in ri) := TRANSFORM
+        SELF.id := le.id;
+        SELF.number := ri.number;
+        SELF.value := le.value * ri.value;
+      END;
+      element_mul := JOIN(g_in,d_in,LEFT.id=RIGHT.id,Mu(LEFT,RIGHT));
+      r := RECORD
+        t_RecordID id := 1 ;
+        t_FieldNumber number := 1;
+        t_FieldReal value := SUM(GROUP,element_mul.value);
+      END;
+      SumMulElm := TABLE(element_mul,r);
+      RETURN SumMulElm[1].value;
+    END;
+    calculate_xNew (DATASET(Types.NumericField) d_in, REAL8 t_in) := FUNCTION
+      //x_new = x+t*d
+      Types.NumericField xnew_tran (x l, d_in r):= TRANSFORM
+        SELF.value := l.value+(t_in*r.value);
+        SELF := l;
+      END;
+      Result := JOIN(x,d_in,LEFT.id=RIGHT.id AND LEFT.number=RIGHT.number,xnew_tran(LEFT,RIGHT));
+      RETURN Result;
+    END;
+    ExtractGrad (DATASET(Types.NumericField) inp) := FUNCTION
+      RETURN inp (id <= P_num);
+    END;
+    ExtractCost (DATASET(Types.NumericField) inp) := FUNCTION
+      RETURN inp (id = (P_num+1))[1].value;
+    END;
+    IsNotLegal (DATASET (Mat.Types.Element) Mat) := FUNCTION //???to be defined
+      RETURN FALSE;
+    END;
+    IsNotLegal_real (REAL8 v) := FUNCTION //???to be defined
+      RETURN FALSE;
+    END;
+  
+
+    
+    //% Evaluate the Objective and Gradient at the Initial Step
+    //x_new = x+t*d
+    //x_new := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t)));
+    x_new := calculate_xNew (d,t);
+    CostGrad_new := CostFunc (x_new ,CostFunc_params,TrainData, TrainLabel);
+    g_new := ExtractGrad (CostGrad_new);
+    f_new := ExtractCost (CostGrad_new);
+    funEvals := 1;
+    //gtd_new = g_new'*d;
+    //gtd_new := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(g_new)),ML.Types.ToMatrix(d));
+    gtd_new := calculate_gtdNew (g_new, d);
+    
+    // Bracket an Interval containing a point satisfying the Wolfe Criteria
+    t_prev := 0;
+    f_prev := f;
+    g_prev := g;
+    gtd_prev := gtd;
+
+    //Bracketing algorithm, either produces the final t value or a bracket that contains the final t value
+    
+    bracketing_record := RECORD
+      REAL8 f_prev_;
+      REAL8 f_new_;
+      DATASET(Mat.Types.Element) g_prev_;
+      DATASET(Mat.Types.Element) g_new_;
+      REAL8 t_;
+      REAL8 t_prev_;
+      INTEGER8 funEvals_;
+      REAL8 gtd_prev_;
+      REAL8 gtd_new_;
+      REAL8 bracket1_;
+      REAL8 bracket2_;
+      REAL8 bracket1_f_;
+      REAL8 bracket2_f_;
+      DATASET(Mat.Types.Element) bracket1_g_;
+      DATASET(Mat.Types.Element) bracket2_g_;
+      INTEGER8 c; //Counter
+    END;
+    
+    ToPass_bracketing := DATASET ([{f_prev,f_new,ML.Types.ToMatrix(g_prev),ML.Types.ToMatrix(g_new),t,t_prev,funEvals,gtd_prev,gtd_new,-1,-1,-1,-1,emptyE,emptyE,0 }],bracketing_record);
+    
+    
+    
+    BracketingStep (DATASET (bracketing_record) inputp, INTEGER coun) := FUNCTION
+      AreTheyLegal := IsNotLegal_real(inputp.f_new_) | IsNotLegal(inputp.g_new_);
+      WolfeStep := FUNCTION
+        fNew := inputp[1].f_new_;
+        fPrev := inputp[1].f_prev_;
+        gtdNew := inputp[1].gtd_new_;
+        gtdPrev := inputp[1].gtd_prev_;
+        tt := inputp[1].t_;
+        tPrev := inputp[1].t_prev_;
+        gNew := inputp[1].g_new_;
+        gPrev := inputp[1].g_prev_;
+        inputFunEval := inputp[1].funEvals_;
+        BrackLSiter := coun-1;
+        
+        //If the strong wolfe conditions satisfies then retun the final t or the bracket, otherwise do the next iteration
+        //f_new > f + c1*t*gtd || (LSiter > 1 && f_new >= f_prev)
+        con1 := (fNew > f + c1 * tt* gtd)| ((BrackLSiter > 1) & (fNew >= fPrev)) ;
+        //abs(gtd_new) <= -c2*gtd
+        con2 := ABS(gtdNew) <= (-1*c2*gtd);
+        // gtd_new >= 0
+        con3 := gtdNew >= 0;
+        bracketing_record bracketing_con1_3 (bracketing_record l) := TRANSFORM
+        /* bracket = [t_prev t];
+        bracketFval = [f_prev f_new];
+        bracketGval = [g_prev g_new];*/
+          SELF.bracket1_ := tPrev;
+          SELF.bracket2_ := tt;
+          SELF.bracket1_f_ := fPrev;
+          SELF.bracket2_f_ := fNew;
+          SELF.bracket1_g_ := gPrev;
+          SELF.bracket2_g_ := gNew;
+          SELF := l;
+        END;
+        bracketing_record bracketing_con2 (bracketing_record l) := TRANSFORM
+        /*  bracket = t;
+        bracketFval = f_new;
+        bracketGval = g_new;
+        done = 1;*/
+          SELF.bracket1_ := tt;
+          SELF.bracket2_ := -1;
+          SELF.bracket1_f_ := fNew;
+          SELF.bracket2_f_ := -1;
+          SELF.bracket1_g_ := gNew;
+          SELF := l;
+        END;
+
+        bracketing_record bracketing_Nocon (bracketing_record l) := TRANSFORM
+          //calculate new t
+          minstep := tt + 0.01* (tt-tPrev);
+          maxstep := tt*10;
+          newt := polyinterp_both (tPrev, fPrev,gtdPrev, tt, fNew, gtdNew, minstep, maxstep);
+          //calculate fnew gnew gtdnew
+          xNew := calculate_xNew (d, newt);
+          CostGradNew := CostFunc (xNew ,CostFunc_params,TrainData, TrainLabel);
+          gNewwolfe := ExtractGrad (CostGradNew);
+          fNewWolfe := ExtractCost (CostGradNew);
+          gtdNewWolfe := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(gNewwolfe)),ML.Types.ToMatrix(d));
+          SELF.t_prev_ := tt; //t_prev = t;
+          SELF.f_prev_ := fNew;
+          SELF.g_prev_ := gNew;
+          SELF.gtd_prev_ := gtdNew;
+          SELF.t_ := newt;
+          SELF.f_new_ := fNewWolfe;
+          SELF.g_new_ := ML.Types.ToMatrix(gNewwolfe);
+          SELF.gtd_new_ := gtdNewWolfe[1].value;
+          SELF.bracket1_ := -1;
+          SELF.bracket2_ := -1;
+          SELF.funEvals_ := inputFunEval+1;
+          SELF.c := l.c+1;
+          SELF := l;
+        END;
+        con1_3_output := PROJECT(inputp,bracketing_con1_3(LEFT));
+        con2_output := PROJECT(inputp,bracketing_con2(LEFT));
+        Nocon_output := PROJECT(inputp,bracketing_Nocon(LEFT));
+        RETURN IF (con1, con1_3_output, IF (con2, con2_output, IF (con3, con1_3_output, Nocon_output)));
+      END;//END WolfeStep
+      ArmijoStep := FUNCTION
+        RETURN inputp;
+      END;// END ArmijoStep
+      WolfeBracket := WolfeStep;
+      ArmijoBracket := ArmijoStep;
+      RETURN IF(AreTheyLegal,ArmijoBracket,WolfeBracket);
+    END; // END BracketingStep
+    
+    
+    
+    ZoomingRecord := RECORD
+      REAL8 bracket1_;
+      REAL8 bracket2_;
+      REAL8 bracket1_f_;
+      REAL8 bracket2_f_;
+      DATASET(Mat.Types.Element) bracket1_g_;
+      DATASET(Mat.Types.Element) bracket2_g_;
+      INTEGER8 funEvals_;
+      BOOLEAN InsufProg:= FALSE;
+      BOOLEAN Done := FALSE;
+      BOOLEAN Break := FALSE;
+    END;
+    
+    ZoomingStep (DATASET (ZoomingRecord) inputp, INTEGER coun) := FUNCTION
+      t_first  := inputp[1].bracket1_;
+      t_second := inputp[1].bracket2_;
+      f_first  := inputp[1].bracket1_f_;
+      f_second := inputp[1].bracket2_f_;
+      g_first  := inputp[1].bracket1_g_;
+      g_second := inputp[1].bracket2_g_;
+      gtd_first := ML.Mat.Mul (ML.Mat.Trans (g_first),ML.Types.ToMatrix(d));
+      gtd_second := ML.Mat.Mul (ML.Mat.Trans (g_second),ML.Types.ToMatrix(d));
+      insufProgress := inputp[1].InsufProg;
+      inputZFunEval := inputp[1].funEvals_;
+      //
+      // Find High and Low Points in bracket
+      LOt := IF (f_first < f_second, t_first , t_second);
+      HIt := IF (f_first < f_second, t_second, t_first );
+      LOf := IF (f_first < f_second, f_first, f_second);
+      HIf := IF (f_first < f_second,  f_second, f_first);
+      LO_g := IF (f_first < f_second,  g_first, g_second);
+      HIg := IF (f_first < f_second, g_second,   g_first);
+      // Compute new trial value
+      //t = polyinterp([bracket(1) bracketFval(1) bracketGval(:,1)'*d bracket(2) bracketFval(2) bracketGval(:,2)'*d],doPlot);
+      tTmp := polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
+      //Test that we are making sufficient progress
+      
+      BList := [t_first,t_second];
+      MaxB := MAX (BList);
+      MinB := MIN (BList);
+      //if min(max(bracket)-t,t-min(bracket))/(max(bracket)-min(bracket)) < 0.1
+      MainPCondterm := (MIN ((MAXB - tTmp) , (tTmp - MINB)) / (MAXB - MINB) );
+      MainPCond := MainPCondterm < 0.1 ;
+      //if insufProgress || t>=max(bracket) || t <= min(bracket)
+      PCond2 := insufProgress | (tTmp >= MAXB) | (tTmp <= MINB);
+      //abs(t-max(bracket)) < abs(t-min(bracket))
+      PCond2_1 := ABS (tTMP - MAXB) < ABS (tTmp - MINB);
+      // t = max(bracket)-0.1*(max(bracket)-min(bracket));
+      MMTemp := 0.1 * (MAXB - MINB);
+      tIF    := MAXB - MMTemp;
+      // t = min(bracket)+0.1*(max(bracket)-min(bracket));
+      tELSE := MINB + MMTemp;
+      tZOOM := IF (MainPCond,IF (PCond2, IF (PCond2_1, tIF, tELSE) , tTmp),tTmp);
+      insufProgress_new := IF (MainPCond, IF (PCond2, FALSE, TRUE) , FALSE);
+      //
+      // Evaluate new point with tZoom
+      x_td := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),tZOOM)));
+      CG_New := CostFunc (x_td ,CostFunc_params,TrainData, TrainLabel);
+            
+      gNew := ExtractGrad (CG_New);
+      fNew := ExtractCost(CG_New);
+      gtdNew := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(gNew)),ML.Types.ToMatrix(d));
+      New_FunEval := inputZFunEval + 1;
+      
+      //conditions
+      //IF f_new > f + c1*t*gtd || f_new >= f_LO
+      ZoomCon1 := (fNew > f + c1 * tZoom * gtd) | (fNew >LOf);
+      //if abs(gtd_new) <= - c2*gtd
+      ZOOMCon1_1 := ABS (gtdNew[1].value) <= (-1 * c2 * gtd); 
+      //gtd_new*(bracket(HIpos)-bracket(LOpos)) >= 0
+      ZOOMCon1_2 := (gtdNew[1].value * (HIt - LOt)) >= 0; 
+      ZoomingRecord zooming_Con1_f1 (ZoomingRecord l) := TRANSFORM //when Con1 is satisfied and f_first < f_second
+      /*
+        bracket(HIpos) = t;
+        bracketFval(HIpos) = f_new;
+        bracketGval(:,HIpos) = g_new;
+        Tpos = HIpos;
+      */
+        SELF.bracket2_ := tZOOM;
+        SELF.bracket2_f_ := fNew;
+        SELF.bracket2_g_ := ML.Types.ToMatrix(gNew);
+        SELF.funEvals_ := New_FunEval;
+        SELF.InsufProg := insufProgress_new;
+        SELF := l;
+      END;
+      ZoomingRecord zooming_Con1_f2 (ZoomingRecord l) := TRANSFORM //when Con1 is satisfied and f_second < f_first
+              /*
+        bracket(HIpos) = t;
+        bracketFval(HIpos) = f_new;
+        bracketGval(:,HIpos) = g_new;
+        Tpos = HIpos;
+      */
+        SELF.bracket1_ := tZOOM;
+        SELF.bracket1_f_ := fNew;
+        SELF.bracket1_g_ := ML.Types.ToMatrix(gNew);
+        SELF.funEvals_ := New_FunEval;
+        SELF.InsufProg := insufProgress_new;
+        SELF := l;
+      END;
+
+      ZoomingRecord zooming_Con1_1_f1 (ZoomingRecord l) := TRANSFORM ////when Con1_1 is satisfied and f_first < f_second
+      /*
+ % Wolfe conditions satisfied
+            done = 1;
+ % New point becomes new LO
+        bracket(LOpos) = t;
+        bracketFval(LOpos) = f_new;
+        bracketGval(:,LOpos) = g_new;*/
+        SELF.bracket1_ := tZOOM;
+        SELF.bracket1_f_ := fNew;
+        SELF.bracket1_g_ := ML.Types.ToMatrix(gNew);
+        SELF.funEvals_ := New_FunEval;
+        SELF.InsufProg := insufProgress_new;
+        SELF.done := TRUE;
+        SELF := l;
+      END;
+      ZoomingRecord zooming_Con1_1_f2 (ZoomingRecord l) := TRANSFORM ////when Con1_1 is satisfied and f_second < f_first
+      /*
+ % Wolfe conditions satisfied
+            done = 1;
+ % New point becomes new LO
+        bracket(LOpos) = t;
+        bracketFval(LOpos) = f_new;
+        bracketGval(:,LOpos) = g_new;*/
+        SELF.bracket2_ := tZOOM;
+        SELF.bracket2_f_ := fNew;
+        SELF.bracket2_g_ := ML.Types.ToMatrix(gNew);
+        SELF.funEvals_ := New_FunEval;
+        SELF.InsufProg := insufProgress_new;
+        SELF.done := TRUE;
+        SELF := l;
+      END;
+      
+      
+      ZoomingRecord zooming_Con1_2_f1 (ZoomingRecord l) := TRANSFORM ////when Con1_1 is satisfied and  f_first <f_second 
+      /*
+ 
+           
+% Old HI becomes new LO
+bracket(HIpos) = bracket(LOpos);
+            bracketFval(HIpos) = bracketFval(LOpos);
+            bracketGval(:,HIpos) = bracketGval(:,LOpos);
+ % New point becomes new LO
+        bracket(LOpos) = t;
+        bracketFval(LOpos) = f_new;
+        bracketGval(:,LOpos) = g_new;
+*/
+        SELF.bracket2_ := l.bracket1_;
+        SELF.bracket2_f_ := l.bracket1_f_;
+        SELF.bracket2_g_ := l.bracket1_g_;
+        SELF.bracket1_ := tZOOM;
+        SELF.bracket1_f_ := fNew;
+        SELF.bracket1_g_ := ML.Types.ToMatrix(gNew);
+        SELF.funEvals_ := New_FunEval;
+        SELF.InsufProg := insufProgress_new;
+        SELF := l;
+      END;
+      
+        ZoomingRecord zooming_Con1_2_f2 (ZoomingRecord l) := TRANSFORM ////when Con1_1 is satisfied and  f_second <f_first
+      /*       
+% Old HI becomes new LO
+bracket(HIpos) = bracket(LOpos);
+            bracketFval(HIpos) = bracketFval(LOpos);
+            bracketGval(:,HIpos) = bracketGval(:,LOpos);
+ % New point becomes new LO
+        bracket(LOpos) = t;
+        bracketFval(LOpos) = f_new;
+        bracketGval(:,LOpos) = g_new;
+*/
+        SELF.bracket1_ := l.bracket2_;
+        SELF.bracket1_f_ := l.bracket2_f_;
+        SELF.bracket1_g_ := l.bracket2_g_;
+        SELF.bracket2_ := tZOOM;
+        SELF.bracket2_f_ := fNew;
+        SELF.bracket2_g_ := ML.Types.ToMatrix(gNew);
+        SELF.funEvals_ := New_FunEval;
+        SELF.InsufProg := insufProgress_new;
+        SELF := l;
+      END;
+      
+      ZoomingRecord zooming_NoCon_f1 (ZoomingRecord l) := TRANSFORM //// f_first < f_second
+      /*
+ % New point becomes new LO
+        bracket(LOpos) = t;
+        bracketFval(LOpos) = f_new;
+        bracketGval(:,LOpos) = g_new;*/
+        SELF.bracket1_ := tZOOM;
+        SELF.bracket1_f_ := fNew;
+        SELF.bracket1_g_ := ML.Types.ToMatrix(gNew);
+        SELF.funEvals_ := New_FunEval;
+        SELF.InsufProg := insufProgress_new;
+        SELF := l;
+      END;
+      ZoomingRecord zooming_NoCon_f2 (ZoomingRecord l) := TRANSFORM //// f_second < f_first
+      /*
+
+ % New point becomes new LO
+        bracket(LOpos) = t;
+        bracketFval(LOpos) = f_new;
+        bracketGval(:,LOpos) = g_new;*/
+        SELF.bracket2_ := tZOOM;
+        SELF.bracket2_f_ := fNew;
+        SELF.bracket2_g_ := ML.Types.ToMatrix(gNew);
+        SELF.funEvals_ := New_FunEval;
+        SELF.InsufProg := insufProgress_new;
+        SELF := l;
+      END;
+
+      output_Con1 := IF (f_first < f_second, PROJECT(inputp,zooming_Con1_f1(LEFT)), PROJECT(inputp,zooming_Con1_f2(LEFT)));
+      output_Con1_1 := IF (f_first < f_second,PROJECT(inputp,zooming_Con1_1_f1(LEFT)), PROJECT(inputp,zooming_Con1_1_f2(LEFT)));
+      output_Con1_2 := IF (f_first < f_second,PROJECT(inputp,zooming_Con1_2_f1(LEFT)), PROJECT(inputp,zooming_Con1_2_f2(LEFT)));
+      output_NoCon := IF (f_first < f_second,PROJECT(inputp,zooming_NoCon_f1(LEFT)),PROJECT(inputp,zooming_NoCon_f2(LEFT)));
+      IFOut := IF (ZoomCon1, output_Con1, IF (ZOOMCon1_1, output_Con1_1, IF (ZOOMCon1_2, output_Con1_2, output_NoCon ) ));
+      ZoomingRecord BreakTran (IFOut l) := TRANSFORM
+        // IF ~done && abs((bracket(1)-bracket(2))*gtd_new) < tolX then break
+        SELF.break := (~l.done) & (abs((l.bracket1_-l.bracket2_)*gtdNew[1].value) < tolX);
+        SELF := l;
+      END;
+      
+      ZoomOut := PROJECT (IFOut , BreakTran (LEFT) );
+
+      RETURN ZoomOut;
+    END; // END ZoomingStep
+    
+    //Run the Loop as long as counter is less than or equal to maxLS and the bracket_t1 is not still found
+    BracketingResult := LOOP(ToPass_bracketing, COUNTER <= maxLS AND ROWS(LEFT)[1].bracket1_ = -1, BracketingStep(ROWS(LEFT),COUNTER));
+    interval_found := BracketingResult[1].bracket1_ != -1 AND BracketingResult[1].bracket2_  !=-1;
+    final_t_found := BracketingResult[1].bracket1_ != -1 AND BracketingResult[1].bracket2_  =-1;
+    Zoom_Max_itr_tmp :=  maxLS - BracketingResult[1].c;
+    Zoom_Max_Itr := IF (Zoom_Max_itr_tmp >0, Zoom_Max_itr_tmp, 0);
+    
+    
+    ToPass_Zooming := PROJECT(BracketingResult, TRANSFORM(ZoomingRecord, SELF := LEFT));
+    ZoomingResult := LOOP(ToPass_Zooming, COUNTER <= Zoom_Max_Itr AND ~ROWS(LEFT)[1].done AND ~ROWS(LEFT)[1].break, ZoomingStep(ROWS(LEFT),COUNTER));
+    OutputRecord := RECORD
+      REAL8 t;
+      REAL8 f_new;
+      DATASET(Mat.Types.Element) g_new;
+    END;
+    OutputRecord finaltTran (BracketingResult l) := TRANSFORM
+      SELF.t := l.bracket1_ ;
+      SELF.f_new := l.bracket1_f_ ;
+      SELF.g_new := l.bracket1_g_;
+    END;
+    final_t_output := PROJECT (BracketingResult, finaltTran(LEFT));
+    
+    OutputRecord MaxItrTran (BracketingResult l) := TRANSFORM
+      con := f < l.f_new_;
+      SELF.t := IF (con, 0, l.t_) ;
+      SELF.f_new := IF (con, f, l.f_new_) ;
+      SELF.g_new := IF (con, ML.Types.ToMatrix(g), l.g_new_ );
+    END;
+    MaxItr_output := PROJECT (BracketingResult, MaxItrTran(LEFT));
+    
+    OutputRecord ZoomTran (ZoomingResult l) := TRANSFORM
+      con := l.bracket1_f_ < l.bracket2_f_;
+      SELF.t := IF (con, l.bracket1_, l.bracket2_) ;
+      SELF.f_new := IF (con, l.bracket1_f_, l.bracket2_f_) ;
+      SELF.g_new := IF (con, l.bracket1_g_, l.bracket2_g_ );
+    END;
+    zoom_output := PROJECT (ZoomingResult, ZoomTran(LEFT));
+    FinalResult := IF (final_t_found,final_t_output , IF (Zoom_Max_itr_tmp=0,MaxItr_output,zoom_output));
+    //ZoomingResult :=  ZoomingStep(ToPass_Zooming,1);
+    RETURN FinalResult;
+    //RETURN FinalResult; orig
+    
+  END;// END WolfeLineSearch2
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   //no = 1 : t
   //no = 2 : f
   //no = 3 : g
@@ -1132,8 +1706,8 @@ step (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
   thisre2 := DATASET([{1,1,t,7}], Mat.Types.MUElement)+Mat.MU.To (g_pre,2)+Mat.MU.To (x_pre,1)+Mat.MU.To (ML.Types.ToMatrix(d),3)+DATASET([{1,1,f_pre,5}], Mat.Types.MUElement)+DATASET([{1,1,gtd[1].value,15}], Mat.Types.MUElement);
   //RETURN IF (coun<=10, thiret + DATASET([{1,1,coun ,900}], Mat.Types.MUElement), Mat.MU.To (x_pre,8));
   
-  RETURN IF (dlegalstep=1 AND gtdprogress =1, ToReturn, ToReturn_dnotLegal); 
-  //RETURN IF (coun=11,no_t_t_, thiret + DATASET([{1,1,coun ,900}], Mat.Types.MUElement));
+  //RETURN IF (dlegalstep=1 AND gtdprogress =1, ToReturn, ToReturn_dnotLegal); orig
+  RETURN IF (coun=11,no_t_t_, thiret + DATASET([{1,1,coun ,900}], Mat.Types.MUElement));
   //RETURN no_t_t_;
   //RETURN IF (coun=1, IF (dlegalstep=1 AND gtdprogress =1, ToReturn, ToReturn_dnotLegal) ,x_Next_no);
   //RETURN d_Nextno;
@@ -1151,7 +1725,7 @@ END; //END step
 // ~EvaluationLimit (ROWS(LEFT)) :  Check for going over evaluation limit
 
 
-stepout := LOOP(topass, COUNTER <= MaxIter   AND
+stepout := LOOP(topass, COUNTER <= MaxIter   AND //orig , counter <= maxitr
 Mat.MU.From (ROWS(LEFT),11)[1].value = 1 AND
 Mat.MU.From (ROWS(LEFT),12)[1].value = 1 AND
 ~OptimalityCond_Loop (ROWS(LEFT))        AND
@@ -1168,8 +1742,8 @@ FinalResult := IF(IsInitialPointOptimal,output_x0_cost0 ,output_xfinal_costfinal
 
 
 
-RETURN FinalResult;
-//RETURN stepout;
+//RETURN FinalResult; orig
+RETURN stepout;
 //RETURN DATASET([{1,1,P}], ML.Types.NumericField);
 //myout := step(Topass,1);
 //myout := LOOP(topass,COUNTER <= 1,step(ROWS(LEFT),COUNTER));
@@ -1179,7 +1753,7 @@ END;//END MinFUNC
   
 END;// END Optimization
 
-//original code by having myout := step(Topass,1); it works on hthor ( W20151117-131152), however still does not work on THOR ( W20151117-131553)
+//without any orig, and just by having myout := step(Topass,1); it works on hthor ( W20151117-131152), however still does not work on THOR ( W20151117-131553)
 //also when I change  myout := step(Topass,1); to myout := LOOP(topass,COUNTER <= 1,step(ROWS(LEFT),COUNTER)); it does not work on hthor
 
 //check the sparse... for the case that it fails (the number of iterations was 19)
