@@ -79,6 +79,6 @@ HDIG := DATASET([
 {1,1, 1.7636}],
 Mat.Types.Element);
 lb := Optimization (0, 0, 0, 0).Limited_Memory_BFGS (4, 3).lbfgs ( lbg, old_dir0, old_step0,  HDIG);  
-  
+//  lb := Optimization2 (0, 0, 0, 0).Limited_Memory_BFGS (4, 3).lbfgs ( lbg, old_dir0, old_step0,  HDIG[1].value);  
 OUTPUT (lb);
 
