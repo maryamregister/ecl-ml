@@ -6,13 +6,20 @@ IMPORT * FROM ML.Types;
 IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
+     OutputRecord := RECORD
+      REAL8 t;
+      REAL8 f_new;
+      DATASET(Mat.Types.Element) g_new;
+      INTEGER8 WolfeFunEval;
+    END;
+      
 
 //Func : handle to the function we want to minimize it, its output should be the error cost and the error gradient
 EXPORT Optimization2 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
 
   //polyinterp when the boundry values are provided
   EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
-    poly1 := FUNCTION
+
       points_t1 :=[t_1,t_2,f_1,f_2,gtd_1,gtd_2];
       points_t2 := [t_2,t_1,f_2,f_1,gtd_2,gtd_1];
       orderedp := IF (t_1<t_2,points_t1 , points_t2);    
@@ -80,7 +87,7 @@ for xCP = cp
         end
     end
 end*/
-      
+      // I was using LOOP before to implement this part and it make some LOOP related errors in the wolfesearch function later, so I changed the code in a way that it does not use LOOP
       out := FUNCTION
         fmin1 := 1000000;
         minpos1 := (xminBound+xmaxBound)/2;
@@ -144,9 +151,8 @@ end*/
         RETURN IF (ISrootsreal, minpos7, minpos5);
         
       END;
-     RETURN out;
-    END;//END poly1
-    polResult := poly1;
+
+    polResult := out;
     RETURN polResult;
   END;//end polyinterp_both
   //polyinterp when no boundry values are provided
@@ -477,550 +483,14 @@ end*/
   //  WolfeOut is what the macro returns, it include t,f_new,g_new,funEvals (t the calculated step size
   //  f_new the cost value in the new point, g_new is the gradient value in the new point and funevals is the number of
   //EXPORT WolfeLineSearch(DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION orig
-  EXPORT WolfeLineSearch(INTEGER cccc, DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
-    //initial parameters
-    P_num := Max (x, id); //the length of the parameters vector (number of parameters)
-    emptyE := DATASET([], Mat.Types.Element);
-    LSiter := 0;
-    Bracket1no := DATASET([{1,1,-1,10}], Mat.Types.MUElement); //the result of the bracketing algorithm
-    Bracket2no := DATASET([{1,1,-1,11}], Mat.Types.MUElement); //the result of the bracketing algorithm
-    calculate_gtdNew (DATASET(Types.NumericField) g_in, DATASET(Types.NumericField) d_in) := FUNCTION
-      Types.NumericField Mu(g_in le,d_in ri) := TRANSFORM
-        SELF.id := le.id;
-        SELF.number := ri.number;
-        SELF.value := le.value * ri.value;
-      END;
-      element_mul := JOIN(g_in,d_in,LEFT.id=RIGHT.id,Mu(LEFT,RIGHT));
-      r := RECORD
-        t_RecordID id := 1 ;
-        t_FieldNumber number := 1;
-        t_FieldReal value := SUM(GROUP,element_mul.value);
-      END;
-      SumMulElm := TABLE(element_mul,r);
-      RETURN SumMulElm[1].value;
-    END;
-    calculate_xNew (DATASET(Types.NumericField) d_in, REAL8 t_in) := FUNCTION
-      //x_new = x+t*d
-      Types.NumericField xnew_tran (x l, d_in r):= TRANSFORM
-        SELF.value := l.value+(t_in*r.value);
-        SELF := l;
-      END;
-      Result := JOIN(x,d_in,LEFT.id=RIGHT.id AND LEFT.number=RIGHT.number,xnew_tran(LEFT,RIGHT));
-      RETURN Result;
-    END;
-    ExtractGrad (DATASET(Types.NumericField) inp) := FUNCTION
-      RETURN inp (id <= P_num);
-    END;
-    ExtractCost (DATASET(Types.NumericField) inp) := FUNCTION
-      RETURN inp (id = (P_num+1))[1].value;
-    END;
-    IsNotLegal (DATASET (Mat.Types.Element) Mat) := FUNCTION //???to be defined
-      RETURN FALSE;
-    END;
-    IsNotLegal_real (REAL8 v) := FUNCTION //???to be defined
-      RETURN FALSE;
-    END;
-    ArmijoBacktrack4 (DATASET (Mat.Types.MUElement) inputpp) := FUNCTION // to be defined with recieving real parameters (should be a macro similar to this one)
-      RETURN inputpp;
-    END;
 
-    WolfeBracketing ( Real8 fNew, Real8 fPrev, Real8 gtdNew, REAL8 gtdPrev, REAL8 tt, REAL8 tPrev, DATASET(Mat.Types.Element) gNew, DATASET(Mat.Types.Element) gPrev, UNSIGNED8 inputFunEval, UNSIGNED8 BrackLSiter) := FUNCTION
-      SetBrackets (REAL8 t1, REAL8 t2, REAL8 fval1, REAL8 fval2, DATASET(Mat.Types.Element) gval1 , DATASET(Mat.Types.Element) gval2) := FUNCTION
-        t1no := DATASET([{1,1,t1,10}], Mat.Types.MUElement); //the result of the bracketing algorithm
-        t2no := DATASET([{1,1,t2,11}], Mat.Types.MUElement); //the result of the bracketing algorithm
-        fval1no := DATASET([{1,1,fval1,12}], Mat.Types.MUElement); //the result of the bracketing algorithm
-        fval2no := DATASET([{1,1,fval2,13}], Mat.Types.MUElement); //the result of the bracketing algorithm
-        gval1no := Mat.MU.To (gval1,14); //the result of the bracketing algorithm
-        gval2no := Mat.MU.To (gval2,15); //the result of the bracketing algorithm
-        FEnochange := DATASET([{1,1,inputFunEval,7}], Mat.Types.MUElement);
-        RETURN t1no + t2no + fval1no + fval2no + gval1no + gval2no +FEnochange;
-      END;
-
-      SetNewValues () := FUNCTION
-        //t_prev = t;
-        tPrevno := DATASET([{1,1,tt,6}], Mat.Types.MUElement);
-        // minStep = t + 0.01*(t-temp);
-        // maxStep = t*10;
-        minstep := tt + 0.01* (tt-tPrev);
-        maxstep := tt*10;
-        //t = polyinterp([temp f_prev gtd_prev; t f_new gtd_new],doPlot,minStep,maxStep);
-        newt := polyinterp_both (tPrev, fPrev,gtdPrev, tt, fNew, gtdNew, minstep, maxstep);
-        newtno := DATASET([{1,1,newt,5}], Mat.Types.MUElement);
-        // f_prev = f_new;
-        // g_prev = g_new;
-        // gtd_prev = gtd_new;
-        fPrevno := DATASET([{1,1,fNew,1}], Mat.Types.MUElement);
-        gPrevno := Mat.MU.To (gNew,3);
-        gtdPrevno:= DATASET([{1,1,gtdNew,8}], Mat.Types.MUElement);
-        //calculate fnew gnew gtdnew
-        //xNew := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),newt)));
-        xNew := calculate_xNew (d, newt);
-        CostGradNew := CostFunc (xNew ,CostFunc_params,TrainData, TrainLabel);
-        gNewwolfe := ExtractGrad (CostGradNew);
-        fNewWolfe := ExtractCost (CostGradNew);
-        gtdNewWolfe := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(gNewwolfe)),ML.Types.ToMatrix(d));
-        gNewwolfeno := Mat.MU.To (ML.Types.ToMatrix(gNewwolfe),4);
-        fNewWolfeno := DATASET([{1,1,fNewWolfe,2}], Mat.Types.MUElement);
-        gtdNewWolfeno := Mat.MU.To (gtdNewWolfe,9);
-        FEno := DATASET([{1,1,inputFunEval + 1,7}], Mat.Types.MUElement);
-        Rno := fPrevno + fNewWolfeno + gPrevno + gNewwolfeno + newtno + tPrevno + FEno + gtdPrevno + gtdNewWolfeno + Bracket1no + Bracket2no;
-       RETURN Rno;
-      END;
-
-      //If the strong wolfe conditions satisfies then retun the final t or the bracket, otherwise do the next iteration
-      //f_new > f + c1*t*gtd || (LSiter > 1 && f_new >= f_prev)
-      con1 := (fNew > f + c1 * tt* gtd)| ((BrackLSiter > 1) & (fNew >= fPrev)) ;
-      //abs(gtd_new) <= -c2*gtd
-      con2 := ABS(gtdNew) <= (-1*c2*gtd);
-      // gtd_new >= 0
-      con3 := gtdNew >= 0;
-      //
-      BracketValues := IF (con1, SetBrackets (tPrev,tt,fPrev,fNew, gPrev, gNew), IF (con2,SetBrackets (tt,-1,fNew,-1, gNew, EmptyE),IF (con3, SetBrackets (tPrev,tt,fPrev,fNew, gPrev, gNew),SetNewValues ()) ));
-      //If the conditions have been satisfied then only the final interval or final t is returned in the BracketValues, otherwise
-      //a new t is evaluated and all the new values for f_new, f_prev, etc. are returned in the BracketValues
-      RETURN BracketValues; 
-      //RETURN (DATASET([{1,1,gtdNew,1}], Mat.Types.MUElement)); test
-    END; // END WolfeBracketing
-    //WI : Wolfe Interval
-    WolfeZooming (DATASET (Mat.Types.MUElement) WI, INTEGER coun) := FUNCTION
-      t_first  := Mat.MU.From (WI,10)[1].value;
-      t_second := Mat.MU.From (WI,11)[1].value;
-      f_first  := Mat.MU.From (WI,12)[1].value;
-      f_second := Mat.MU.From (WI,13)[1].value;
-      g_first  := Mat.MU.From (WI,14);
-      g_second := Mat.MU.From (WI,15);
-      gtd_first := ML.Mat.Mul (ML.Mat.Trans (g_first),ML.Types.ToMatrix(d));
-      gtd_second := ML.Mat.Mul (ML.Mat.Trans (g_second),ML.Types.ToMatrix(d));
-      //
-      // Find High and Low Points in bracket
-      LOt_i := IF (f_first < f_second, 10 , 11);
-      LOf_i := LOt_i + 2;
-      LOg_i := LOt_i + 4;
-      HIt_i := -1 * LOt_i + 21;
-      HIf_i := -1 * LOf_i + 25;
-      HIg_i := -1 * LOg_i + 29;
-      //
-      LOt := Mat.MU.From (WI,LOt_i);
-      HIt := Mat.MU.From (WI,HIt_i);
-      LOf := Mat.MU.From (WI,LOf_i);
-      HIf := Mat.MU.From (WI,HIf_i);
-      LO_g := Mat.MU.From (WI,LOg_i);
-      HIg := Mat.MU.From (WI,HIg_i);
-      //
-      // Compute new trial value
-      //t = polyinterp([bracket(1) bracketFval(1) bracketGval(:,1)'*d bracket(2) bracketFval(2) bracketGval(:,2)'*d],doPlot);
-      tTmp := polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
-      //Test that we are making sufficient progress
-      insufProgress := (BOOLEAN)Mat.MU.From (WI,300)[1].value;
-      BList := [t_first,t_second];
-      MaxB := MAX (BList);
-      MinB := MIN (BList);
-      //if min(max(bracket)-t,t-min(bracket))/(max(bracket)-min(bracket)) < 0.1
-      MainPCondterm := (MIN ((MAXB - tTmp) , (tTmp - MINB)) / (MAXB - MINB) );
-      MainPCond := MainPCondterm < 0.1 ;
-      //if insufProgress || t>=max(bracket) || t <= min(bracket)
-      PCond2 := insufProgress | (tTmp >= MAXB) | (tTmp <= MINB);
-      //abs(t-max(bracket)) < abs(t-min(bracket))
-      PCond2_1 := ABS (tTMP - MAXB) < ABS (tTmp - MINB);
-      // t = max(bracket)-0.1*(max(bracket)-min(bracket));
-      MMTemp := 0.1 * (MAXB - MINB);
-      tIF    := MAXB - MMTemp;
-      // t = min(bracket)+0.1*(max(bracket)-min(bracket));
-      tELSE := MINB + MMTemp;
-      tZOOM := IF (MainPCond,IF (PCond2, IF (PCond2_1, tIF, tELSE) , tTmp),tTmp);
-      insufProgress_new := IF (MainPCond, IF (PCond2, 0, 1) , 0);
-      //
-      // Evaluate new point with tZoom
-      x_td := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),tZOOM)));
-      //CG_New := CostFunc (x_td ,CostFunc_params,TrainData, TrainLabel); orig
-      
-CF_new_mine := DATASET ([  
- { 1  ,  1  ,  0.0014},
-   { 2 ,   1  ,  0.0003},
-    {3  ,  1  ,  0.0015},
-   { 4,    1  ,  0.0002},
-   { 5,    1  ,  0.0012},
-   { 6,    1  ,  0.0002},
-   { 7,    1  , -0.0002},
-  {  8,    1  , -0.0002},
-   { 9,    1 ,  -0.0002},
-  { 10,    1  , -0.0002},
-  { 11 ,   1 ,  -0.0001},
-  { 12,    1 ,  -0.0002},
-  { 13,    1 ,   0.0011},
-   {14,    1 ,  -0.0011},
-   {15,    1 ,   0.0003},
-  { 16,    1 ,   0.0003},
-   {17,    1 ,   0.0003},
-  { 18,    1 ,   0.1398}],Types.NumericField);      
-      
-      
-      // CostFunc_params_test := DATASET([{1, 11, 3},{2,11,0.1},{3,11,0.1}], Types.NumericField);
-      // CFP := IF (cccc=11,CostFunc_params_test,CostFunc_params);
-      // CG_New := CostFunc (x_td ,CFP,TrainData, TrainLabel);
-      CG_New := IF (cccc=11,CF_new_mine, CostFunc (x_td ,CostFunc_params,TrainData, TrainLabel)); 
-      
-      gNew := ExtractGrad (CG_New);
-      fNew := ExtractCost(CG_New);
-      gtdNew := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(gNew)),ML.Types.ToMatrix(d));
-      inputZFunEval := Mat.MU.From (WI,7)[1].value;
-      ZoomFunEvalno := DATASET([{1,1,inputZFunEval + 1,7}], Mat.Types.MUElement);
-      SetIntervalIF1 := FUNCTION
-        //bracket(HIpos) = t;
-        bracket_HIt := DATASET([{1,1,tZOOM,HIt_i}], Mat.Types.MUElement);;
-        //bracketFval(HIpos) = f_new;
-        bracket_HIf := DATASET([{1,1,fNew,HIf_i}], Mat.Types.MUElement);
-        //bracketGval(:,HIpos) = g_new;
-        bracket_HIg := Mat.MU.To (ML.Types.ToMatrix(gNew),HIg_i);
-        done := DATASET([{1,1,0,200}], Mat.Types.MUElement);
-        RETURN bracket_HIt + bracket_HIf + bracket_HIg + WI(no = LOt_i) + WI (no = LOf_i) + WI (no = LOg_i) + done ;
-      END;
-      SetIntervalELSE1 := FUNCTION
-       //bracket(LOpos) = t;
-        bracket_LOt := DATASET([{1,1,tZOOM,LOt_i}], Mat.Types.MUElement);
-        //bracketFval(LOpos) = f_new;
-        bracket_LOf := DATASET([{1,1,fNew,LOf_i}], Mat.Types.MUElement);
-        //bracketGval(:,LOpos) = g_new;
-        bracket_LOg := Mat.MU.To (ML.Types.ToMatrix(gNew),LOg_i);
-        done := DATASET([{1,1,0,200}], Mat.Types.MUElement);
-        RETURN bracket_LOt + bracket_LOf + bracket_LOg + WI (no = HIt_i) + WI (no = HIf_i) + WI (no = HIg_i) + done;
-      END;//yes
-      SETIntervalELSE1_1 := FUNCTION
-        //bracket(LOpos) = t;
-        bracket_LOt := DATASET([{1,1,tZOOM,LOt_i}], Mat.Types.MUElement);
-        //bracketFval(LOpos) = f_new;
-        bracket_LOf := DATASET([{1,1,fNew,LOf_i}], Mat.Types.MUElement);
-        //bracketGval(:,LOpos) = g_new;
-        bracket_LOg := Mat.MU.To (ML.Types.ToMatrix(gNew),LOg_i);
-        done := DATASET([{1,1,1,200}], Mat.Types.MUElement);
-        RETURN bracket_LOt + bracket_LOf + bracket_LOg + WI (no = HIt_i) + WI (no = HIf_i) + WI (no = HIg_i) + done;
-      END;//yes
-      SETIntervalELSE1_2 := FUNCTION
-        //bracket(LOpos) = t;
-        bracket_LOt := DATASET([{1,1,tZOOM,LOt_i}], Mat.Types.MUElement);
-        //bracketFval(LOpos) = f_new;
-        bracket_LOf := DATASET([{1,1,fNew,LOf_i}], Mat.Types.MUElement);
-        //bracketGval(:,LOpos) = g_new;
-        bracket_LOg := Mat.MU.To (ML.Types.ToMatrix(gNew),LOg_i);
-        // bracket(HIpos) = bracket(LOpos);
-        bracket_HIt := DATASET([{1,1,LOt[1].value,HIt_i}], Mat.Types.MUElement);
-        // bracketFval(HIpos) = bracketFval(LOpos);
-        bracket_HIf := DATASET([{1,1,LOf[1].value,HIf_i}], Mat.Types.MUElement);;
-        // bracketGval(:,HIpos) = bracketGval(:,LOpos);
-        bracket_HIg := Mat.MU.To (LO_g,HIg_i);
-        done := DATASET([{1,1,0,200}], Mat.Types.MUElement);
-        RETURN bracket_LOt + bracket_LOf + bracket_LOg + bracket_HIt + bracket_HIf + bracket_HIg + done;
-      END;//yes
-      //IF f_new > f + c1*t*gtd || f_new >= f_LO
-      ZoomCon1 := (fNew > f + c1 * tZoom * gtd) | (fNew >LOf[1].value);
-      //if abs(gtd_new) <= - c2*gtd
-      ZOOMCon1_1 := ABS (gtdNew[1].value) <= (-1 * c2 * gtd); 
-      //gtd_new*(bracket(HIpos)-bracket(LOpos)) >= 0
-      ZOOMCon1_2 := (gtdNew[1].value * (HIt[1].value - LOt[1].value)) >= 0; 
-
-      ZOOOMResult := IF (ZoomCon1, SetIntervalIF1, (IF(ZOOMCon1_1, SETIntervalELSE1_1, IF (ZOOMCon1_2,SETIntervalELSE1_2, SetIntervalELSE1 ))));
-      //~done && abs((bracket(1)-bracket(2))*gtd_new) < tolX
-       ZOOMTermination :=( (Mat.MU.FROM (ZOOOMResult,200)[1].value = 0) & (ABS((gtdNew[1].value * (Mat.MU.From (ZOOOMResult,10)[1].value-Mat.MU.From (ZOOOMResult,11)[1].value)))<tolX) ) | (Mat.MU.FROM (ZOOOMResult,200)[1].value = 1);
-      //ZOOMTermination :=( (Mat.MU.FROM (ZOOOMResult,200)[1].value = 0) & (ABS((gtdNew[1].value * (t_first-t_second)))<tolX) ) | (Mat.MU.FROM (ZOOOMResult,200)[1].value = 1); orig
-      //ZOOMTermination_num := (INTEGER)ZOOMTermination; orig
-      ZOOMTermination_num := IF(ZOOMTermination,1,0);
-      ZOOMFinalResult := ZOOOMResult (no<200) + DATASET([{1,1,ZOOMTermination_num,200}], Mat.Types.MUElement)+ DATASET([{1,1,insufProgress_new,300}], Mat.Types.MUElement) +ZoomFunEvalno ;
-      //RETURN ZOOMFinalResult; orig
-      //t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value
-      //RETURN IF(cccc=11,WI(no=12)+DATASET([{1,1,t_first,5},{2,1,f_first,6},{3,1,gtd_first[1].value,7},{4,1,t_second,8},{5,1,f_second,9},{6,1,gtd_second[1].value ,10}], Mat.Types.MUElement)+DATASET([{1,1,tTmp,1}], Mat.Types.MUElement) +DATASET([{1,1,IF(ZoomCon1,3.1,4.1),2}], Mat.Types.MUElement)+DATASET([{1,1,IF(ZOOMCon1_1,3.1,4.1),3}], Mat.Types.MUElement)+DATASET([{1,1,IF(ZOOMCon1_2,3.1,4.1),4}], Mat.Types.MUElement) , ZOOMFinalResult);
-//RETURN IF (cccc=11, DATASET([{2,1,8,60},{5,1,8,90},{4,3,tTmp,10}], Mat.Types.MUElement), ZOOMFinalResult); 
-// RETURN IF (cccc=11, DATASET([{2,1,f_first,60},{5,1,f_second,90},{4,3,tTmp,10}], Mat.Types.MUElement), ZOOMFinalResult); // 0 0 0.3236 
-//IF (cccc=11, DATASET([{50,1,(REAL8)WI(no=12)[1].value,60}], Mat.Types.MUElement), ZOOMFinalResult);  0
-WI12 := WI(no=12);
-RETURN WI;
-//RETURN DATASET ([{1,1,WI(no=12)[1].value,10}],Mat.Types.MUElement);
-//RETURN WI(n=12)+ DATASET ([{1,1,WI(no=12)[1].value,10}],Mat.Types.MUElement);
-//IF(COUNT(ds) > 0, ds[1].x, 0);
-//RETURN IF (cccc=11,klk+ DATASET([{50,1,klk[1].value,60}], Mat.Types.MUElement), ZOOMFinalResult); w 
-//RETURN IF (cccc=11,DATASET([{40,2,ttmp,30}], Mat.Types.MUElement), ZOOMFinalResult);//W20151219-163059 , klk+klk[1].value W20151219-153356
-//RETURN IF (cccc=11,DATASET([{40,2,WI(no=12)[1].value,30}], Mat.Types.MUElement), ZOOMFinalResult);
-//RETURN IF (cccc=11,WI(no=12)+DATASET([{40,2,WI(no=12)[1].value,30}], Mat.Types.MUElement), ZOOMFinalResult);
-//Return DATASET([{40,2,10000*WI(no=12)[1].value,30}], Mat.Types.MUElement);
-//RETURN IF (cccc=11, WI(no=12), ZOOMFinalResult);  W
-      //RETURN Mat.MU.To (ML.Types.ToMatrix(CG_New),1);
-      //RETURN DATASET([{1,1,tTmp,1}], Mat.Types.MUElement); 0
-      
-    END;// END WolfeZooming
-    //% Evaluate the Objective and Gradient at the Initial Step
-    //x_new = x+t*d
-    //x_new := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t)));
-    x_new := calculate_xNew (d,t);
-    CostGrad_new := CostFunc (x_new ,CostFunc_params,TrainData, TrainLabel);
-    g_new := ExtractGrad (CostGrad_new);
-    f_new := ExtractCost (CostGrad_new);
-    funEvals := 1;
-    //gtd_new = g_new'*d;
-    //gtd_new := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(g_new)),ML.Types.ToMatrix(d));
-    gtd_new := calculate_gtdNew (g_new, d);
-    
-    // Bracket an Interval containing a point satisfying the Wolfe Criteria
-    t_prev := 0;
-    f_prev := f;
-    g_prev := g;
-    gtd_prev := gtd;
-
-    //Bracketing algorithm, either produces the final t value or a bracket that contains the final t value
-    
-    bracketing_record := RECORD
-    REAL8 f_prev_;
-    REAL8 f_new_;
-    DATASET(Mat.Types.Element) g_prev_;
-    DATASET(Mat.Types.Element) g_new_;
-    REAL8 t_;
-    REAL8 t_prev_;
-    REAL8 funEvals_;
-    REAL8 gtd_prev_;
-    REAL8 gtd_new_;
-    REAL8 bracket1_;
-    REAL8 bracket2_;
-    REAL8 bracket1_f_;
-    REAL8 bracket2_f_;
-    DATASET(Mat.Types.Element) bracket1_g_;
-    DATASET(Mat.Types.Element) bracket2_g_;
-    INTEGER8 c; //Counter
-    END;
-    
-    ToPass_bracketing := DATASET ([{f_prev,f_new,ML.Types.ToMatrix(g_prev),ML.Types.ToMatrix(g_new),t,t_prev,funEvals,gtd_prev,gtd_new,-1,-1,-1,-1,emptyE,emptyE,0 }],bracketing_record);
-    
-    //prepare the parameters to be passed to the bracketing algorithm
-    f_prevno := DATASET([{1,1,f_prev,1}], Mat.Types.MUElement);
-    f_newno := DATASET([{1,1,f_new,2}], Mat.Types.MUElement);
-    g_prevno := Mat.MU.To (ML.Types.ToMatrix(g_prev),3);
-    g_newno := Mat.MU.To (ML.Types.ToMatrix(g_new),4);
-    tno := DATASET([{1,1,t,5}], Mat.Types.MUElement);
-    t_prevno := DATASET([{1,1,t_prev,6}], Mat.Types.MUElement);
-    funEvalsno := DATASET([{1,1,funEvals,7}], Mat.Types.MUElement);
-    gtd_prevno := DATASET([{1,1,gtd_prev,8}], Mat.Types.MUElement);
-    gtd_newno := DATASET([{1,1,gtd_new,9}], Mat.Types.MUElement);
-    //at the begining no interval or final t value is found so the assigned values to Bracket1no and Bracket2no are -1
-    //In each iteration these two values are checked to see if the interval is found (both should be ~-1) or the final t is found (just the first one should be ~-1)
-    // f_prev 1
-    // f_new 2
-    // g_prev 3
-    // g_new 4
-    // t 5
-    // t_prev 6
-    // funeval 7
-    // gtd_prev 8
-    // gtd_new 9
-    // bracket1 10
-    // bracket2 11
-    //Topass := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no + Mat.MU.To (ML.Types.ToMatrix(x_new),103);
-    Topass := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
-    
-    BracketingStep (DATASET (bracketing_record) inputp, INTEGER coun) := FUNCTION
-      AreTheyLegal := IsNotLegal_real(inputp.f_new_) | IsNotLegal(inputp.g_new_);
-      WolfeStep := FUNCTION
-        fNew := inputp[1].f_new_;
-        fPrev := inputp[1].f_prev_;
-        gtdNew := inputp[1].gtd_new_;
-        gtdPrev := inputp[1].gtd_prev_;
-        tt := inputp[1].t_;
-        tPrev := inputp[1].t_prev_;
-        gNew := inputp[1].g_new_;
-        gPrev := inputp[1].g_prev_;
-        inputFunEval := inputp[1].funEvals_;
-        BrackLSiter := coun-1;
-        
-        //If the strong wolfe conditions satisfies then retun the final t or the bracket, otherwise do the next iteration
-        //f_new > f + c1*t*gtd || (LSiter > 1 && f_new >= f_prev)
-        con1 := (fNew > f + c1 * tt* gtd)| ((BrackLSiter > 1) & (fNew >= fPrev)) ;
-        //abs(gtd_new) <= -c2*gtd
-        con2 := ABS(gtdNew) <= (-1*c2*gtd);
-        // gtd_new >= 0
-        con3 := gtdNew >= 0;
-        bracketing_record bracketing_con1_3 (bracketing_record l) := TRANSFORM
-        /* bracket = [t_prev t];
-        bracketFval = [f_prev f_new];
-        bracketGval = [g_prev g_new];*/
-          SELF.bracket1_ := tPrev;
-          SELF.bracket2_ := tt;
-          SELF.bracket1_f_ := fPrev;
-          SELF.bracket2_f_ := fNew;
-          SELF.bracket1_g_ := gPrev;
-          SELF.bracket2_g_ := gNew;
-          SELF.c := coun;
-          SELF := l;
-        END;
-        bracketing_record bracketing_con2 (bracketing_record l) := TRANSFORM
-        /*  bracket = t;
-        bracketFval = f_new;
-        bracketGval = g_new;
-        done = 1;*/
-          SELF.bracket1_ := tt;
-          SELF.bracket2_ := -1;
-          SELF.bracket1_f_ := fNew;
-          SELF.bracket2_f_ := -1;
-          SELF.bracket1_g_ := gNew;
-          SELF.c := coun;
-          SELF := l;
-        END;
-
-        bracketing_record bracketing_Nocon (bracketing_record l) := TRANSFORM
-          //calculate new t
-          minstep := tt + 0.01* (tt-tPrev);
-          maxstep := tt*10;
-          newt := polyinterp_both (tPrev, fPrev,gtdPrev, tt, fNew, gtdNew, minstep, maxstep);
-          //calculate fnew gnew gtdnew
-          xNew := calculate_xNew (d, newt);
-          CostGradNew := CostFunc (xNew ,CostFunc_params,TrainData, TrainLabel);
-          gNewwolfe := ExtractGrad (CostGradNew);
-          fNewWolfe := ExtractCost (CostGradNew);
-          gtdNewWolfe := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(gNewwolfe)),ML.Types.ToMatrix(d));
-          SELF.t_prev_ := tt; //t_prev = t;
-          SELF.f_prev_ := fNew;
-          SELF.g_prev_ := gNew;
-          SELF.gtd_prev_ := gtdNew;
-          SELF.t_ := newt;
-          SELF.f_new_ := fNewWolfe;
-          SELF.g_new_ := ML.Types.ToMatrix(gNewwolfe);
-          SELF.gtd_new_ := gtdNewWolfe[1].value;
-          SELF.bracket1_ := -1;
-          SELF.bracket2_ := -1;
-          SELF.funEvals_ := inputFunEval+1;
-          SELF.c := coun;
-          SELF := l;
-        END;
-        con1_3_output := PROJECT(inputp,bracketing_con1_3(LEFT));
-        con2_output := PROJECT(inputp,bracketing_con2(LEFT));
-        Nocon_output := PROJECT(inputp,bracketing_Nocon(LEFT));
-        RETURN IF (con1, con1_3_output, IF (con2, con2_output, IF (con3, con1_3_output, Nocon_output)));
-      END;//END WolfeStep
-      ArmijoStep := FUNCTION
-        RETURN inputp;
-      END;// END ArmijoStep
-      WolfeBracket := WolfeStep;
-      ArmijoBracket := ArmijoStep;
-      RETURN IF(AreTheyLegal,ArmijoBracket,WolfeBracket);
-    END; // END BracketingStep
-    
-    BracketingResult := LOOP(ToPass_bracketing, COUNTER <= maxLS AND ROWS(LEFT)[1].bracket1_ = -1, BracketingStep(ROWS(LEFT),COUNTER));
-    
-    Bracketing (DATASET (Mat.Types.MUElement) inputp, INTEGER coun) := FUNCTION
-      fi_prev :=  Mat.MU.From (inputp,1);
-      fi_new := Mat.MU.From (inputp,2);
-      gi_prev :=  Mat.MU.From (inputp,3);
-      gi_new := Mat.MU.From (inputp,4);
-      ti :=  Mat.MU.From (inputp,5);
-      ti_prev :=  Mat.MU.From (inputp,6);
-      FunEvalsi := Mat.MU.From (inputp,7);
-      gtdi_prev := Mat.MU.From (inputp,8);
-      gtdi_new := Mat.MU.From (inputp,9);
-      AreTheyLegal := IsNotLegal(fi_new) | IsNotLegal(gi_new);
-      //armijo only returns final t results and then the loop will stop becasue bracket1 would be ~-1 nad the wolfelinesearch has to return
-      WolfeH := WolfeBracketing ( fi_new[1].value, fi_prev[1].value, gtdi_new[1].value, gtdi_prev[1].value, ti[1].value, ti_prev[1].value, gi_new, gi_prev, FunEvalsi[1].value, (coun-1));
-      Bracketing_Result := IF (AreTheyLegal, ArmijoBacktrack4(inputp), WolfeH );
-      tobereturn := Bracketing_Result + DATASET([{1,1,coun-1,100}], Mat.Types.MUElement);
-      RETURN tobereturn;  
-    END;
-    Bracketing_Result := LOOP(Topass, COUNTER <= maxLS AND Mat.MU.From (ROWS(LEFT),10)[1].value = -1, Bracketing(ROWS(LEFT),COUNTER));
-    //Bracketing_Result := LOOP(Topass, (COUNTER <= maxLS) AND ((ROWS(LEFT)(no=10)[1].value) = -1), Bracketing(ROWS(LEFT),COUNTER));
-    //Bracketing_Result := Bracketing(Topass,1); //the problem is loop
-    //Bracketing_Result := LOOP(Topass, COUNTER <= 1 , Bracketing(ROWS(LEFT),COUNTER));
-    
-    
-    //FoundInterval := Bracketing_Result (no = 10) + Bracketing_Result (no = 11) + Bracketing_Result (no = 12) + Bracketing_Result (no = 13) + Bracketing_Result (no = 14) + Bracketing_Result (no = 15); orig
-    FoundInterval := Bracketing_Result (no = 10 OR no=11 OR no=12 OR no=13 OR no=14 OR no=15);
-    alakiha := Bracketing_Result (no = 11 OR no=10 OR no=7 OR no=12 OR no=13 OR no =14 OR no=15);
-    
-    //FinaltInterval := Bracketing_Result (no = 10) + Bracketing_Result (no = 12) + Bracketing_Result (no = 14) + Bracketing_Result (no = 7); orig
-    FinaltInterval := Bracketing_Result (no = 10 OR no=12 OR no=14 OR no=7);
-    Interval_Found := Mat.MU.From (Bracketing_Result,10)[1].value != -1 AND Mat.MU.From (Bracketing_Result,11)[1].value !=-1;
-    final_t_found := Mat.MU.From (Bracketing_Result,10)[1].value != -1 AND Mat.MU.From (Bracketing_Result,11)[1].value =-1;
-    ItrExceedInterval := DATASET([{1,1,0,10},
-    {1,1,Mat.MU.From (Bracketing_Result,5)[1].value ,11},
-    {1,1,f ,12},
-    {1,1,Mat.MU.From (Bracketing_Result,2)[1].value ,13}
-    ], Mat.Types.MUElement) + Mat.MU.To (ML.Types.ToMatrix(g),14) + Mat.MU.To (Mat.MU.FROM(Bracketing_Result,4),15) + Bracketing_Result (no = 7);
-    //
-    Zoom_Max_itr_tmp :=  maxLS - Mat.MU.From (Bracketing_Result,100)[1].value;
-    Zoom_Max_Itr := IF (Zoom_Max_itr_tmp >0, Zoom_Max_itr_tmp, 0);
-    
-   TOpassZOOM :=  Bracketing_Result (no=10 OR no = 11 OR no=12 OR no=13 OR no=14 OR no=15 OR no=7) + DATASET([{1,1,0,200}], Mat.Types.MUElement) + DATASET([{1,1,0,300}], Mat.Types.MUElement);
-   
-   //TOpassZOOM := FoundInterval + DATASET([{1,1,0,200}], Mat.Types.MUElement) + DATASET([{1,1,0,300}], Mat.Types.MUElement) + Bracketing_Result (no = 7); orig// pass the found interval + {zoomtermination=0} to Zoom LOOP +insufficientProgress+FunEval
-   ZOOMInterval := LOOP(TOpassZOOM, COUNTER <= Zoom_Max_Itr AND Mat.MU.From (ROWS(LEFT),200)[1].value = 0, WolfeZooming(ROWS(LEFT), COUNTER));
-   // ZOOMInterval := IF (cccc=11, WolfeZooming(TOpassZOOM, 1),LOOP(TOpassZOOM, COUNTER <= Zoom_Max_Itr AND Mat.MU.From (ROWS(LEFT),200)[1].value = 0, WolfeZooming(ROWS(LEFT), COUNTER)));
-    
-    //ZOOMInterval := WolfeZooming(TOpassZOOM, 1);
-    //ZOOMInterval := LOOP(TOpassZOOM, COUNTER <= Zoom_Max_Itr , WolfeZooming(ROWS(LEFT), COUNTER));
-    //ZOOMInterval := LOOP(TOpassZOOM,  1, WolfeZooming(ROWS(LEFT), COUNTER));
-    FinalBracket := IF (final_t_found, FinaltInterval, IF (Interval_Found,ZOOMInterval,ItrExceedInterval));
-    //The final t value is the t value which has the lowest f value
-    WolfeT1 := DATASET([{1,1,FinalBracket(no=10)[1].value,1},
-    {1,1,FinalBracket(no=12)[1].value,2},
-    {1,1,FinalBracket(no=7)[1].value,4}], Mat.Types.MUElement) + Mat.MU.To (Mat.MU.FROM (FinalBracket,14),3) ;
-    WolfeT2 := DATASET([{1,1,FinalBracket(no=11)[1].value,1},
-    {1,1,FinalBracket(no=13)[1].value,2},
-    {1,1,FinalBracket(no=7)[1].value,4}], Mat.Types.MUElement) + Mat.MU.To (Mat.MU.FROM (FinalBracket,15),3);
-    //WolfeOut := IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2); orig
-    //WOlfeOut := IF (cccc=11, ZOOMInterval, IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
-    Wolfeout := Bracketing_Result;
-    //WOlfeOut := IF (cccc=11, Bracketing_Result (no = 11 OR no=10 OR no=7 OR no=12 OR no=13), IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
-FoundInterval_funcount := Bracketing_Result(no = 11 OR no=10 OR no=7 OR no=12 OR no=13 OR no =14 OR no=15);
-//W // WOlfeOut := IF (cccc=11, DATASET([{1,1,0,200}], Mat.Types.MUElement) + DATASET([{1,1,0,300}], Mat.Types.MUElement), IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
-topasszoomme := Bracketing_Result (no=10 OR no = 11 OR no=12 OR no=13 OR no=14 OR no=15 OR no=7) + DATASET([{1,1,0,200}], Mat.Types.MUElement) + DATASET([{1,1,0,300}], Mat.Types.MUElement);
-//N W // WOlfeOut := IF (cccc=11,  topasszoomme, IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
-
-g11 := DATASET ([{1   , 1  ,  0.0014},
-   { 2  ,  1  ,  0.0003},
-   { 3  ,  1  ,  0.0015},
-   { 4   , 1   , 0.0002},
-   { 5  ,  1   , 0.0012},
-    {6  ,  1  ,  0.0002},
-    {7  ,  1  , -0.0002},
-    {8  ,  1  , -0.0002},
-    {9   , 1  , -0.0002},
-   {10 ,   1  , -0.0002},
-   {11  ,  1 ,  -0.0001},
-   {12  ,  1  , -0.0002},
-   {13  ,  1  ,  0.0011},
-   {14   , 1  , -0.0011},
-   {15   , 1  ,  0.0003},
-   {16  ,  1  ,  0.0003},
-   {17   , 1 ,   0.0003}],Mat.Types.Element);
-WolfeOut11:= DATASET([{1,1,  0.3236,1},
-    {1,1, 0.1398,2},
-    {1,1,2,4}], Mat.Types.MUElement) + Mat.MU.To (g11,3) ;
-    
-//WOlfeOut := IF (cccc=11,WolfeOut11 , IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));    
-    
-//WOlfeOut := IF (cccc=11,  Bracketing_Result (no=10 OR no = 11 OR no=12 OR no=13 OR no=14 OR no=15 OR no=7) + DATASET([{1,1,0,200}], Mat.Types.MUElement) + DATASET([{1,1,0,300}], Mat.Types.MUElement), IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
-     //W20151204-102550 N//WOlfeOut := IF (cccc=11, Bracketing_Result(no in [10,11,12,13,14,15,7]), IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
-     //W20151203-152637 W//WOlfeOut := IF (cccc=11, Bracketing_Result(no = 11 OR no=10 OR no=7 OR no=12 OR no=13 OR no =14 OR no=15), IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
-    //W20151203-144738 N//WOlfeOut := IF (cccc=11, Bracketing_Result (no = 10 OR no=11 OR no=12 OR no=13 OR no=14 OR no=15 OR no=7), IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
-    //W20151203-195832 N//WOlfeOut := IF (cccc=11, Bracketing_Result(no = 11)+ Bracketing_Result( no=10 ) + Bracketing_Result( no=7 ) + Bracketing_Result( no=12 )+Bracketing_Result( no=13 )+Bracketing_Result( no =14 )+ Bracketing_Result( no=15), IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
-    
-    // br10:= Bracketing_Result (no = 10);
-    // br11:= Bracketing_Result (no = 11);
-    // br := br10 + br11;
-    // WOlfeOut := IF (cccc=11, br, IF (final_t_found | (FinalBracket(no=12)[1].value < FinalBracket(no=13)[1].value), WolfeT1, WolfeT2));
-    //WolfeOut := Bracketing_Result;
-    //WolfeOut := Bracketing_Result;
-    //Topass2 := f_prevno +  f_newno+ g_prevno  + tno + t_prevno +  gtd_prevno  + Bracket1no + Bracket2no;
-    //topass3 := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
-    //WolfeOut := f_prevno + f_newno + g_prevno + g_newno + tno + t_prevno + funEvalsno + gtd_prevno + gtd_newno + Bracket1no + Bracket2no ;
-    //WolfeOut := WolfeT1 + WolfeT2;
-    //WolfeOut := ZOOMInterval;
-    AppendID(WolfeOut, id, WolfeOut_id);
-    ToField (WolfeOut_id, WolfeOut_id_out, id, 'x,y,value,no');//WolfeOut_id_out is the numeric field format of WolfeOut
-    RETURN WolfeOut_id_out;
-   // RETURN DATASET([{1,1,Zoom_Max_Itr,200}], Mat.Types.MUElement) ;
-  // RETURN ZOOMInterval;
-  END;// END WolfeLineSearch
   
    EXPORT WolfeLineSearch2(INTEGER cccc, DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
     //initial parameters
     P_num := Max (x, id); //the length of the parameters vector (number of parameters)
     emptyE := DATASET([], Mat.Types.Element);
     LSiter := 0;
-    Bracket1no := DATASET([{1,1,-1,10}], Mat.Types.MUElement); //the result of the bracketing algorithm
-    Bracket2no := DATASET([{1,1,-1,11}], Mat.Types.MUElement); //the result of the bracketing algorithm
+
     calculate_gtdNew (DATASET(Types.NumericField) g_in, DATASET(Types.NumericField) d_in) := FUNCTION
       Types.NumericField Mu(g_in le,d_in ri) := TRANSFORM
         SELF.id := le.id;
@@ -1177,9 +647,7 @@ WolfeOut11:= DATASET([{1,1,  0.3236,1},
         con1_3_output := PROJECT(inputp,bracketing_con1_3(LEFT));
         con2_output := PROJECT(inputp,bracketing_con2(LEFT));
         Nocon_output := PROJECT(inputp,bracketing_Nocon(LEFT));
-        //RETURN IF (con1, con1_3_output, IF (con2, con2_output, IF (con3, con1_3_output, Nocon_output))); orig
-        RETURN Nocon_output;
-
+        RETURN IF (con1, con1_3_output, IF (con2, con2_output, IF (con3, con1_3_output, Nocon_output)));
       END;//END WolfeStep
       
       
@@ -1263,8 +731,7 @@ WolfeOut11:= DATASET([{1,1,  0.3236,1},
       END;// END ArmijoStep
       WolfeBracket := WolfeStep;
       ArmijoBracket := ArmijoStep;
-      //RETURN IF(AreTheyLegal,ArmijoBracket,WolfeBracket); orig
-      RETURN WolfeBracket;
+      RETURN IF(AreTheyLegal,ArmijoBracket,WolfeBracket);
     END; // END BracketingStep
     
     
@@ -1494,9 +961,9 @@ bracket(HIpos) = bracket(LOpos);
     END; // END ZoomingStep
     
     //Run the Loop as long as counter is less than or equal to maxLS and the bracket_t1 is not still found
-    //BracketingResult := LOOP(ToPass_bracketing, COUNTER <= maxLS AND ROWS(LEFT)[1].bracket1_ = -1, BracketingStep(ROWS(LEFT),COUNTER)); orig
+    BracketingResult := LOOP(ToPass_bracketing, COUNTER <= maxLS AND ROWS(LEFT)[1].bracket1_ = -1, BracketingStep(ROWS(LEFT),COUNTER));
     //BracketingResult :=  BracketingStep(ToPass_bracketing,1);
-    BracketingResult := LOOP(ToPass_bracketing,COUNTER <= 1, BracketingStep(ROWS(LEFT),COUNTER)); 
+    //BracketingResult := LOOP(ToPass_bracketing,COUNTER <= 1, BracketingStep(ROWS(LEFT),COUNTER)); 
     interval_found := BracketingResult[1].bracket1_ != -1 AND BracketingResult[1].bracket2_  !=-1;
     final_t_found := BracketingResult[1].bracket1_ != -1 AND BracketingResult[1].bracket2_  =-1;
     Zoom_Max_itr_tmp :=  maxLS - BracketingResult[1].c;
@@ -1505,12 +972,10 @@ bracket(HIpos) = bracket(LOpos);
     
     ToPass_Zooming := PROJECT(BracketingResult, TRANSFORM(ZoomingRecord, SELF := LEFT));
     ZoomingResult := LOOP(ToPass_Zooming, COUNTER <= Zoom_Max_Itr AND ~ROWS(LEFT)[1].done AND ~ROWS(LEFT)[1].break, ZoomingStep(ROWS(LEFT),COUNTER));
-    OutputRecord := RECORD
-      REAL8 t;
-      REAL8 f_new;
-      DATASET(Mat.Types.Element) g_new;
-      INTEGER8 WolfeFunEval;
-    END;
+    //ZoomingResult := ZoomingStep(ToPass_Zooming,1);
+
+    
+    thisoutputrecord := DATASET([{1,1,DATASET([{1,1,1},{1,2,3},{3,4,5}],Mat.Types.Element),7}],OutputRecord);
     OutputRecord finaltTran (BracketingResult l) := TRANSFORM
       SELF.t := l.bracket1_ ;
       SELF.f_new := l.bracket1_f_ ;
@@ -1540,10 +1005,984 @@ bracket(HIpos) = bracket(LOpos);
     //ZoomingResult :=  ZoomingStep(ToPass_Zooming,1);
     
     //RETURN FinalResult; orig
-    RETURN BracketingResult;
+    thisout := DATASET ([{1,1,ML.Types.ToMatrix(x),1}],OutputRecord);
+    RETURN final_t_output;
     
   END;// END WolfeLineSearch2
   
+
+   SHARED IdElementRec := RECORD
+      INTEGER1 id;
+      Mat.Types.Element;
+   END;
+   SHARED globalID := 1;
+   SHARED appendID2mat (DATASET (Mat.Types.Element) mat) := FUNCTION
+      IdElementRec addID (mat l) := TRANSFORM
+        SELF.id := globalID;
+        SELF := l;
+      END;
+      RETURN PROJECT(mat, addID(LEFT));
+    END;
+  
+   EXPORT WolfeLineSearch3(INTEGER cccc, DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
+    //initial parameters
+    P_num := Max (x, id); //the length of the parameters vector (number of parameters)
+    emptyE := DATASET([], Mat.Types.Element);
+
+    emptyEid := DATASET([], IdElementRec);
+
+    LSiter := 0;
+
+    calculate_gtdNew (DATASET(Types.NumericField) g_in, DATASET(Types.NumericField) d_in) := FUNCTION
+      Types.NumericField Mu(g_in le,d_in ri) := TRANSFORM
+        SELF.id := le.id;
+        SELF.number := ri.number;
+        SELF.value := le.value * ri.value;
+      END;
+      element_mul := JOIN(g_in,d_in,LEFT.id=RIGHT.id,Mu(LEFT,RIGHT));
+      r := RECORD
+        t_RecordID id := 1 ;
+        t_FieldNumber number := 1;
+        t_FieldReal value := SUM(GROUP,element_mul.value);
+      END;
+      SumMulElm := TABLE(element_mul,r);
+      RETURN SumMulElm[1].value;
+    END;
+    calculate_xNew (DATASET(Types.NumericField) d_in, REAL8 t_in) := FUNCTION
+      //x_new = x+t*d
+      Types.NumericField xnew_tran (x l, d_in r):= TRANSFORM
+        SELF.value := l.value+(t_in*r.value);
+        SELF := l;
+      END;
+      Result := JOIN(x,d_in,LEFT.id=RIGHT.id AND LEFT.number=RIGHT.number,xnew_tran(LEFT,RIGHT));
+      RETURN Result;
+    END;
+    ExtractGrad (DATASET(Types.NumericField) inp) := FUNCTION
+      RETURN inp (id <= P_num);
+    END;
+    ExtractCost (DATASET(Types.NumericField) inp) := FUNCTION
+      RETURN inp (id = (P_num+1))[1].value;
+    END;
+    IsNotLegal (DATASET (Mat.Types.Element) Mat) := FUNCTION //???to be defined
+      RETURN FALSE;
+    END;
+    IsNotLegal_real (REAL8 v) := FUNCTION //???to be defined
+      RETURN FALSE;
+    END;
+  
+
+    
+    //% Evaluate the Objective and Gradient at the Initial Step
+    //x_new = x+t*d
+    //x_new := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t)));
+    x_new := calculate_xNew (d,t);
+    CostGrad_new := CostFunc (x_new ,CostFunc_params,TrainData, TrainLabel);
+    g_new := ExtractGrad (CostGrad_new);
+    f_new := ExtractCost (CostGrad_new);
+    funEvals := 1;
+    //gtd_new = g_new'*d;
+    //gtd_new := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(g_new)),ML.Types.ToMatrix(d));
+    gtd_new := calculate_gtdNew (g_new, d);
+    
+    // Bracket an Interval containing a point satisfying the Wolfe Criteria
+    t_prev := 0;
+    f_prev := f;
+    g_prev := g;
+    gtd_prev := gtd;
+   
+    //Bracketing algorithm, either produces the final t value or a bracket that contains the final t value
+     bracketing_record_nomat := RECORD
+      INTEGER1 id;
+      REAL8 f_prev_;
+      REAL8 f_new_;
+      REAL8 t_;
+      REAL8 t_prev_;
+      INTEGER8 funEvals_;
+      REAL8 gtd_prev_;
+      REAL8 gtd_new_;
+      REAL8 bracket1_;
+      REAL8 bracket2_;
+      REAL8 bracket1_f_;
+      REAL8 bracket2_f_;
+      INTEGER8 c; //Counter
+    END;
+    bracketing_record := RECORD
+      INTEGER1 id;
+      REAL8 f_prev_;
+      REAL8 f_new_;
+      DATASET(IdElementRec) g_prev_;
+      DATASET(IdElementRec) g_new_;
+      REAL8 t_;
+      REAL8 t_prev_;
+      INTEGER8 funEvals_;
+      REAL8 gtd_prev_;
+      REAL8 gtd_new_;
+      REAL8 bracket1_;
+      REAL8 bracket2_;
+      REAL8 bracket1_f_;
+      REAL8 bracket2_f_;
+      DATASET(IdElementRec) bracket1_g_;
+      DATASET(IdElementRec) bracket2_g_;
+      INTEGER8 c; //Counter
+    END;
+    
+
+
+    ToPass_bracketing_nomat := DATASET ([{globalID,f_prev,f_new,t,t_prev,funEvals,gtd_prev,gtd_new,-1,-1,-1,-1,0}],bracketing_record_nomat);
+    bracketing_record DeNorm_gp(bracketing_record L, IdElementRec R) := TRANSFORM
+      SELF.g_prev_ := L.g_prev_ + R;
+      SELF := L;
+    END;
+    bracketing_record DeNorm_gn(bracketing_record L, IdElementRec R) := TRANSFORM
+      SELF.g_new_ := L.g_new_ + R;
+      SELF := L;
+    END;
+    bracketing_record DeNorm_bracket_g1 (bracketing_record L, IdElementRec R) := TRANSFORM
+      SELF.bracket1_g_ := L.bracket1_g_ + R;
+      SELF := L;
+     END;
+     bracketing_record DeNorm_bracket_g2 (bracketing_record L, IdElementRec R) := TRANSFORM
+      SELF.bracket2_g_ := L.bracket2_g_ + R;
+      SELF := L;
+     END;
+    BuildBracketingData (DATASET(bracketing_record_nomat) p, DATASET (Mat.Types.Element) gp, DATASET (Mat.Types.Element) gn)  := FUNCTION //this function returns a bracketing_record dataset in which the two matrices gp and gn are nested in g_prev_ and g_new_ fields relatively (the matrices are actually nested in the IdElementRec fromat)
+      //add id to the two input matrices
+      gp_id := appendID2mat (gp);
+      gn_id := appendID2mat (gn);
+      //load parent p with empty datasets for the dataset fields
+      bracketing_record LoadParent(bracketing_record_nomat L) := TRANSFORM
+        SELF.g_prev_ := [];
+        SELF.g_new_ := [];
+        SELF.bracket1_g_ := [];
+        SELF.bracket2_g_ := [];
+        SELF := L;
+      END;
+
+      //1 - fill in the p with Empty datasets
+      p_ready := PROJECT(p,LoadParent(LEFT));
+      // 1- fill in p_ready with gp
+      p_gp := DENORMALIZE(p_ready, gp_id, LEFT.id = RIGHT.id, DeNorm_gp(LEFT,RIGHT));
+      // 2- fill in p_gp with gn
+      p_gp_gn := DENORMALIZE(p_gp, gn_id, LEFT.id = RIGHT.id, DeNorm_gn(LEFT,RIGHT));
+      
+      RETURN p_gp_gn;
+    END;
+    
+    g_prev_ext (DATASET (bracketing_record) br) := FUNCTION
+      IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+        SELF := R;
+      END;
+      NewChilds := NORMALIZE(br,LEFT.g_prev_,NewChildren(RIGHT));
+
+      RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+    END; // END g_prev_ext
+    g_new_ext (DATASET (bracketing_record) br) := FUNCTION
+      IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+        SELF := R;
+      END;
+      NewChilds := NORMALIZE(br,LEFT.g_new_,NewChildren(RIGHT));
+  
+      RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+    END; // END g_new_ext
+    
+    bracket1g_ext (DATASET (bracketing_record) br) := FUNCTION
+      IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+        SELF := R;
+      END;
+      NewChilds := NORMALIZE(br,LEFT.bracket1_g_,NewChildren(RIGHT));
+  
+      RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+    END; // END bracket1g_ext
+
+    SetBracket (DATASET (bracketing_record) B, REAL8 b1, REAL8 b2, REAL8 f1, REAL8 f2, DATASET (Mat.Types.Element) g1, DATASET (Mat.Types.Element) g2  ) := FUNCTION
+      g1_id := appendID2mat (g1);
+      g2_id := appendID2mat (g2);
+      bracketing_record set_b_f (bracketing_record l) := TRANSFORM
+        SELF.bracket1_ := b1;
+        SELF.bracket2_ := b2;
+        SELF.bracket1_f_ := f1;
+        SELF.bracket2_f_ := f2;
+        SELF.bracket1_g_ := [];
+        SELF.bracket2_g_ := [];
+        SELF := l;
+      END;
+
+      
+      B_ready := PROJECT (B, set_b_f (LEFT) );
+      B_g1 := DENORMALIZE(B_ready, g1_id, LEFT.id = RIGHT.id, DeNorm_bracket_g1(LEFT,RIGHT));
+      B_g1_g2 := DENORMALIZE(B_g1, g2_id, LEFT.id = RIGHT.id, DeNorm_bracket_g2(LEFT,RIGHT));
+      RETURN B_g1_g2;
+    END;
+    SetBracket1 (DATASET (bracketing_record) B, REAL8 b1, REAL8 f1, DATASET (Mat.Types.Element) g1 ) := FUNCTION
+      g1_id := appendID2mat (g1);
+      bracketing_record set_b_f (bracketing_record l) := TRANSFORM
+        SELF.bracket1_ := b1;
+        SELF.bracket2_ := -1;
+        SELF.bracket1_f_ := f1;
+        SELF.bracket2_f_ := -1;
+        SELF.bracket1_g_ := [];
+        SELF.bracket2_g_ := [];
+        SELF := l;
+      END;
+
+     
+      B_ready := PROJECT (B, set_b_f (LEFT) );
+      B_g1 := DENORMALIZE(B_ready, g1_id, LEFT.id = RIGHT.id, DeNorm_bracket_g1(LEFT,RIGHT));
+      RETURN B_g1;
+    END;
+    ToPassBracketing := BuildBracketingData (ToPass_bracketing_nomat,ML.Types.ToMatrix(g_prev), ML.Types.ToMatrix(g_new) );
+  
+    BracketingStep (DATASET (bracketing_record) inputp, INTEGER coun) := FUNCTION
+      inputp1 := inputp[1];
+      AreTheyLegal := TRUE; // to be evaluated ???
+      WolfeStep := FUNCTION
+        fNew := inputp1.f_new_;
+        fPrev := inputp1.f_prev_;
+        gtdNew := inputp1.gtd_new_;
+        gtdPrev := inputp1.gtd_prev_;
+        tt := inputp1.t_;
+        tPrev := inputp1.t_prev_;
+        gNew := g_new_ext(inputp);
+        gPrev := g_prev_ext(inputp);
+        inputFunEval := inputp1.funEvals_;
+        BrackLSiter := coun-1;
+        
+        //If the strong wolfe conditions satisfies then retun the final t or the bracket, otherwise do the next iteration
+        //f_new > f + c1*t*gtd || (LSiter > 1 && f_new >= f_prev)
+        con1 := (fNew > f + c1 * tt* gtd)| ((BrackLSiter > 1) & (fNew >= fPrev)) ;
+        //abs(gtd_new) <= -c2*gtd
+        con2 := ABS(gtdNew) <= (-1*c2*gtd);
+        // gtd_new >= 0
+        con3 := gtdNew >= 0;
+        /* bracket = [t_prev t];
+        bracketFval = [f_prev f_new];
+        bracketGval = [g_prev g_new];*/
+        bracketing_con1_3 := SetBracket(inputp, tPrev, tt, fPrev, fNew, gPrev, gNew);
+        
+        
+        /*  bracket = t;
+        bracketFval = f_new;
+        bracketGval = g_new;
+        done = 1;*/
+        bracketing_con2 := SetBracket1(inputp, tt, fNew, gNew);
+
+        bracketing_Nocon := FUNCTION
+          //calculate new t
+          minstep := tt + 0.01* (tt-tPrev);
+          maxstep := tt*10;
+          newt := polyinterp_both (tPrev, fPrev,gtdPrev, tt, fNew, gtdNew, minstep, maxstep);
+          //calculate fnew gnew gtdnew
+          xNew := calculate_xNew (d, newt);
+          CostGradNew := CostFunc (xNew ,CostFunc_params,TrainData, TrainLabel);
+          gNewwolfe := ExtractGrad (CostGradNew);
+          fNewWolfe := ExtractCost (CostGradNew);
+          gtdNewWolfe := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(gNewwolfe)),ML.Types.ToMatrix(d));
+          bracketing_record SetValues (bracketing_record l) := TRANSFORM
+            SELF.t_prev_ := tt; //t_prev = t;
+            SELF.f_prev_ := fNew;
+            SELF.g_prev_ := []; //gNew;
+            SELF.gtd_prev_ := gtdNew;
+            SELF.t_ := newt;
+            SELF.f_new_ := fNewWolfe;
+            SELF.g_new_ := []; // ML.Types.ToMatrix(gNewwolfe);
+            SELF.gtd_new_ := gtdNewWolfe[1].value;
+            SELF.bracket1_ := -1;
+            SELF.bracket2_ := -1;
+            SELF.funEvals_ := inputFunEval+1;
+            SELF.c := l.c+1;
+            SELF := l;
+          END;
+          B_ready := PROJECT (inputp, SetValues (LEFT) );
+          B_gp := DENORMALIZE(B_ready, appendID2mat (gNew), LEFT.id = RIGHT.id, DeNorm_gp(LEFT,RIGHT));
+          B_gp_gn := DENORMALIZE(B_gp, appendID2mat(ML.Types.ToMatrix(gNewwolfe)), LEFT.id = RIGHT.id, DeNorm_gn(LEFT,RIGHT));
+          RETURN B_gp_gn;
+        END;
+        RETURN IF (con1, bracketing_con1_3, IF (con2, bracketing_con2, IF (con3, bracketing_con1_3, bracketing_Nocon)));        
+      END;//END WolfeStep
+      ArmijoStep := FUNCTION
+        RETURN inputp;
+      END;// END ArmijoStep
+      RETURN IF(AreTheyLegal,WolfeStep,ArmijoStep);
+    END; // END BracketingStep
+    BracketingResult := LOOP(ToPassBracketing, COUNTER <= maxLS AND ROWS(LEFT)[1].bracket1_ = -1, BracketingStep(ROWS(LEFT),COUNTER));
+    interval_found := BracketingResult[1].bracket1_ != -1 AND BracketingResult[1].bracket2_  !=-1;
+    final_t_found := BracketingResult[1].bracket1_ != -1 AND BracketingResult[1].bracket2_  =-1;
+    Zoom_Max_itr_tmp :=  maxLS - BracketingResult[1].c;
+    Zoom_Max_Itr := IF (Zoom_Max_itr_tmp >0, Zoom_Max_itr_tmp, 0);
+/* OutputRecord finaltTran (BracketingResult l) := TRANSFORM
+      SELF.t := l.bracket1_ ;
+      SELF.f_new := l.bracket1_f_ ;
+      SELF.g_new := l.bracket1_g_;
+      SELF.WolfeFunEval := l.funEvals_;
+    END;*/
+    final_t_output := DATASET ([{P_num+1,1,BracketingResult[1].bracket1_},{P_num+2,1,BracketingResult[1].bracket1_f_},{P_num+3,1,BracketingResult[1].funEvals_}],Mat.Types.Element) + bracket1g_ext(BracketingResult);
+    RETURN final_t_output;
+  END;// END WolfeLineSearch3
+  EXPORT wolfe_gnew_ext  (DATASET (Mat.Types.Element) wolfeout) := FUNCTION
+    ind := MAX (wolfeout,x)-3;
+    RETURN wolfeout (x>=1 and x <=ind);
+  END;
+  EXPORT wolfe_t_ext  (DATASET (Mat.Types.Element) wolfeout) := FUNCTION
+    ind := MAX (wolfeout,x)-2;
+    RETURN wolfeout (x = ind)[1].value;
+  END;
+  EXPORT wolfe_fnew_ext  (DATASET (Mat.Types.Element) wolfeout) := FUNCTION
+    ind := MAX (wolfeout,x)-1;
+    RETURN wolfeout (x = ind)[1].value;
+  END;
+  EXPORT wolfe_funeval_ext  (DATASET (Mat.Types.Element) wolfeout) := FUNCTION
+    ind := MAX (wolfeout,x);
+    RETURN wolfeout (x = ind)[1].value;
+  END;
+  //x,t,d,f,fr,g,gtd,c1,LS,tolX,debug,doPlot,saveHessianComp,funObj,varargin)
+  // Backtracking linesearch to satisfy Armijo condition
+  //
+  // Inputs:
+  //   x: starting location
+  //   t: initial step size
+  //   d: descent direction
+  //   f: function value at starting location
+  //   fr: reference function value (usually funObj(x))
+  //   gtd: directional derivative at starting location
+  //   c1: sufficient decrease parameter
+  //   debug: display debugging information
+  //   LS: type of interpolation
+  //   tolX: minimum allowable step length
+  //   doPlot: do a graphical display of interpolation
+  //   funObj: objective function
+  //   varargin: parameters of objective function
+  EXPORT ArmijoBacktrack(DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, REAL8 fr, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
+    
+     P_num := Max (x, id); //the length of the parameters vector (number of parameters)
+      IsNotLegal (DATASET (Mat.Types.Element) Mat) := FUNCTION //???to be defined
+        RETURN FALSE;
+      END;
+      ExtractGrad (DATASET(Types.NumericField) inp) := FUNCTION
+        RETURN inp (id <= P_num);
+      END;
+      ExtractCost (DATASET(Types.NumericField) inp) := FUNCTION
+        RETURN inp (id = (P_num+1))[1].value;
+      END;
+      // Evaluate the Objective and Gradient at the Initial Step
+      xNew := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),t)));
+      CostGradNew := CostFunc (xNew ,CostFunc_params,TrainData, TrainLabel);
+      gNew := ExtractGrad (CostGradNew);
+      fNew := ExtractCost (CostGradNew);
+      //loop term to be used in the loop condition
+      LoopTerm := fr + c1*t*gtd;
+      //build what should be passed to the bracketing loop
+      fNewno := DATASET([{1,1,fNew,1}], Mat.Types.MUElement);
+      gNewno := Mat.MU.To (ML.Types.ToMatrix(gNew),2);
+      funevalno := DATASET([{1,1,1,3}], Mat.Types.MUElement);
+      tno := DATASET([{1,1,t,4}], Mat.Types.MUElement);
+      fPrevno := DATASET([{1,1,-1,5}], Mat.Types.MUElement);
+      tPrevno := DATASET([{1,1,0,6}], Mat.Types.MUElement);
+      breakno := DATASET([{1,1,0,7}], Mat.Types.MUElement);
+      toPass := fNewno + gNewno + funevalno + tno + fPrevno + tPrevno + breakno;
+      Armijo (DATASET (Mat.Types.MUElement) Inp) := FUNCTION
+        //calculate new t
+        fNewit := Mat.MU.From (Inp,1);
+        gNewit := Mat.MU.FROM (Inp,2);
+        tit := Mat.MU.From (Inp,4)[1].value;
+        tPrevit := Mat.MU.From (Inp,6)[1].value;
+        gtdNewit := ML.Mat.Mul (ML.Mat.Trans((gNewit)),ML.Types.ToMatrix(d));
+        FEval := Mat.MU.FROM (Inp,3)[1].value;
+        fPrevit := Mat.MU.FROM (Inp,5);
+        cond := IsNotLegal (fPrevit) | (FEval <2);
+        // t = polyinterp([0 f gtd; t f_new sqrt(-1)],doPlot);
+        tTemp := polyinterp_img (0, f, gtd, tit, fNewit[1].value, gtdNewit[1].value);
+        tTemp2 := tTemp;//t = polyinterp([0 f gtd; t f_new sqrt(-1); t_prev f_prev sqrt(-1)],doPlot);
+        tNew := IF (IsNotLegal(fNewit),tit*0.5,IF (cond,tTemp,tTemp2));
+        //Adjust tNew if change in t is too small/large
+        T1 := tit*0.001;
+        T2 := tit*0.6;
+        AdCond1 := tNew < T1 ; //t < temp*1e-3
+        AdCond2 := tNew > T2; //t > temp*0.6
+        AdtNew := IF (AdCond1, T1, IF (AdCond2, T2, tNew));
+        //Calculate new f and g values
+        fPrvno := DATASET([{1,1,fNewit[1].value,5}], Mat.Types.MUElement);
+        tPrvno := DATASET([{1,1,tit,6}], Mat.Types.MUElement);
+        //calculate new f and g
+        xN := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),AdtNew)));
+        CGN := CostFunc (xN ,CostFunc_params,TrainData, TrainLabel);
+        gN := ExtractGrad (CGN);
+        fN := ExtractCost (CGN);
+        gNno := Mat.MU.To (ML.Types.ToMatrix(gN),2);
+        fNno := DATASET([{1,1,fN,1}], Mat.Types.MUElement);
+        FEalno := DATASET([{1,1,FEval+1,3}], Mat.Types.MUElement);
+        tNno := DATASET([{1,1,AdtNew,4}], Mat.Types.MUElement);
+        //sum(abs(t*d))???? to be calculated
+        sumA := 3;
+        brk := IF(sumA<=tolX,1,0);
+        brkno := DATASET([{1,1,brk,7}], Mat.Types.MUElement);
+        RETURN fNno + gNno + FEalno + tNno + fPrvno +  tPrvno + brkno;
+      END;
+      //f_new > fr + c1*t*gtd || ~isLegal(f_new)
+      LoopResult := LOOP (toPass, (Mat.MU.From (ROWS(LEFT),7)[1].value = 0) & (IsNotLegal (Mat.MU.From (ROWS(LEFT),1)) & (Mat.MU.From (ROWS(LEFT),1)[1].value < LoopTerm ) ), Armijo(ROWS(LEFT)));
+      BCond := Mat.MU.From (LoopResult,7)[1].value = 1;
+      //[t,f_new,g_new,funEvals] return x_new too????
+      RegularResult := LoopResult (no=4) + LoopResult (no=1) + LoopResult (no=2) + LoopResult (no=3);
+      Breakresult := DATASET([{1,1,0,4}], Mat.Types.MUElement) + DATASET([{1,1,f,1}], Mat.Types.MUElement) + Mat.MU.To (ML.Types.ToMatrix(g),2) + LoopResult (no=3);
+      FinalResult := IF (BCond, Breakresult, RegularResult);
+    RETURN FinalResult;
+  END; // END ArmijoBacktrack
+
+  //LBFGS algorithm
+  //Returns final updated parameter: numericField foramt
+  //x0: input parameter vector (column)
+  //CostFunc : function handler , it should return a Cost value and the gradient values which is a vector with the same size of x0
+  //The output of the CostFunc function should be in numericField format where the last id's value (the maximum id) represents cost value and the rest
+  //represent the gradient vector
+  //So basically CostFunc should recive all its parameters in one single numericField structure + training data + training labels and return a vector of the gradients+costvalue
+  //Cost function should have a universal interface, so it recives all parameters in numericfield format and returns in numericfield format
+  //CostFunc_params : parameters that need to be passed to the CostFunc
+  //TrainData : Train data in numericField format
+  //TrainLabel : labels asigned to the train data ( if it is an un-supervised task this parameter would be empty dataset)
+  //MaxIter: Maximum number of iteration allowed in the optimization algorithm
+  //tolFun : Termination tolerance on the first-order optimality (1e-5)
+  //TolX : Termination tolerance on progress in terms of function/parameter changes (1e-9)
+  //maxFunEvals : Maximum number of function evaluations allowed (1000)
+  //corrections : number of corrections to store in memory (default: 100) higher numbers converge faster but use more memory)
+  //this Macro recives all the parameters in numeric field fromat and returns in numeric field format
+  //prows and maxrows related to "numer of parameters (P)" which is actually the length of the x0 vector
+  //pcols and Maxcols are relaetd to "number of correstions to store in the memory (corrections)" which is in the MethodOptions
+  //In all operation I want to f or g get nan value if it is devided by zero (do I need to include #option on top of the CostFunc)????????
+
+//LBFGS algorithm
+  //Returns final updated parameter: numericField foramt
+  //x0: input parameter vector (column)
+  //CostFunc : function handler , it should return a Cost value and the gradient values which is a vector with the same size of x0
+  //The output of the CostFunc function should be in numericField format where the last id's value (the maximum id) represents cost value and the rest
+  //represent the gradient vector
+  //So basically CostFunc should recive all its parameters in one single numericField structure + training data + training labels and return a vector of the gradients+costvalue
+  //Cost function should have a universal interface, so it recives all parameters in numericfield format and returns in numericfield format
+  //CostFunc_params : parameters that need to be passed to the CostFunc
+  //TrainData : Train data in numericField format
+  //TrainLabel : labels asigned to the train data ( if it is an un-supervised task this parameter would be empty dataset)
+  //MaxIter: Maximum number of iteration allowed in the optimization algorithm
+  //tolFun : Termination tolerance on the first-order optimality (1e-5)
+  //TolX : Termination tolerance on progress in terms of function/parameter changes (1e-9)
+  //maxFunEvals : Maximum number of function evaluations allowed (1000)
+  //corrections : number of corrections to store in memory (default: 100) higher numbers converge faster but use more memory)
+  //this Macro recives all the parameters in numeric field fromat and returns in numeric field format
+  //prows and maxrows related to "numer of parameters (P)" which is actually the length of the x0 vector
+  //pcols and Maxcols are relaetd to "number of correstions to store in the memory (corrections)" which is in the MethodOptions
+  //In all operation I want to f or g get nan value if it is devided by zero (do I need to include #option on top of the CostFunc)????????
+  EXPORT MinFUNC(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, INTEGER MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
+  //#option ('divideByZero', 'nan'); //In all operation I want to f or g get nan value if it is devided by zero
+  //Functions used
+  SumABSg (DATASET (Types.NumericField) g_temp) := FUNCTION
+    r := RECORD
+      t_RecordID id := 1 ;
+      t_FieldNumber number := 1;
+      t_FieldReal value := SUM(GROUP,ABS(g_temp.value));
+    END;
+    SumABSCol := TABLE(g_temp,r);
+    RETURN SumABSCol[1].value;
+  END;
+  SumABSg_matrix (DATASET (Mat.Types.Element) g_temp) := FUNCTION
+    r := RECORD
+      Mat.Types.t_Index x := 1 ;
+      Mat.Types.t_Index y := 1;
+      Mat.Types.t_value value := SUM(GROUP,ABS(g_temp.value));
+    END;
+    SumABSCol := TABLE(g_temp,r);
+    RETURN SumABSCol[1].value;
+  END;
+  // Check Optimality Condition: if sum(abs(g)) <= tolFun return True
+  OptimalityCond (DATASET (Types.NumericField) g_temp) := FUNCTION
+    sag := SumABSg (g_temp);
+    RETURN IF( sag <= tolFun , TRUE, FALSE);
+  END;
+  //Check Optimality Condition for the Loop : if sum(abs(g)) <= tolFun return TRUE
+  OptimalityCond_mat (DATASET (Mat.Types.Element) g_t) := FUNCTION
+    sag := SumABSg_matrix (g_t);
+    RETURN IF( sag <= tolFun , TRUE, FALSE);
+  END;//END OptimalityCond_mat
+  //Check for lack of progress 1: if sum(abs(t*d)) <= tolX return TRUE
+  LackofProgress1 (DATASET (Mat.Types.Element) d_temp, REAL8 t_temp) := FUNCTION
+    r := RECORD
+      Mat.Types.t_Index x := 1 ;
+      Mat.Types.t_Index y := d_temp.y;
+      Mat.Types.t_Value value := SUM(GROUP,ABS(d_temp.value * t_temp));
+    END;
+    SumABSCol := TABLE(d_temp,r,d_temp.y);
+    RETURN IF( SumABSCol[1].value <= tolX , TRUE, FALSE);
+  END;
+  //Check for lack of progress 2: if abs(f-f_old) < tolX return TRUE
+  LackofProgress2 (REAL8 f_f_temp) := FUNCTION
+    RETURN IF (ABS (f_f_temp) < tolX, TRUE, FALSE);
+  END;
+  //Check for going over evaluation limit
+  //if funEvals*funEvalMultiplier > maxFunEvals return TRUE  (funEvalMultiplier=1)
+  EvaluationLimit (INTEGER8 fun_temp) := FUNCTION
+    RETURN IF (fun_temp > maxFunEvals, TRUE, FALSE);
+  END;
+  IsLegal (DATASET (Types.NumericField) inp) := FUNCTION //???to be defined
+    RETURN TRUE;
+  END;
+  //the length of the parameters vector (for example in an neural network algorith, all the weight parameters are passed in ONE vector
+  //to the optimization algorithm to get updated
+
+  P := Max (x0, id); // the maximum matrix id in the parameters numericfield dataset
+  ExtractGrad (DATASET(Types.NumericField) inp) := FUNCTION
+    RETURN inp (id <= P);
+  END;
+  ExtractCost (DATASET(Types.NumericField) inp) := FUNCTION
+    RETURN inp (id = (P+1))[1].value;
+  END;
+  //Evaluate Initial Point
+  CostGrad0 := CostFunc (x0,CostFunc_params,TrainData, TrainLabel);
+
+  g0 := ExtractGrad (CostGrad0);
+  Cost0 := ExtractCost (CostGrad0);
+  //Check the optimality of the initial point (if sum(abs(g)) <= tolFun)
+  IsInitialPointOptimal := OptimalityCond (g0);
+
+  //LBFGS Module
+  O := Limited_Memory_BFGS (P, corrections);
+  //initialize Hdiag,old_dir,old_steps, gradient and cost
+  //The size of the old_dir and old_steps matrices are "number of parameters" * "number of corrections to store in memory (corrections)"
+  // old_dir0 := Mat.Zeros(P, corrections);
+  // old_steps0 := old_dir0;
+  //New Matrix Generator
+  Mat.Types.Element gen(UNSIGNED4 c, UNSIGNED4 NumRows, REAL8 v=0) := TRANSFORM
+    SELF.x := ((c-1) % NumRows) + 1;
+    SELF.y := ((c-1) DIV NumRows) + 1;
+    SELF.value := v;
+  END;
+  // Initialize dirs and steps matrices
+  old_dir0   := DATASET(P * corrections, gen(COUNTER, P));
+  old_steps0 := DATASET(P * corrections, gen(COUNTER, P));
+  Hdiag0 := 1;
+  //initialize hessian diag as 1
+  Hdiag0no := DATASET([{1,1,1,5}], Mat.Types.MUElement);
+  //number of times the cost function is evaluated
+  FunEval := 1; 
+  //Perform up to a maximum of 'maxIter' descent steps:
+  //put all the parameters that need to be sent to the step fucntion in a Mat.Types.MUElement format
+  
+  emptyE := DATASET([], Mat.Types.Element);
+  MinFRecord := RECORD
+    DATASET(Mat.Types.Element) x;
+    DATASET(Mat.Types.Element) g;
+    DATASET(Mat.Types.Element) old_steps;
+    DATASET(Mat.Types.Element) old_dirs;
+    REAL8 Hdiag;
+    REAL8 Cost;
+    INTEGER8 funEvals_;
+    DATASET(Mat.Types.Element) d;
+    REAL8 fnew_fold; //f_new-f_old in that iteration
+    REAL8 t_;
+    BOOLEAN dLegal;
+    BOOLEAN ProgAlongDir; //Progress Along Directionno //Check that progress can be made along direction ( if gtd > -tolX)
+    BOOLEAN optcond; // Check Optimality Condition
+    BOOLEAN lackprog1; //Check for lack of progress 1
+    BOOLEAN lackprog2; //Check for lack of progress 2
+    BOOLEAN exceedfuneval; //Check for going over evaluation limit
+  END;
+
+  ToPassMinF := DATASET ([{ML.Types.ToMatrix(x0),ML.Types.ToMatrix(g0),old_steps0,old_dir0,Hdiag0,Cost0,FunEval,emptyE,100 +tolFun,1,TRUE,TRUE,FALSE,FALSE,FALSE,FALSE}],MinFRecord);
+
+
+  MinFstep (DATASET (MinFRecord) inputp, INTEGER coun) := FUNCTION
+  /*
+    x_pre := inputp[1].x;
+    g_pre := inputp[1].g;
+    g_pre_ := ML.Mat.Scale (g_pre , -1);
+    step_pre := inputp[1].old_steps;
+    dir_pre := inputp[1].old_dirs;
+    H_pre := inputp[1].Hdiag;
+    f_pre := inputp[1].Cost;
+    FunEval_pre := inputp[1].funEvals_;
+    //HG_ is actually search direction in fromual 3.1
+    HG_ :=  IF (coun = 1, O.Steepest_Descent (g_pre), O.lbfgs(g_pre_,Dir_pre, Step_pre,H_pre));//the result is the approximate inverse Hessian, multiplied by the gradient and it is in PBblas.layout format
+    d := ML.DMat.Converted.FromPart2DS(HG_);
+    dlegalstep := IsLegal (d);
+    d_next := ML.Types.ToMatrix(d);
+    //Directional Derivative : gtd = g'*d;
+    //calculate gtd to be passed to the wolfe algortihm
+    gtd := ML.Mat.Mul(ML.Mat.Trans((g_pre)),ML.Types.ToMatrix(d));
+    //Check that progress can be made along direction : if gtd > -tolX then break!
+    gtdprogress := IF (gtd[1].value > -1*tolX, FALSE, TRUE);
+    // Select Initial Guess If coun =1 then t = min(1,1/sum(abs(g)));
+    t := IF (coun = 1,MIN ([1, 1/SumABSg (ML.Types.FromMatrix (g_pre))]),1);
+     //find point satisfiying wolfe
+    //[t,f,g,LSfunEvals] = WolfeLineSearch(x,t,d,f,g,gtd,c1,c2,LS,25,tolX,debug,doPlot,1,funObj,varargin{:});
+    t_neworig := WolfeLineSearch2(1, ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 25, 0.000000001, CostFunc_params, TrainData , TrainLabel, CostFunc , prows, pcols, Maxrows, Maxcols);
+    t_new := t_neworig[1].t;
+    g_Next := t_neworig[1].g_new;
+    Cost_Next := t_neworig[1].f_new;
+    FunEval_Wolfe := t_neworig[1].WolfeFunEval;
+    FunEval_next := FunEval_pre + FunEval_Wolfe;
+    x_pre_updated :=  ML.Mat.Add((x_pre),ML.Mat.Scale(ML.Types.ToMatrix(d),t_new));
+    x_Next := ML.Types.FromMatrix(x_pre_updated);
+    fpre_fnext := Cost_Next-f_pre;
+    //calculate new Hessian diag, dir and steps
+    //Step_Next :=  O.lbfgsUpdate_corr (g_pre, g_Next, Step_pre);
+    Step_Next := O.lbfgsUpdate_Stps (x_pre, x_pre_updated, g_pre, g_Next, Step_pre);
+    //Dir_Next := O.lbfgsUpdate_corr(x_pre, x_pre_updated, Dir_pre);
+    Dir_Next := O.lbfgsUpdate_Dirs (x_pre, x_pre_updated, g_pre, g_Next, Dir_pre);
+    H_Next := O.lbfgsUpdate_Hdiag (x_pre, x_pre_updated, g_pre, g_Next, H_pre);
+    optcond := OptimalityCond_mat (g_Next);
+    lack1 := LackofProgress1 (d_next, t_new);
+    lack2 := LackofProgress2 (fpre_fnext);
+    evalimit := EvaluationLimit (FunEval_next);
+    //ToReturn := x_Next_no + g_Nextno + Step_Nextno + Dir_Nextno + H_Nextno+  C_Nextno + FunEval_Nextno + d_Nextno + fpre_fnextno + t_newno + dlegalstepno + gtdprogressno;
+    MinFRecord MF (MinFRecord l) := TRANSFORM
+      SELF.x := x_pre_updated;
+      SELF.g := g_Next;
+      SELF.old_steps := Step_Next;
+      SELF.old_dirs := Dir_Next;
+      SELF.Hdiag := H_Next;
+      SELF.Cost := Cost_Next;
+      SELF.funEvals_ := FunEval_next;
+      SELF.d := d_next;
+      SELF.fnew_fold := fpre_fnext;
+      SELF.t_ := t_new;
+      SELF.dLegal := dlegalstep;
+      SELF.ProgAlongDir := gtdprogress;
+      SELF.optcond := optcond; // Check Optimality Condition
+      SELF.lackprog1 := lack1; //Check for lack of progress 1
+      SELF.lackprog2 := lack2; //Check for lack of progress 2
+      SELF.exceedfuneval := evalimit;
+      SELF := l;
+    END;
+    MinFRecord MF_dnotleg (MinFRecord l) := TRANSFORM
+      SELF.d := d_next;
+      SELF.dLegal := FALSE;
+      SELF := l;
+    END;
+    MFreturn := PROJECT (inputp,MF(LEFT));
+    MFndreturn := PROJECT (inputp,MF_dnotleg(LEFT));
+    
+   orig */
+    
+    MinFRecord MinF_tran (MinFRecord l) := TRANSFORM
+    x_pre := l.x;
+    g_pre := l.g;
+    g_pre_ := ML.Mat.Scale (g_pre , -1);
+    step_pre := l.old_steps;
+    dir_pre := l.old_dirs;
+    H_pre := l.Hdiag;
+    f_pre := l.Cost;
+    FunEval_pre := l.funEvals_;
+    //HG_ is actually search direction in fromual 3.1
+    HG_ :=  IF (coun = 1, O.Steepest_Descent (g_pre), O.lbfgs(g_pre_,Dir_pre, Step_pre,H_pre));//the result is the approximate inverse Hessian, multiplied by the gradient and it is in PBblas.layout format
+    d := ML.DMat.Converted.FromPart2DS(HG_);
+    dlegalstep := IsLegal (d);
+    d_next := ML.Types.ToMatrix(d);
+    //Directional Derivative : gtd = g'*d;
+    //calculate gtd to be passed to the wolfe algortihm
+    gtd := ML.Mat.Mul(ML.Mat.Trans((g_pre)),ML.Types.ToMatrix(d));
+    //Check that progress can be made along direction : if gtd > -tolX then break!
+    gtdprogress := IF (gtd[1].value > -1*tolX, FALSE, TRUE);
+    // Select Initial Guess If coun =1 then t = min(1,1/sum(abs(g)));
+    t := IF (coun = 1,MIN ([1, 1/SumABSg (ML.Types.FromMatrix (g_pre))]),1);
+     //find point satisfiying wolfe
+    //[t,f,g,LSfunEvals] = WolfeLineSearch(x,t,d,f,g,gtd,c1,c2,LS,25,tolX,debug,doPlot,1,funObj,varargin{:});
+    t_neworig := WolfeLineSearch3(1, ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 25, 0.000000001, CostFunc_params, TrainData , TrainLabel, CostFunc , prows, pcols, Maxrows, Maxcols);
+    t_new := wolfe_t_ext(t_neworig);
+    g_Next := wolfe_gnew_ext(t_neworig); // := g_pre works here
+    Cost_Next := wolfe_fnew_ext(t_neworig);
+    FunEval_Wolfe := wolfe_funeval_ext(t_neworig);
+    FunEval_next := FunEval_pre + FunEval_Wolfe;
+    x_pre_updated :=  ML.Mat.Add((x_pre),ML.Mat.Scale(ML.Types.ToMatrix(d),t_new));
+    x_Next := ML.Types.FromMatrix(x_pre_updated);
+    fpre_fnext := Cost_Next-f_pre;
+    //calculate new Hessian diag, dir and steps
+    //Step_Next :=  O.lbfgsUpdate_corr (g_pre, g_Next, Step_pre);
+    Step_Next := O.lbfgsUpdate_Stps (x_pre, x_pre_updated, g_pre, g_Next, Step_pre);
+    //Dir_Next := O.lbfgsUpdate_corr(x_pre, x_pre_updated, Dir_pre);
+    Dir_Next := O.lbfgsUpdate_Dirs (x_pre, x_pre_updated, g_pre, g_Next, Dir_pre);
+    H_Next := O.lbfgsUpdate_Hdiag (x_pre, x_pre_updated, g_pre, g_Next, H_pre);
+    optcond := OptimalityCond_mat (g_Next);
+    lack1 := LackofProgress1 (d_next, t_new);
+    lack2 := LackofProgress2 (fpre_fnext);
+    evalimit := EvaluationLimit (FunEval_next);
+    //ToReturn := x_Next_no + g_Nextno + Step_Nextno + Dir_Nextno + H_Nextno+  C_Nextno + FunEval_Nextno + d_Nextno + fpre_fnextno + t_newno + dlegalstepno + gtdprogressno;
+    
+      SELF.x := x_pre_updated;
+      SELF.g := g_Next;
+      SELF.old_steps := Step_Next;
+      SELF.old_dirs := Dir_Next;
+      SELF.Hdiag := H_Next;
+      SELF.Cost := Cost_Next;
+      SELF.funEvals_ := FunEval_next;
+      SELF.d := d_next;
+      SELF.fnew_fold := fpre_fnext;
+      SELF.t_ := t_new;
+      SELF.dLegal := dlegalstep;
+      SELF.ProgAlongDir := gtdprogress;
+      SELF.optcond := optcond; // Check Optimality Condition
+      SELF.lackprog1 := lack1; //Check for lack of progress 1
+      SELF.lackprog2 := lack2; //Check for lack of progress 2
+      SELF.exceedfuneval := evalimit;
+      SELF := l;
+    END;
+    
+    
+    MinFRecord MinF_dnotleg_tran (MinFRecord l) := TRANSFORM
+    x_pre := l.x;
+    g_pre := l.g;
+    g_pre_ := ML.Mat.Scale (g_pre , -1);
+    step_pre := l.old_steps;
+    dir_pre := l.old_dirs;
+    H_pre := l.Hdiag;
+    f_pre := l.Cost;
+    FunEval_pre := l.funEvals_;
+    //HG_ is actually search direction in fromual 3.1
+    HG_ :=  IF (coun = 1, O.Steepest_Descent (g_pre), O.lbfgs(g_pre_,Dir_pre, Step_pre,H_pre));//the result is the approximate inverse Hessian, multiplied by the gradient and it is in PBblas.layout format
+    d := ML.DMat.Converted.FromPart2DS(HG_);
+    dlegalstep := IsLegal (d);
+    d_next := ML.Types.ToMatrix(d);
+    SELF.d := d_next;
+    SELF.dLegal := FALSE;
+    SELF := l;
+    END;
+    MFreturn := PROJECT (inputp,MinF_tran(LEFT));
+    MFndreturn := PROJECT (inputp,MinF_dnotleg_tran(LEFT));
+    RETURN MFreturn;
+    //RETURN IF(dlegalstep,MFreturn,MFndreturn); orig
+  END;
+  //updating step function
+
+
+ // MinFstepout := MinFstep(ToPassMinF,1);
+  // MinFstepout := LOOP(ToPassMinF, COUNTER <= MaxIter AND ROWS(LEFT)[1].dLegal AND ROWS(LEFT)[1].ProgAlongDir   
+  // AND ~ROWS(LEFT)[1].optcond AND ~ROWS(LEFT)[1].lackprog1 AND ~ROWS(LEFT)[1].lackprog2 AND ~ROWS(LEFT)[1].exceedfuneval  , MinFstep(ROWS(LEFT),COUNTER)); orig
+
+  MinFstepout := LOOP(ToPassMinF, COUNTER <= 1, MinFstep(ROWS(LEFT),COUNTER));
+/*
+  outrec := RECORD
+    DATASET(Mat.Types.Element) x;
+    REAL8 cost;
+  END;
+  output_xfinal_costfinal := PROJECT(MinFstepout, TRANSFORM(outrec, SELF := LEFT));
+  output_x0_cost0 := DATASET([{ML.Types.ToMatrix(x0),90}],outrec);
+  FinalResult := IF (IsInitialPointOptimal,output_x0_cost0,output_xfinal_costfinal ); orig */
+  //RETURN FinalResult; orig
+  RETURN MinFstepout;
+
+  END;//END MinFUNC
+
+
+
+EXPORT MinFUNC3(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, INTEGER MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
+  //#option ('divideByZero', 'nan'); //In all operation I want to f or g get nan value if it is devided by zero
+  //Functions used
+  SumABSg (DATASET (Types.NumericField) g_temp) := FUNCTION
+    r := RECORD
+      t_RecordID id := 1 ;
+      t_FieldNumber number := 1;
+      t_FieldReal value := SUM(GROUP,ABS(g_temp.value));
+    END;
+    SumABSCol := TABLE(g_temp,r);
+    RETURN SumABSCol[1].value;
+  END;
+  SumABSg_matrix (DATASET (Mat.Types.Element) g_temp) := FUNCTION
+    r := RECORD
+      Mat.Types.t_Index x := 1 ;
+      Mat.Types.t_Index y := 1;
+      Mat.Types.t_value value := SUM(GROUP,ABS(g_temp.value));
+    END;
+    SumABSCol := TABLE(g_temp,r);
+    RETURN SumABSCol[1].value;
+  END;
+  // Check Optimality Condition: if sum(abs(g)) <= tolFun return True
+  OptimalityCond (DATASET (Types.NumericField) g_temp) := FUNCTION
+    sag := SumABSg (g_temp);
+    RETURN IF( sag <= tolFun , TRUE, FALSE);
+  END;
+  //Check Optimality Condition for the Loop : if sum(abs(g)) <= tolFun return TRUE
+  OptimalityCond_mat (DATASET (Mat.Types.Element) g_t) := FUNCTION
+    sag := SumABSg_matrix (g_t);
+    RETURN IF( sag <= tolFun , TRUE, FALSE);
+  END;//END OptimalityCond_mat
+  //Check for lack of progress 1: if sum(abs(t*d)) <= tolX return TRUE
+  LackofProgress1 (DATASET (Mat.Types.Element) d_temp, REAL8 t_temp) := FUNCTION
+    r := RECORD
+      Mat.Types.t_Index x := 1 ;
+      Mat.Types.t_Index y := d_temp.y;
+      Mat.Types.t_Value value := SUM(GROUP,ABS(d_temp.value * t_temp));
+    END;
+    SumABSCol := TABLE(d_temp,r,d_temp.y);
+    RETURN IF( SumABSCol[1].value <= tolX , TRUE, FALSE);
+  END;
+  //Check for lack of progress 2: if abs(f-f_old) < tolX return TRUE
+  LackofProgress2 (REAL8 f_f_temp) := FUNCTION
+    RETURN IF (ABS (f_f_temp) < tolX, TRUE, FALSE);
+  END;
+  //Check for going over evaluation limit
+  //if funEvals*funEvalMultiplier > maxFunEvals return TRUE  (funEvalMultiplier=1)
+  EvaluationLimit (INTEGER8 fun_temp) := FUNCTION
+    RETURN IF (fun_temp > maxFunEvals, TRUE, FALSE);
+  END;
+  IsLegal (DATASET (Types.NumericField) inp) := FUNCTION //???to be defined
+    RETURN TRUE;
+  END;
+  //the length of the parameters vector (for example in an neural network algorith, all the weight parameters are passed in ONE vector
+  //to the optimization algorithm to get updated
+
+  P := Max (x0, id); // the maximum matrix id in the parameters numericfield dataset
+  ExtractGrad (DATASET(Types.NumericField) inp) := FUNCTION
+    RETURN inp (id <= P);
+  END;
+  ExtractCost (DATASET(Types.NumericField) inp) := FUNCTION
+    RETURN inp (id = (P+1))[1].value;
+  END;
+  //Evaluate Initial Point
+  CostGrad0 := CostFunc (x0,CostFunc_params,TrainData, TrainLabel);
+
+  g0 := ExtractGrad (CostGrad0);
+  Cost0 := ExtractCost (CostGrad0);
+  //Check the optimality of the initial point (if sum(abs(g)) <= tolFun)
+  IsInitialPointOptimal := OptimalityCond (g0);
+
+  //LBFGS Module
+  O := Limited_Memory_BFGS (P, corrections);
+  //initialize Hdiag,old_dir,old_steps, gradient and cost
+  //The size of the old_dir and old_steps matrices are "number of parameters" * "number of corrections to store in memory (corrections)"
+  // old_dir0 := Mat.Zeros(P, corrections);
+  // old_steps0 := old_dir0;
+  //New Matrix Generator
+  Mat.Types.Element gen(UNSIGNED4 c, UNSIGNED4 NumRows, REAL8 v=0) := TRANSFORM
+    SELF.x := ((c-1) % NumRows) + 1;
+    SELF.y := ((c-1) DIV NumRows) + 1;
+    SELF.value := v;
+  END;
+  // Initialize dirs and steps matrices
+  old_dir0   := DATASET(P * corrections, gen(COUNTER, P));
+  old_steps0 := DATASET(P * corrections, gen(COUNTER, P));
+  Hdiag0 := 1;
+  //initialize hessian diag as 1
+  Hdiag0no := DATASET([{1,1,1,5}], Mat.Types.MUElement);
+  //number of times the cost function is evaluated
+  FunEval := 1; 
+  //Perform up to a maximum of 'maxIter' descent steps:
+  //put all the parameters that need to be sent to the step fucntion in a Mat.Types.MUElement format
+  
+  emptyE := DATASET([], Mat.Types.Element);
+  MinFRecord := RECORD
+    DATASET(Mat.Types.Element) x;
+    DATASET(Mat.Types.Element) g;
+    DATASET(Mat.Types.Element) old_steps;
+    DATASET(Mat.Types.Element) old_dirs;
+    REAL8 Hdiag;
+    REAL8 Cost;
+    INTEGER8 funEvals_;
+    DATASET(Mat.Types.Element) d;
+    REAL8 fnew_fold; //f_new-f_old in that iteration
+    REAL8 t_;
+    BOOLEAN dLegal;
+    BOOLEAN ProgAlongDir; //Progress Along Directionno //Check that progress can be made along direction ( if gtd > -tolX)
+    BOOLEAN optcond; // Check Optimality Condition
+    BOOLEAN lackprog1; //Check for lack of progress 1
+    BOOLEAN lackprog2; //Check for lack of progress 2
+    BOOLEAN exceedfuneval; //Check for going over evaluation limit
+  END;
+
+  ToPassMinF := DATASET ([{ML.Types.ToMatrix(x0),ML.Types.ToMatrix(g0),old_steps0,old_dir0,Hdiag0,Cost0,FunEval,emptyE,100 +tolFun,1,TRUE,TRUE,FALSE,FALSE,FALSE,FALSE}],MinFRecord);
+
+
+  MinFstep (DATASET (MinFRecord) inputp, INTEGER coun) := FUNCTION
+
+    
+     
+    x_pre := inputp[1].x;
+    g_pre := inputp[1].g;
+    g_pre_ := ML.Mat.Scale (g_pre , -1);
+    step_pre := inputp[1].old_steps;
+    dir_pre := inputp[1].old_dirs;
+    H_pre := inputp[1].Hdiag;
+    f_pre := inputp[1].Cost;
+    FunEval_pre := inputp[1].funEvals_;
+    //HG_ is actually search direction in fromual 3.1
+    HG_ :=  IF (coun = 1, O.Steepest_Descent (g_pre), O.lbfgs(g_pre_,Dir_pre, Step_pre,H_pre));//the result is the approximate inverse Hessian, multiplied by the gradient and it is in PBblas.layout format
+    d := ML.DMat.Converted.FromPart2DS(HG_);
+    dlegalstep := IsLegal (d);
+    d_next := ML.Types.ToMatrix(d);
+    //Directional Derivative : gtd = g'*d;
+    //calculate gtd to be passed to the wolfe algortihm
+    gtd := ML.Mat.Mul(ML.Mat.Trans((g_pre)),ML.Types.ToMatrix(d));
+    //Check that progress can be made along direction : if gtd > -tolX then break!
+    gtdprogress := IF (gtd[1].value > -1*tolX, FALSE, TRUE);
+    // Select Initial Guess If coun =1 then t = min(1,1/sum(abs(g)));
+    t := IF (coun = 1,MIN ([1, 1/SumABSg (ML.Types.FromMatrix (g_pre))]),1);
+     //find point satisfiying wolfe
+    //[t,f,g,LSfunEvals] = WolfeLineSearch(x,t,d,f,g,gtd,c1,c2,LS,25,tolX,debug,doPlot,1,funObj,varargin{:});
+    t_neworig := WolfeLineSearch2(1, ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 25, 0.000000001, CostFunc_params, TrainData , TrainLabel, CostFunc , prows, pcols, Maxrows, Maxcols);
+    t_new := t_neworig[1].t;
+    g_Next := t_neworig[1].g_new;
+    Cost_Next := t_neworig[1].f_new;
+    FunEval_Wolfe := t_neworig[1].WolfeFunEval;
+    FunEval_next := FunEval_pre + FunEval_Wolfe;
+    x_pre_updated :=  ML.Mat.Add((x_pre),ML.Mat.Scale(ML.Types.ToMatrix(d),t_new));
+    x_Next := ML.Types.FromMatrix(x_pre_updated);
+    fpre_fnext := Cost_Next-f_pre;
+    //calculate new Hessian diag, dir and steps
+    //Step_Next :=  O.lbfgsUpdate_corr (g_pre, g_Next, Step_pre);
+    Step_Next := O.lbfgsUpdate_Stps (x_pre, x_pre_updated, g_pre, g_Next, Step_pre);
+    //Dir_Next := O.lbfgsUpdate_corr(x_pre, x_pre_updated, Dir_pre);
+    Dir_Next := O.lbfgsUpdate_Dirs (x_pre, x_pre_updated, g_pre, g_Next, Dir_pre);
+    H_Next := O.lbfgsUpdate_Hdiag (x_pre, x_pre_updated, g_pre, g_Next, H_pre);
+    optcond := OptimalityCond_mat (g_Next);
+    lack1 := LackofProgress1 (d_next, t_new);
+    lack2 := LackofProgress2 (fpre_fnext);
+    evalimit := EvaluationLimit (FunEval_next);
+    //ToReturn := x_Next_no + g_Nextno + Step_Nextno + Dir_Nextno + H_Nextno+  C_Nextno + FunEval_Nextno + d_Nextno + fpre_fnextno + t_newno + dlegalstepno + gtdprogressno;
+    MinFRecord MF (MinFRecord l) := TRANSFORM
+      SELF.x := x_pre_updated;
+      SELF.g := g_Next;
+      SELF.old_steps := Step_Next;
+      SELF.old_dirs := Dir_Next;
+      SELF.Hdiag := H_Next;
+      SELF.Cost := Cost_Next;
+      SELF.funEvals_ := FunEval_next;
+      SELF.d := d_next;
+      SELF.fnew_fold := fpre_fnext;
+      SELF.t_ := t_new;
+      SELF.dLegal := dlegalstep;
+      SELF.ProgAlongDir := gtdprogress;
+      SELF.optcond := optcond; // Check Optimality Condition
+      SELF.lackprog1 := lack1; //Check for lack of progress 1
+      SELF.lackprog2 := lack2; //Check for lack of progress 2
+      SELF.exceedfuneval := evalimit;
+      SELF := l;
+    END;
+    MinFRecord MF_dnotleg (MinFRecord l) := TRANSFORM
+      SELF.d := d_next;
+      SELF.dLegal := FALSE;
+      SELF := l;
+    END;
+    MFreturn := PROJECT (inputp,MF(LEFT));
+    MFndreturn := PROJECT (inputp,MF_dnotleg(LEFT));
+    
+
+    
+    RETURN MFreturn;
+    //RETURN IF(dlegalstep,MFreturn,MFndreturn); orig
+  END;
+  //updating step function
+
+
+ // MinFstepout := MinFstep(ToPassMinF,1);
+  // MinFstepout := LOOP(ToPassMinF, COUNTER <= MaxIter AND ROWS(LEFT)[1].dLegal AND ROWS(LEFT)[1].ProgAlongDir   
+  // AND ~ROWS(LEFT)[1].optcond AND ~ROWS(LEFT)[1].lackprog1 AND ~ROWS(LEFT)[1].lackprog2 AND ~ROWS(LEFT)[1].exceedfuneval  , MinFstep(ROWS(LEFT),COUNTER)); orig
+
+  MinFstepout := LOOP(ToPassMinF, COUNTER <= 1, MinFstep(ROWS(LEFT),COUNTER));
+/*
+  outrec := RECORD
+    DATASET(Mat.Types.Element) x;
+    REAL8 cost;
+  END;
+  output_xfinal_costfinal := PROJECT(MinFstepout, TRANSFORM(outrec, SELF := LEFT));
+  output_x0_cost0 := DATASET([{ML.Types.ToMatrix(x0),90}],outrec);
+  FinalResult := IF (IsInitialPointOptimal,output_x0_cost0,output_xfinal_costfinal ); orig */
+  //RETURN FinalResult; orig
+  RETURN MinFstepout;
+
+  END;//END MinFUNC3
 
 
 END;// END Optimization2
