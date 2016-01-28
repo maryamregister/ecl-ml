@@ -1166,7 +1166,7 @@ bracket(HIpos) = bracket(LOpos);
       p_gp_gn := DENORMALIZE(p_gp, gn_id, LEFT.id = RIGHT.id, DeNorm_gn(LEFT,RIGHT));
       
       RETURN p_gp_gn;
-    END;
+    END; // END BuildBracketingData
     
     g_prev_ext (DATASET (bracketing_record) br) := FUNCTION
       IdElementRec NewChildren(IdElementRec R) := TRANSFORM
@@ -1864,14 +1864,29 @@ EXPORT MinFUNC3(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) Cost
   
   emptyE := DATASET([], Mat.Types.Element);
   MinFRecord := RECORD
-    DATASET(Mat.Types.Element) x;
-    DATASET(Mat.Types.Element) g;
-    DATASET(Mat.Types.Element) old_steps;
-    DATASET(Mat.Types.Element) old_dirs;
+    INTEGER1 id;
+    DATASET(IdElementRec) x;
+    DATASET(IdElementRec) g;
+    DATASET(IdElementRec) old_steps;
+    DATASET(IdElementRec) old_dirs;
     REAL8 Hdiag;
     REAL8 Cost;
     INTEGER8 funEvals_;
-    DATASET(Mat.Types.Element) d;
+    DATASET(IdElementRec) d;
+    REAL8 fnew_fold; //f_new-f_old in that iteration
+    REAL8 t_;
+    BOOLEAN dLegal;
+    BOOLEAN ProgAlongDir; //Progress Along Directionno //Check that progress can be made along direction ( if gtd > -tolX)
+    BOOLEAN optcond; // Check Optimality Condition
+    BOOLEAN lackprog1; //Check for lack of progress 1
+    BOOLEAN lackprog2; //Check for lack of progress 2
+    BOOLEAN exceedfuneval; //Check for going over evaluation limit
+  END;
+  MinFRecord_nomat := RECORD
+    INTEGER1 id;
+    REAL8 Hdiag;
+    REAL8 Cost;
+    INTEGER8 funEvals_;
     REAL8 fnew_fold; //f_new-f_old in that iteration
     REAL8 t_;
     BOOLEAN dLegal;
@@ -1882,21 +1897,115 @@ EXPORT MinFUNC3(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) Cost
     BOOLEAN exceedfuneval; //Check for going over evaluation limit
   END;
 
-  ToPassMinF := DATASET ([{ML.Types.ToMatrix(x0),ML.Types.ToMatrix(g0),old_steps0,old_dir0,Hdiag0,Cost0,FunEval,emptyE,100 +tolFun,1,TRUE,TRUE,FALSE,FALSE,FALSE,FALSE}],MinFRecord);
 
+  MinFRecord DeNorm_x(MinFRecord L, IdElementRec R) := TRANSFORM
+    SELF.x := L.x + R;
+    SELF := L;
+  END;
+  MinFRecord DeNorm_g(MinFRecord L, IdElementRec R) := TRANSFORM
+    SELF.g := L.g + R;
+    SELF := L;
+  END;
+  MinFRecord DeNorm_old_steps(MinFRecord L, IdElementRec R) := TRANSFORM
+    SELF.old_steps := L.old_steps + R;
+    SELF := L;
+  END;
+  MinFRecord DeNorm_old_dirs(MinFRecord L, IdElementRec R) := TRANSFORM
+    SELF.old_dirs := L.old_dirs + R;
+    SELF := L;
+  END;
+  MinFRecord DeNorm_d(MinFRecord L, IdElementRec R) := TRANSFORM
+    SELF.d := L.d + R;
+    SELF := L;
+  END;
+  
+  x_ext (DATASET (MinFRecord) br) := FUNCTION
+    IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+    SELF := R;
+    END;
+    NewChilds := NORMALIZE(br,LEFT.x,NewChildren(RIGHT));
 
+    RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+  END; // END x_ext
+  g_ext (DATASET (MinFRecord) br) := FUNCTION
+    IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+    SELF := R;
+    END;
+    NewChilds := NORMALIZE(br,LEFT.g,NewChildren(RIGHT));
+
+    RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+  END; // END g_ext
+  old_steps_ext (DATASET (MinFRecord) br) := FUNCTION
+    IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+    SELF := R;
+    END;
+    NewChilds := NORMALIZE(br,LEFT.old_steps,NewChildren(RIGHT));
+
+    RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+  END; // END old_steps_ext
+  old_dirs_ext (DATASET (MinFRecord) br) := FUNCTION
+    IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+    SELF := R;
+    END;
+    NewChilds := NORMALIZE(br,LEFT.old_dirs,NewChildren(RIGHT));
+
+    RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+  END; // END old_dirs_ext
+  d_ext (DATASET (MinFRecord) br) := FUNCTION
+    IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+    SELF := R;
+    END;
+    NewChilds := NORMALIZE(br,LEFT.d,NewChildren(RIGHT));
+
+    RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+  END; // END d_ext
+  BuildMinfuncData (DATASET(MinFRecord_nomat) p, DATASET (Mat.Types.Element) x_, DATASET (Mat.Types.Element) g_, DATASET (Mat.Types.Element) os, DATASET (Mat.Types.Element) od)  := FUNCTION //this function returns a MinFRecord dataset in which the four matrices are nested
+      //add id to the two input matrices
+      x_id := appendID2mat (x_);
+      g_id := appendID2mat (g_);
+      od_id := appendID2mat (od);
+      os_id := appendID2mat (os);
+      //load parent p with empty datasets for the dataset fields
+      MinFRecord LoadParent(MinFRecord_nomat L) := TRANSFORM
+        SELF.x := [];
+        SELF.g := [];
+        SELF.old_steps := [];
+        SELF.old_dirs := [];
+        SELF.d := [];
+        SELF := L;
+      END;
+
+      //1 - fill in the p with Empty datasets
+      p_ready := PROJECT(p,LoadParent(LEFT));
+      // 2- fill in p_ready with x_
+      p_x := DENORMALIZE(p_ready, x_id, LEFT.id = RIGHT.id, DeNorm_x(LEFT,RIGHT));
+      // 3- fill in p_x with g_
+      p_x_g := DENORMALIZE(p_x, g_id, LEFT.id = RIGHT.id, DeNorm_g(LEFT,RIGHT));
+      // 4- fill p_x_g with od
+      p_x_g_od := DENORMALIZE(p_x_g, od_id, LEFT.id = RIGHT.id, DeNorm_old_steps(LEFT,RIGHT));
+      // 5- fill p_x_g_od with os
+      p_x_g_od_os := DENORMALIZE(p_x_g_od, os_id, LEFT.id = RIGHT.id, DeNorm_old_dirs(LEFT,RIGHT));
+      
+      RETURN p_x_g_od_os;
+    END; // END BuildMinfuncData
+  
+  TopassMinF_nomat := DATASET ([{GlobalID,Hdiag0,Cost0,FunEval,100 +tolFun,1,TRUE,TRUE,FALSE,FALSE,FALSE,FALSE}], MinFRecord_nomat);
+  
+  //ToPassMinF := DATASET ([{ML.Types.ToMatrix(x0),ML.Types.ToMatrix(g0),old_steps0,old_dir0,Hdiag0,Cost0,FunEval,emptyE,100 +tolFun,1,TRUE,TRUE,FALSE,FALSE,FALSE,FALSE}],MinFRecord);
+
+  
+  ToPassMinF := BuildMinfuncData (TopassMinF_nomat, ML.Types.ToMatrix(x0), ML.Types.ToMatrix(g0), old_steps0, old_dir0);
+  
   MinFstep (DATASET (MinFRecord) inputp, INTEGER coun) := FUNCTION
-
-    
-     
-    x_pre := inputp[1].x;
-    g_pre := inputp[1].g;
+    inputp1 := inputp[1];
+    x_pre := x_ext(inputp);
+    g_pre := g_ext(inputp);
     g_pre_ := ML.Mat.Scale (g_pre , -1);
-    step_pre := inputp[1].old_steps;
-    dir_pre := inputp[1].old_dirs;
-    H_pre := inputp[1].Hdiag;
-    f_pre := inputp[1].Cost;
-    FunEval_pre := inputp[1].funEvals_;
+    step_pre := old_steps_ext(inputp);
+    dir_pre := old_dirs_ext(inputp);
+    H_pre := inputp1.Hdiag;
+    f_pre := inputp1.Cost;
+    FunEval_pre := inputp1.funEvals_;
     //HG_ is actually search direction in fromual 3.1
     HG_ :=  IF (coun = 1, O.Steepest_Descent (g_pre), O.lbfgs(g_pre_,Dir_pre, Step_pre,H_pre));//the result is the approximate inverse Hessian, multiplied by the gradient and it is in PBblas.layout format
     d := ML.DMat.Converted.FromPart2DS(HG_);
@@ -1911,11 +2020,12 @@ EXPORT MinFUNC3(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) Cost
     t := IF (coun = 1,MIN ([1, 1/SumABSg (ML.Types.FromMatrix (g_pre))]),1);
      //find point satisfiying wolfe
     //[t,f,g,LSfunEvals] = WolfeLineSearch(x,t,d,f,g,gtd,c1,c2,LS,25,tolX,debug,doPlot,1,funObj,varargin{:});
-    t_neworig := WolfeLineSearch2(1, ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 25, 0.000000001, CostFunc_params, TrainData , TrainLabel, CostFunc , prows, pcols, Maxrows, Maxcols);
-    t_new := t_neworig[1].t;
-    g_Next := t_neworig[1].g_new;
-    Cost_Next := t_neworig[1].f_new;
-    FunEval_Wolfe := t_neworig[1].WolfeFunEval;
+    // WolfeLineSearch3(INTEGER cccc, DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
+    t_neworig := WolfeLineSearch3(1, ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 25, 0.000000001, CostFunc_params, TrainData , TrainLabel, CostFunc , prows, pcols, Maxrows, Maxcols);
+    t_new := wolfe_t_ext(t_neworig);
+    g_Next := wolfe_gnew_ext(t_neworig);
+    Cost_Next := wolfe_fnew_ext(t_neworig);
+    FunEval_Wolfe := wolfe_funeval_ext(t_neworig);
     FunEval_next := FunEval_pre + FunEval_Wolfe;
     x_pre_updated :=  ML.Mat.Add((x_pre),ML.Mat.Scale(ML.Types.ToMatrix(d),t_new));
     x_Next := ML.Types.FromMatrix(x_pre_updated);
@@ -1930,58 +2040,64 @@ EXPORT MinFUNC3(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) Cost
     lack1 := LackofProgress1 (d_next, t_new);
     lack2 := LackofProgress2 (fpre_fnext);
     evalimit := EvaluationLimit (FunEval_next);
-    //ToReturn := x_Next_no + g_Nextno + Step_Nextno + Dir_Nextno + H_Nextno+  C_Nextno + FunEval_Nextno + d_Nextno + fpre_fnextno + t_newno + dlegalstepno + gtdprogressno;
-    MinFRecord MF (MinFRecord l) := TRANSFORM
-      SELF.x := x_pre_updated;
-      SELF.g := g_Next;
-      SELF.old_steps := Step_Next;
-      SELF.old_dirs := Dir_Next;
-      SELF.Hdiag := H_Next;
-      SELF.Cost := Cost_Next;
-      SELF.funEvals_ := FunEval_next;
-      SELF.d := d_next;
-      SELF.fnew_fold := fpre_fnext;
-      SELF.t_ := t_new;
-      SELF.dLegal := dlegalstep;
-      SELF.ProgAlongDir := gtdprogress;
-      SELF.optcond := optcond; // Check Optimality Condition
-      SELF.lackprog1 := lack1; //Check for lack of progress 1
-      SELF.lackprog2 := lack2; //Check for lack of progress 2
-      SELF.exceedfuneval := evalimit;
-      SELF := l;
-    END;
-    MinFRecord MF_dnotleg (MinFRecord l) := TRANSFORM
-      SELF.d := d_next;
-      SELF.dLegal := FALSE;
-      SELF := l;
-    END;
-    MFreturn := PROJECT (inputp,MF(LEFT));
-    MFndreturn := PROJECT (inputp,MF_dnotleg(LEFT));
-    
-
-    
-    RETURN MFreturn;
-    //RETURN IF(dlegalstep,MFreturn,MFndreturn); orig
-  END;
-  //updating step function
-
-
- // MinFstepout := MinFstep(ToPassMinF,1);
-  // MinFstepout := LOOP(ToPassMinF, COUNTER <= MaxIter AND ROWS(LEFT)[1].dLegal AND ROWS(LEFT)[1].ProgAlongDir   
-  // AND ~ROWS(LEFT)[1].optcond AND ~ROWS(LEFT)[1].lackprog1 AND ~ROWS(LEFT)[1].lackprog2 AND ~ROWS(LEFT)[1].exceedfuneval  , MinFstep(ROWS(LEFT),COUNTER)); orig
-
-  MinFstepout := LOOP(ToPassMinF, COUNTER <= 1, MinFstep(ROWS(LEFT),COUNTER));
-/*
-  outrec := RECORD
-    DATASET(Mat.Types.Element) x;
-    REAL8 cost;
-  END;
-  output_xfinal_costfinal := PROJECT(MinFstepout, TRANSFORM(outrec, SELF := LEFT));
-  output_x0_cost0 := DATASET([{ML.Types.ToMatrix(x0),90}],outrec);
-  FinalResult := IF (IsInitialPointOptimal,output_x0_cost0,output_xfinal_costfinal ); orig */
-  //RETURN FinalResult; orig
+    MF := FUNCTION
+      MinFRecord Loadinput(MinFRecord L) := TRANSFORM
+        SELF.x := [];
+        SELF.g := [];
+        SELF.old_steps := [];
+        SELF.old_dirs := [];
+        SELF.Hdiag := H_Next;
+        SELF.Cost := Cost_Next;
+        SELF.funEvals_ := FunEval_next;
+        SELF.d := [];
+        SELF.fnew_fold := fpre_fnext;
+        SELF.t_ := t_new;
+        SELF.dLegal := dlegalstep;
+        SELF.ProgAlongDir := gtdprogress;
+        SELF.optcond := optcond; // Check Optimality Condition
+        SELF.lackprog1 := lack1; //Check for lack of progress 1
+        SELF.lackprog2 := lack2; //Check for lack of progress 2
+        SELF.exceedfuneval := evalimit;
+        SELF := l;
+      END;
+      //1 - fill in the inputp with Empty datasets
+      p_ready := PROJECT(inputp,Loadinput(LEFT));
+      //2- fill x
+      p_x := DENORMALIZE(p_ready, appendID2mat (x_pre_updated), LEFT.id = RIGHT.id, DeNorm_x(LEFT,RIGHT));
+      // 3- fill g
+      p_x_g := DENORMALIZE(p_x, appendID2mat (g_Next), LEFT.id = RIGHT.id, DeNorm_g(LEFT,RIGHT));
+      //4 fill old_steps
+      p_x_g_os := DENORMALIZE(p_x_g, appendID2mat (Step_Next), LEFT.id = RIGHT.id, DeNorm_old_steps(LEFT,RIGHT));
+      //5 fill old dirs
+      p_x_g_os_od := DENORMALIZE(p_x_g_os, appendID2mat (Dir_Next), LEFT.id = RIGHT.id, DeNorm_old_dirs(LEFT,RIGHT));
+      //6 fill d
+      p_x_g_os_od_d := DENORMALIZE(p_x_g_os_od, appendID2mat (d_next), LEFT.id = RIGHT.id, DeNorm_d(LEFT,RIGHT)); 
+ 
+      RETURN p_x_g_os_od_d;
+    END; // END MF
+    MF_dnotlegal := FUNCTION
+      MinFRecord Loadinput(MinFRecord L) := TRANSFORM
+        
+        SELF.d := [];
+        SELF.dLegal := FALSE;
+        SELF := l;
+      END;
+      //1 - fill in the inputp with Empty datasets
+      p_ready := PROJECT(inputp,Loadinput(LEFT));
+      //6 fill d
+      p_d := DENORMALIZE(p_ready, appendID2mat (d_next), LEFT.id = RIGHT.id, DeNorm_d(LEFT,RIGHT)); 
+ 
+      RETURN p_d;
+    END; // END MF_dnotlegal
+   
+    RETURN IF(dlegalstep,MF,MF_dnotlegal);
+  END; // END MinFstep
+  
+  MinFstepout := LOOP(ToPassMinF, COUNTER <= 1 AND ROWS(LEFT)[1].dLegal AND ROWS(LEFT)[1].ProgAlongDir   
+  AND ~ROWS(LEFT)[1].optcond AND ~ROWS(LEFT)[1].lackprog1 AND ~ROWS(LEFT)[1].lackprog2 AND ~ROWS(LEFT)[1].exceedfuneval  , MinFstep(ROWS(LEFT),COUNTER));
+  
+  //RETURN MinFstep(ToPassMinF,1);
   RETURN MinFstepout;
-
   END;//END MinFUNC3
 
 
