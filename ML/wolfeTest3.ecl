@@ -93,7 +93,7 @@ OUTPUT (gtd, named('gtd'));
 
 WResult := Optimization2 (0, 0, 0, 0).WolfeLineSearch3(1,x,t,d,f,g, gtd,0.0001,0.9,25,0.000000001,emptyC, emptyC, emptyC,myfunc2,0,0,0,0);
 
-// OUTPUT(WResult,NAMED('WResult'));
+ //OUTPUT(WResult,NAMED('WResult'));
 // OUTPUT (Optimization2 (0, 0, 0, 0).wolfe_gnew_ext (WResult));
 // WWWresult := Optimization (0, 0, 0, 0).WolfeOut_FromField(WResult);
 // OUTPUT (WWWresult , named ('wwwresult'));
@@ -116,7 +116,7 @@ WResult := Optimization2 (0, 0, 0, 0).WolfeLineSearch3(1,x,t,d,f,g, gtd,0.0001,0
    // OUTPUT(Mr);
    //MinFUNC( x0, CostFunc ,  CostFunc_params, TrainData , TrainLabel,  MaxIter = 100,  tolFun = 0.00001,  TolX = 0.000000001,  maxFunEvals = 1000,  corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
    man:= Optimization2 (0, 0, 0, 0).MinFUNC3 (x, myfunc2, emptyC, emptyC , emptyC, 15, 0.00001, 0.000000001,1000, 3,0, 0, 0,0);  
-OUTPUT(man);
+   OUTPUT(man);
    
    //MinFUNCkk(x0, CostFunc ,  CostFunc_params,  TrainData ,  TrainLabel, MaxIter = 500,  tolFun = 0.00001,  TolX = 0.000000001,  maxFunEvals = 1000,  corrections = 100, =0, =0, =0, =0) := FUNCTION
 //OUTPUT (man);

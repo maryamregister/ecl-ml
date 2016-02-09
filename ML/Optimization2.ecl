@@ -1023,7 +1023,83 @@ bracket(HIpos) = bracket(LOpos);
       END;
       RETURN PROJECT(mat, addID(LEFT));
     END;
-  
+  SHARED  bracketing_record := RECORD
+        INTEGER1 id;
+        REAL8 f_prev_;
+        REAL8 f_new_;
+        DATASET(IdElementRec) g_prev_;
+        DATASET(IdElementRec) g_new_;
+        REAL8 t_;
+        REAL8 t_prev_;
+        INTEGER8 funEvals_;
+        REAL8 gtd_prev_;
+        REAL8 gtd_new_;
+        REAL8 bracket1_;
+        REAL8 bracket2_;
+        REAL8 bracket1_f_;
+        REAL8 bracket2_f_;
+        DATASET(IdElementRec) bracket1_g_;
+        DATASET(IdElementRec) bracket2_g_;
+        INTEGER8 c; //Counter
+        END;
+    SHARED  zooming_record := RECORD
+        INTEGER1 id;
+        REAL8 bracket1_;
+        REAL8 bracket2_;
+        REAL8 bracket1_f_;
+        REAL8 bracket2_f_;
+        DATASET(IdElementRec) bracket1_g_;
+        DATASET(IdElementRec) bracket2_g_;
+        INTEGER8 funEvals_;
+        BOOLEAN InsufProg:= FALSE;
+        BOOLEAN Done := FALSE;
+        BOOLEAN Break := FALSE;
+        INTEGER8 c; //Counter
+     END;
+     
+   SHARED zoom_bracket1gID_ext (DATASET (zooming_record) zm) := FUNCTION
+      IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+        SELF := R;
+      END;
+      NewChilds := NORMALIZE(zm,LEFT.bracket1_g_,NewChildren(RIGHT));
+      RETURN NewChilds;
+    END; // END zoom_bracket1gID_ext
+    
+    SHARED zoom_bracket2gID_ext (DATASET (zooming_record) zm) := FUNCTION
+      IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+        SELF := R;
+      END;
+      NewChilds := NORMALIZE(zm,LEFT.bracket2_g_,NewChildren(RIGHT));
+      RETURN NewChilds;
+    END; // END zoom_bracket2gID_ext   
+     
+     
+     SHARED zoom_bracket1g_ext (DATASET (zooming_record) zm) := FUNCTION
+      IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+        SELF := R;
+      END;
+      NewChilds := NORMALIZE(zm,LEFT.bracket1_g_,NewChildren(RIGHT));
+      RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+    END; // END zoom_bracket1g_ext
+    
+    SHARED zoom_bracket2g_ext (DATASET (zooming_record) zm) := FUNCTION
+      IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+        SELF := R;
+      END;
+      NewChilds := NORMALIZE(zm,LEFT.bracket2_g_,NewChildren(RIGHT));
+      RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+    END; // END zoom_bracket2g_ext
+    
+    SHARED zooming_record zoom_DeNorm_bracket1_g(zooming_record L, IdElementRec R) := TRANSFORM
+      SELF.bracket1_g_ := L.bracket1_g_ + R;
+      SELF := L;
+    END;
+    
+    SHARED zooming_record zoom_DeNorm_bracket2_g(zooming_record L, IdElementRec R) := TRANSFORM
+      SELF.bracket2_g_ := L.bracket2_g_ + R;
+      SELF := L;
+    END;
+    
    EXPORT WolfeLineSearch3(INTEGER cccc, DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
     //initial parameters
     P_num := Max (x, id); //the length of the parameters vector (number of parameters)
@@ -1106,25 +1182,7 @@ bracket(HIpos) = bracket(LOpos);
       REAL8 bracket2_f_;
       INTEGER8 c; //Counter
     END;
-    bracketing_record := RECORD
-      INTEGER1 id;
-      REAL8 f_prev_;
-      REAL8 f_new_;
-      DATASET(IdElementRec) g_prev_;
-      DATASET(IdElementRec) g_new_;
-      REAL8 t_;
-      REAL8 t_prev_;
-      INTEGER8 funEvals_;
-      REAL8 gtd_prev_;
-      REAL8 gtd_new_;
-      REAL8 bracket1_;
-      REAL8 bracket2_;
-      REAL8 bracket1_f_;
-      REAL8 bracket2_f_;
-      DATASET(IdElementRec) bracket1_g_;
-      DATASET(IdElementRec) bracket2_g_;
-      INTEGER8 c; //Counter
-    END;
+
     
 
 
@@ -1304,6 +1362,263 @@ bracket(HIpos) = bracket(LOpos);
       END;// END ArmijoStep
       RETURN IF(AreTheyLegal,WolfeStep,ArmijoStep);
     END; // END BracketingStep
+    
+    ZoomingStep (DATASET (zooming_record) inputp, INTEGER coun) := FUNCTION
+      inputp1  :=inputp[1];
+      t_first  := inputp1.bracket1_;
+      t_second := inputp1.bracket2_;
+      f_first  := inputp1.bracket1_f_;
+      f_second := inputp1.bracket2_f_;
+      g_first_ID := zoom_bracket1gID_ext(inputp);
+      g_first  := PROJECT(g_first_ID, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+      g_second_ID := zoom_bracket2gID_ext(inputp);
+      g_second := PROJECT(g_second_ID, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+      gtd_first := ML.Mat.Mul (ML.Mat.Trans (g_first),ML.Types.ToMatrix(d));
+      gtd_second := ML.Mat.Mul (ML.Mat.Trans (g_second),ML.Types.ToMatrix(d));
+      insufProgress := inputp[1].InsufProg;
+      inputZFunEval := inputp[1].funEvals_;
+      //
+      // Find High and Low Points in bracket
+      LOt := IF (f_first < f_second, t_first , t_second);
+      HIt := IF (f_first < f_second, t_second, t_first );
+      LOf := IF (f_first < f_second, f_first, f_second);
+      HIf := IF (f_first < f_second,  f_second, f_first);
+      LO_g := IF (f_first < f_second,  g_first, g_second);
+      HIg := IF (f_first < f_second, g_second,   g_first);
+      // Compute new trial value
+      //t = polyinterp([bracket(1) bracketFval(1) bracketGval(:,1)'*d bracket(2) bracketFval(2) bracketGval(:,2)'*d],doPlot);
+      tTmp := polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
+      //Test that we are making sufficient progress
+      
+      BList := [t_first,t_second];
+      MaxB := MAX (BList);
+      MinB := MIN (BList);
+      //if min(max(bracket)-t,t-min(bracket))/(max(bracket)-min(bracket)) < 0.1
+      MainPCondterm := (MIN ((MAXB - tTmp) , (tTmp - MINB)) / (MAXB - MINB) );
+      MainPCond := MainPCondterm < 0.1 ;
+      //if insufProgress || t>=max(bracket) || t <= min(bracket)
+      PCond2 := insufProgress | (tTmp >= MAXB) | (tTmp <= MINB);
+      //abs(t-max(bracket)) < abs(t-min(bracket))
+      PCond2_1 := ABS (tTMP - MAXB) < ABS (tTmp - MINB);
+      // t = max(bracket)-0.1*(max(bracket)-min(bracket));
+      MMTemp := 0.1 * (MAXB - MINB);
+      tIF    := MAXB - MMTemp;
+      // t = min(bracket)+0.1*(max(bracket)-min(bracket));
+      tELSE := MINB + MMTemp;
+      tZOOM := IF (MainPCond,IF (PCond2, IF (PCond2_1, tIF, tELSE) , tTmp),tTmp);
+      insufProgress_new := IF (MainPCond, IF (PCond2, FALSE, TRUE) , FALSE);
+      //
+      // Evaluate new point with tZoom
+      x_td := ML.Types.FromMatrix (ML.Mat.Add(ML.Types.ToMatrix(x),ML.Mat.Scale(ML.Types.ToMatrix(d),tZOOM)));
+      CG_New := CostFunc (x_td ,CostFunc_params,TrainData, TrainLabel);
+            
+      gNew := ExtractGrad (CG_New);
+      fNew := ExtractCost(CG_New);
+      gtdNew := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(gNew)),ML.Types.ToMatrix(d));
+      New_FunEval := inputZFunEval + 1;
+      
+      //conditions
+      //IF f_new > f + c1*t*gtd || f_new >= f_LO
+      ZoomCon1 := (fNew > f + c1 * tZoom * gtd) | (fNew >LOf);
+      //if abs(gtd_new) <= - c2*gtd
+      ZOOMCon1_1 := ABS (gtdNew[1].value) <= (-1 * c2 * gtd); 
+      //gtd_new*(bracket(HIpos)-bracket(LOpos)) >= 0
+      ZOOMCon1_2 := (gtdNew[1].value * (HIt - LOt)) >= 0;
+
+      zooming_Con1_f1 := FUNCTION  //when Con1 is satisfied and f_first < f_second
+        zooming_record setval (zooming_record l) := TRANSFORM
+          /*
+            bracket(HIpos) = t;
+            bracketFval(HIpos) = f_new;
+            bracketGval(:,HIpos) = g_new;
+            Tpos = HIpos;
+          */
+          SELF.bracket2_ := tZOOM;
+          SELF.bracket2_f_ := fNew;
+          SELF.bracket2_g_ := []; //ML.Types.ToMatrix(gNew)
+          SELF.funEvals_ := New_FunEval;
+          SELF.InsufProg := insufProgress_new;
+          SELF := l;
+        END;
+        Z_ready := PROJECT (inputp, setval (LEFT) );
+        Z_bracker2g := DENORMALIZE(Z_ready, appendID2mat (ML.Types.ToMatrix(gNew)), LEFT.id = RIGHT.id, zoom_DeNorm_bracket2_g(LEFT,RIGHT));    
+        RETURN Z_bracker2g;
+      END; //END zooming_Con1_f1
+      
+      zooming_Con1_f2 := FUNCTION  //when Con1 is satisfied and f_second <f_first 
+        zooming_record setval (zooming_record l) := TRANSFORM
+          /*
+            bracket(HIpos) = t;
+            bracketFval(HIpos) = f_new;
+            bracketGval(:,HIpos) = g_new;
+            Tpos = HIpos;
+          */
+          SELF.bracket1_ := tZOOM;
+          SELF.bracket1_f_ := fNew;
+          SELF.bracket1_g_ := []; //ML.Types.ToMatrix(gNew)
+          SELF.funEvals_ := New_FunEval;
+          SELF.InsufProg := insufProgress_new;
+          SELF := l;
+        END;
+        Z_ready := PROJECT (inputp, setval (LEFT) );
+        Z_bracker1g := DENORMALIZE(Z_ready, appendID2mat (ML.Types.ToMatrix(gNew)), LEFT.id = RIGHT.id, zoom_DeNorm_bracket1_g(LEFT,RIGHT));    
+        RETURN Z_bracker1g;
+      END; //END zooming_Con1_f2
+      
+      zooming_Con1_1_f1 := FUNCTION ////when Con1_1 is satisfied and f_first < f_second
+        zooming_record setval (zooming_record l) := TRANSFORM 
+          /*
+          % Wolfe conditions satisfied
+                    done = 1;
+          % New point becomes new LO
+          bracket(LOpos) = t;
+          bracketFval(LOpos) = f_new;
+          bracketGval(:,LOpos) = g_new;*/
+          SELF.bracket1_ := tZOOM;
+          SELF.bracket1_f_ := fNew;
+          SELF.bracket1_g_ := []; //ML.Types.ToMatrix(gNew)
+          SELF.funEvals_ := New_FunEval;
+          SELF.InsufProg := insufProgress_new;
+          SELF.done := TRUE;
+          SELF := l;
+        END;
+        Z_ready := PROJECT (inputp, setval (LEFT) );
+        Z_bracker1g := DENORMALIZE(Z_ready, appendID2mat (ML.Types.ToMatrix(gNew)), LEFT.id = RIGHT.id, zoom_DeNorm_bracket1_g(LEFT,RIGHT)); 
+        RETURN Z_bracker1g;
+      END; // END zooming_Con1_1_f1
+      
+      
+      zooming_Con1_1_f2 := FUNCTION ////when Con1_1 is satisfied and  f_second < f_first 
+        zooming_record setval (zooming_record l) := TRANSFORM 
+          /*
+          % Wolfe conditions satisfied
+                    done = 1;
+          % New point becomes new LO
+          bracket(LOpos) = t;
+          bracketFval(LOpos) = f_new;
+          bracketGval(:,LOpos) = g_new;*/
+          SELF.bracket2_ := tZOOM;
+          SELF.bracket2_f_ := fNew;
+          SELF.bracket2_g_ := []; //ML.Types.ToMatrix(gNew)
+          SELF.funEvals_ := New_FunEval;
+          SELF.InsufProg := insufProgress_new;
+          SELF.done := TRUE;
+          SELF := l;
+        END;
+        Z_ready := PROJECT (inputp, setval (LEFT) );
+        Z_bracker2g := DENORMALIZE(Z_ready, appendID2mat (ML.Types.ToMatrix(gNew)), LEFT.id = RIGHT.id, zoom_DeNorm_bracket2_g(LEFT,RIGHT)); 
+        RETURN Z_bracker2g;
+      END; // END zooming_Con1_1_f2
+      
+      
+      zooming_Con1_2_f1 := FUNCTION ////when Con1_1 is satisfied and  f_first <f_second
+        
+        zooming_record setval (zooming_record l) := TRANSFORM ////when Con1_1 is satisfied and  f_first <f_second 
+          /*
+           
+                     
+          % Old HI becomes new LO
+          bracket(HIpos) = bracket(LOpos);
+                      bracketFval(HIpos) = bracketFval(LOpos);
+                      bracketGval(:,HIpos) = bracketGval(:,LOpos);
+           % New point becomes new LO
+                  bracket(LOpos) = t;
+                  bracketFval(LOpos) = f_new;
+                  bracketGval(:,LOpos) = g_new;
+          */
+          SELF.bracket2_ := l.bracket1_;
+          SELF.bracket2_f_ := l.bracket1_f_;
+          SELF.bracket2_g_ := []; //l.bracket1_g_;
+          SELF.bracket1_ := tZOOM;
+          SELF.bracket1_f_ := fNew;
+          SELF.bracket1_g_ := []; // ML.Types.ToMatrix(gNew);
+          SELF.funEvals_ := New_FunEval;
+          SELF.InsufProg := insufProgress_new;
+          SELF := l;
+        END;
+        Z_ready := PROJECT (inputp, setval (LEFT) );
+        Z_bracker1g := DENORMALIZE(Z_ready, appendID2mat (ML.Types.ToMatrix(gNew)), LEFT.id = RIGHT.id, zoom_DeNorm_bracket1_g(LEFT,RIGHT));
+        Z_bracker1g_bracket2g := DENORMALIZE(Z_bracker1g, g_first_ID, LEFT.id = RIGHT.id, zoom_DeNorm_bracket2_g(LEFT,RIGHT)); 
+        RETURN Z_bracker1g;
+      END; // END zooming_Con1_2_f1
+      
+      
+      
+      zooming_Con1_2_f2 := FUNCTION ////when Con1_1 is satisfied and  f_second <f_first
+      
+        zooming_record setval (zooming_record l) := TRANSFORM ////when Con1_1 is satisfied and  f_second <f_first
+          /*       
+          % Old HI becomes new LO
+          bracket(HIpos) = bracket(LOpos);
+                      bracketFval(HIpos) = bracketFval(LOpos);
+                      bracketGval(:,HIpos) = bracketGval(:,LOpos);
+           % New point becomes new LO
+                  bracket(LOpos) = t;
+                  bracketFval(LOpos) = f_new;
+                  bracketGval(:,LOpos) = g_new;
+          */
+          SELF.bracket1_ := l.bracket2_;
+          SELF.bracket1_f_ := l.bracket2_f_;
+          SELF.bracket1_g_ := []; //l.bracket2_g_;
+          SELF.bracket2_ := tZOOM;
+          SELF.bracket2_f_ := fNew;
+          SELF.bracket2_g_ := []; // ML.Types.ToMatrix(gNew);
+          SELF.funEvals_ := New_FunEval;
+          SELF.InsufProg := insufProgress_new;
+          SELF := l;
+        END;
+        Z_ready := PROJECT (inputp, setval (LEFT));
+        Z_bracker1g := DENORMALIZE(Z_ready, g_second_ID, LEFT.id = RIGHT.id, zoom_DeNorm_bracket1_g(LEFT,RIGHT));
+        Z_bracker1g_bracket2g := DENORMALIZE(Z_bracker1g, appendID2mat (ML.Types.ToMatrix(gNew)), LEFT.id = RIGHT.id, zoom_DeNorm_bracket2_g(LEFT,RIGHT)); 
+        RETURN Z_bracker1g_bracket2g;
+      END; // END zooming_Con1_2_f2
+      
+      
+      zooming_NoCon_f1 := FUNCTION //// f_first < f_second
+       zooming_record setval (zooming_record l) := TRANSFORM //// f_first < f_second
+        /*
+        % New point becomes new LO
+        bracket(LOpos) = t;
+        bracketFval(LOpos) = f_new;
+        bracketGval(:,LOpos) = g_new;*/
+        SELF.bracket1_ := tZOOM;
+        SELF.bracket1_f_ := fNew;
+        SELF.bracket1_g_ := []; // ML.Types.ToMatrix(gNew);
+        SELF.funEvals_ := New_FunEval;
+        SELF.InsufProg := insufProgress_new;
+        SELF := l;
+       END;
+       Z_ready := PROJECT (inputp, setval (LEFT));
+       Z_bracker1g := DENORMALIZE(Z_ready, appendID2mat (ML.Types.ToMatrix(gNew)), LEFT.id = RIGHT.id, zoom_DeNorm_bracket1_g(LEFT,RIGHT));
+       RETURN Z_bracker1g;
+      END;
+      
+      
+      zooming_NoCon_f2 := FUNCTION //// f_second < f_first
+      zooming_record setval (zooming_record l) := TRANSFORM //// f_second < f_first
+        /*
+
+        % New point becomes new LO
+        bracket(LOpos) = t;
+        bracketFval(LOpos) = f_new;
+        bracketGval(:,LOpos) = g_new;*/
+        SELF.bracket2_ := tZOOM;
+        SELF.bracket2_f_ := fNew;
+        SELF.bracket2_g_ := []; //ML.Types.ToMatrix(gNew);
+        SELF.funEvals_ := New_FunEval;
+        SELF.InsufProg := insufProgress_new;
+        SELF := l;
+      END;
+      Z_ready := PROJECT (inputp, setval (LEFT));
+      Z_bracker2g := DENORMALIZE(Z_ready, appendID2mat (ML.Types.ToMatrix(gNew)), LEFT.id = RIGHT.id, zoom_DeNorm_bracket2_g(LEFT,RIGHT));
+      RETURN Z_bracker2g;
+      END;
+
+      RETURN 1;
+    END;
+    
+    
+    
     BracketingResult := LOOP(ToPassBracketing, COUNTER <= maxLS AND ROWS(LEFT)[1].bracket1_ = -1, BracketingStep(ROWS(LEFT),COUNTER));
     interval_found := BracketingResult[1].bracket1_ != -1 AND BracketingResult[1].bracket2_  !=-1;
     final_t_found := BracketingResult[1].bracket1_ != -1 AND BracketingResult[1].bracket2_  =-1;
@@ -1315,9 +1630,40 @@ bracket(HIpos) = bracket(LOpos);
       SELF.g_new := l.bracket1_g_;
       SELF.WolfeFunEval := l.funEvals_;
     END;*/
-    final_t_output := DATASET ([{P_num+1,1,BracketingResult[1].bracket1_},{P_num+2,1,BracketingResult[1].bracket1_f_},{P_num+3,1,BracketingResult[1].funEvals_}],Mat.Types.Element) + bracket1g_ext(BracketingResult);
-    RETURN final_t_output;
-  END;// END WolfeLineSearch3
+    //final_t_output := DATASET ([{P_num+1,1,BracketingResult[1].bracket1_},{P_num+2,1,BracketingResult[1].bracket1_f_},{P_num+3,1,BracketingResult[1].funEvals_}],Mat.Types.Element) + bracket1g_ext(BracketingResult);
+    ToPass_Zooming := PROJECT(BracketingResult, TRANSFORM(zooming_record, SELF := LEFT));
+      RETURN ToPass_Zooming;
+    END;// END WolfeLineSearch3
+  
+  EXPORT wolfe_gnew_ext3  (DATASET (zooming_record) wolfeout) := FUNCTION
+    IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+      SELF := R;
+    END;
+    NewChilds := NORMALIZE(wolfeout,LEFT.bracket1_g_,NewChildren(RIGHT));
+  
+    RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+  END;  
+  
+  
+  EXPORT wolfe_gnew_ext2  (DATASET (bracketing_record) wolfeout) := FUNCTION
+    IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+      SELF := R;
+    END;
+    NewChilds := NORMALIZE(wolfeout,LEFT.bracket1_g_,NewChildren(RIGHT));
+  
+    RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+  END;
+  EXPORT wolfe_t_ext2  (DATASET (bracketing_record) wolfeout) := FUNCTION
+    RETURN wolfeout[1].bracket1_;
+  END;
+  EXPORT wolfe_fnew_ext2  (DATASET (bracketing_record) wolfeout) := FUNCTION
+    RETURN wolfeout[1].bracket1_;
+  END;
+  EXPORT wolfe_funeval_ext2  (DATASET (bracketing_record) wolfeout) := FUNCTION
+    RETURN wolfeout[1].bracket1_;
+  END;
+  
+  
   EXPORT wolfe_gnew_ext  (DATASET (Mat.Types.Element) wolfeout) := FUNCTION
     ind := MAX (wolfeout,x)-3;
     RETURN wolfeout (x>=1 and x <=ind);
@@ -1682,10 +2028,10 @@ bracket(HIpos) = bracket(LOpos);
      //find point satisfiying wolfe
     //[t,f,g,LSfunEvals] = WolfeLineSearch(x,t,d,f,g,gtd,c1,c2,LS,25,tolX,debug,doPlot,1,funObj,varargin{:});
     t_neworig := WolfeLineSearch3(1, ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 25, 0.000000001, CostFunc_params, TrainData , TrainLabel, CostFunc , prows, pcols, Maxrows, Maxcols);
-    t_new := wolfe_t_ext(t_neworig);
-    g_Next := wolfe_gnew_ext(t_neworig); // := g_pre works here
-    Cost_Next := wolfe_fnew_ext(t_neworig);
-    FunEval_Wolfe := wolfe_funeval_ext(t_neworig);
+    t_new := 1;
+    g_Next := ML.Types.ToMatrix(d); // := g_pre works here
+    Cost_Next := 1;
+    FunEval_Wolfe := 1;
     FunEval_next := FunEval_pre + FunEval_Wolfe;
     x_pre_updated :=  ML.Mat.Add((x_pre),ML.Mat.Scale(ML.Types.ToMatrix(d),t_new));
     x_Next := ML.Types.FromMatrix(x_pre_updated);
@@ -1767,8 +2113,7 @@ bracket(HIpos) = bracket(LOpos);
   END;//END MinFUNC
 
 
-
-EXPORT MinFUNC3(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, INTEGER MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
+  EXPORT MinFUNC3(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, INTEGER MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
   //#option ('divideByZero', 'nan'); //In all operation I want to f or g get nan value if it is devided by zero
   //Functions used
   SumABSg (DATASET (Types.NumericField) g_temp) := FUNCTION
@@ -2022,10 +2367,17 @@ EXPORT MinFUNC3(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) Cost
     //[t,f,g,LSfunEvals] = WolfeLineSearch(x,t,d,f,g,gtd,c1,c2,LS,25,tolX,debug,doPlot,1,funObj,varargin{:});
     // WolfeLineSearch3(INTEGER cccc, DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
     t_neworig := WolfeLineSearch3(1, ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 25, 0.000000001, CostFunc_params, TrainData , TrainLabel, CostFunc , prows, pcols, Maxrows, Maxcols);
-    t_new := wolfe_t_ext(t_neworig);
-    g_Next := wolfe_gnew_ext(t_neworig);
-    Cost_Next := wolfe_fnew_ext(t_neworig);
-    FunEval_Wolfe := wolfe_funeval_ext(t_neworig);
+    t_new := 1;
+    g_Next := wolfe_gnew_ext3(t_neworig);
+    Cost_Next := 2;
+    FunEval_Wolfe := 3;
+    /*
+    orig
+    t_new := wolfe_t_ext2(t_neworig);
+    g_Next := wolfe_gnew_ext2(t_neworig);
+    Cost_Next := wolfe_fnew_ext2(t_neworig);
+    FunEval_Wolfe := wolfe_funeval_ext2(t_neworig);
+    */
     FunEval_next := FunEval_pre + FunEval_Wolfe;
     x_pre_updated :=  ML.Mat.Add((x_pre),ML.Mat.Scale(ML.Types.ToMatrix(d),t_new));
     x_Next := ML.Types.FromMatrix(x_pre_updated);
@@ -2099,8 +2451,7 @@ EXPORT MinFUNC3(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) Cost
   //RETURN MinFstep(ToPassMinF,1);
   RETURN MinFstepout;
   END;//END MinFUNC3
-
-
+  
 END;// END Optimization2
 
 
