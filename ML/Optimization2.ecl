@@ -1251,6 +1251,24 @@ bracket(HIpos) = bracket(LOpos);
   
       RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
     END; // END bracket1g_ext
+    
+    bracket1gID_ext (DATASET (bracketing_record) br) := FUNCTION
+      IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+        SELF := R;
+      END;
+      NewChilds := NORMALIZE(br,LEFT.bracket1_g_,NewChildren(RIGHT));
+  
+      RETURN NewChilds;
+    END; // END bracket1gID_ext
+    
+    bracket2gID_ext (DATASET (bracketing_record) br) := FUNCTION
+      IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+        SELF := R;
+      END;
+      NewChilds := NORMALIZE(br,LEFT.bracket2_g_,NewChildren(RIGHT));
+  
+      RETURN NewChilds;
+    END; // END bracket2gID_ext
 
     SetBracket (DATASET (bracketing_record) B, REAL8 b1, REAL8 b2, REAL8 f1, REAL8 f2, DATASET (Mat.Types.Element) g1, DATASET (Mat.Types.Element) g2  ) := FUNCTION
       g1_id := appendID2mat (g1);
@@ -1614,8 +1632,22 @@ bracket(HIpos) = bracket(LOpos);
       RETURN Z_bracker2g;
       END;
 
-      RETURN 1;
-    END;
+      
+      
+      output_Con1 := IF (f_first < f_second,zooming_Con1_f1, zooming_Con1_f2);
+      output_Con1_1 := IF (f_first < f_second,zooming_Con1_1_f1, zooming_Con1_1_f2);
+      output_Con1_2 := IF (f_first < f_second,zooming_Con1_2_f1, zooming_Con1_2_f2);
+      output_NoCon := IF (f_first < f_second,zooming_NoCon_f1,zooming_NoCon_f2);
+      IFOut := IF (ZoomCon1, output_Con1, IF (ZOOMCon1_1, output_Con1_1, IF (ZOOMCon1_2, output_Con1_2, output_NoCon ) ));
+      zooming_record BreakTran (IFOut l) := TRANSFORM
+        // IF ~done && abs((bracket(1)-bracket(2))*gtd_new) < tolX then break
+        SELF.break := (~l.done) & (abs((l.bracket1_-l.bracket2_)*gtdNew[1].value) < tolX);
+        SELF := l;
+      END;
+      
+      ZoomOut := PROJECT (IFOut , BreakTran (LEFT) );
+      RETURN ZoomOut;
+    END; // END ZoomingStep
     
     
     
@@ -1631,8 +1663,30 @@ bracket(HIpos) = bracket(LOpos);
       SELF.WolfeFunEval := l.funEvals_;
     END;*/
     //final_t_output := DATASET ([{P_num+1,1,BracketingResult[1].bracket1_},{P_num+2,1,BracketingResult[1].bracket1_f_},{P_num+3,1,BracketingResult[1].funEvals_}],Mat.Types.Element) + bracket1g_ext(BracketingResult);
-    ToPass_Zooming := PROJECT(BracketingResult, TRANSFORM(zooming_record, SELF := LEFT));
-      RETURN ToPass_Zooming;
+    //build to pass zooming from bracketing results
+    b1 := bracket1gID_ext (BracketingResult);
+    b2 := bracket2gID_ext (BracketingResult);
+    zooming_record br2zoom (bracketing_record l) := TRANSFORM
+      SELF.id := l.id;
+      SELF.bracket1_ := l.bracket1_;
+      SELF.bracket2_ := l.bracket2_;
+      SELF.bracket1_f_ := l.bracket1_f_ ;
+      SELF.bracket2_f_ := l.bracket2_f_;
+      SELF.bracket1_g_ := [];
+      SELF.bracket2_g_ := [];
+      SELF.funEvals_ := l.funEvals_;
+      SELF.InsufProg:= FALSE;
+      SELF.Done := FALSE;
+      SELF.Break := FALSE;
+      SELF.c := 0; //Counter
+    END;
+    zoom_ready := PROJECT(BracketingResult,br2zoom(LEFT));
+    zoom_ready_b1 := DENORMALIZE(zoom_ready, b1, LEFT.id = RIGHT.id, zoom_DeNorm_bracket1_g(LEFT,RIGHT));
+    zoom_ready_b1_b2 := DENORMALIZE(zoom_ready_b1, b2, LEFT.id = RIGHT.id, zoom_DeNorm_bracket2_g(LEFT,RIGHT));
+    ToPass_Zooming := zoom_ready_b1_b2;
+    //ToPass_Zooming := PROJECT(BracketingResult, TRANSFORM(zooming_record, SELF := LEFT));
+    ZoomingResult := LOOP(ToPass_Zooming, COUNTER <= Zoom_Max_Itr AND ~ROWS(LEFT)[1].done AND ~ROWS(LEFT)[1].break, ZoomingStep(ROWS(LEFT),COUNTER));
+      RETURN ZoomingResult;
     END;// END WolfeLineSearch3
   
   EXPORT wolfe_gnew_ext3  (DATASET (zooming_record) wolfeout) := FUNCTION
@@ -2113,6 +2167,7 @@ bracket(HIpos) = bracket(LOpos);
   END;//END MinFUNC
 
 
+  
   EXPORT MinFUNC3(DATASET(Types.NumericField) x0, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, INTEGER MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
   //#option ('divideByZero', 'nan'); //In all operation I want to f or g get nan value if it is devided by zero
   //Functions used
@@ -2451,7 +2506,6 @@ bracket(HIpos) = bracket(LOpos);
   //RETURN MinFstep(ToPassMinF,1);
   RETURN MinFstepout;
   END;//END MinFUNC3
-  
 END;// END Optimization2
 
 

@@ -93,7 +93,7 @@ OUTPUT (gtd, named('gtd'));
 
 WResult := Optimization2 (0, 0, 0, 0).WolfeLineSearch3(1,x,t,d,f,g, gtd,0.0001,0.9,25,0.000000001,emptyC, emptyC, emptyC,myfunc2,0,0,0,0);
 
- //OUTPUT(WResult,NAMED('WResult'));
+//OUTPUT(WResult,NAMED('WResult'));
 // OUTPUT (Optimization2 (0, 0, 0, 0).wolfe_gnew_ext (WResult));
 // WWWresult := Optimization (0, 0, 0, 0).WolfeOut_FromField(WResult);
 // OUTPUT (WWWresult , named ('wwwresult'));
