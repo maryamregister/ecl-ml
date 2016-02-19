@@ -167,7 +167,7 @@ end*/
       d1 := gtdmin + gtdmax - (3*(fmin-fmax)/(tmin-tmax));
       //d2 = sqrt(d1^2 - points(minPos,3)*points(notMinPos,3));
       d2 := SQRT ((d1*d1)-(gtdmin*gtdmax));
-      d2real := TRUE; //check it ???
+      d2real := IF((d1*d1)-(gtdmin*gtdmax) >=0 , TRUE, FALSE);
       //t = points(notMinPos,1) - (points(notMinPos,1) - points(minPos,1))*((points(notMinPos,3) + d2 - d1)/(points(notMinPos,3) - points(minPos,3) + 2*d2));
       temp := tmax - ((tmax-tmin)*((gtdmax+d2-d1)/(gtdmax-gtdmin+(2*d2))));
       //min(max(t,points(minPos,1)),points(notMinPos,1));
@@ -1057,6 +1057,17 @@ bracket(HIpos) = bracket(LOpos);
         INTEGER8 c; //Counter
      END;
      
+     SHARED WolfeOutput_Record := RECORD
+      INTEGER1 id;
+      REAL8 t;
+      REAL8 f_new;
+      DATASET(IdElementRec) g_new;
+      INTEGER8 WolfeFunEval;
+     END;
+   SHARED WolfeOutput_Record wolfeout_DeNorm_g(WolfeOutput_Record L, IdElementRec R) := TRANSFORM
+      SELF.g_new := L.g_new + R;
+      SELF := L;
+    END;
    SHARED zoom_bracket1gID_ext (DATASET (zooming_record) zm) := FUNCTION
       IdElementRec NewChildren(IdElementRec R) := TRANSFORM
         SELF := R;
@@ -1639,14 +1650,23 @@ bracket(HIpos) = bracket(LOpos);
       output_Con1_2 := IF (f_first < f_second,zooming_Con1_2_f1, zooming_Con1_2_f2);
       output_NoCon := IF (f_first < f_second,zooming_NoCon_f1,zooming_NoCon_f2);
       IFOut := IF (ZoomCon1, output_Con1, IF (ZOOMCon1_1, output_Con1_1, IF (ZOOMCon1_2, output_Con1_2, output_NoCon ) ));
+      
       zooming_record BreakTran (IFOut l) := TRANSFORM
         // IF ~done && abs((bracket(1)-bracket(2))*gtd_new) < tolX then break
         SELF.break := (~l.done) & (abs((l.bracket1_-l.bracket2_)*gtdNew[1].value) < tolX);
         SELF := l;
       END;
-      
+      //tTmp := polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
+      zooming_record alakitran (IFOut l) := TRANSFORM
+        // IF ~done && abs((bracket(1)-bracket(2))*gtd_new) < tolX then break
+        SELF.bracket1_ := tTmp;
+        SELF.bracket2_ :=  polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
+        SELF := l;
+      END;
       ZoomOut := PROJECT (IFOut , BreakTran (LEFT) );
+      //ZoomOut2 := PROJECT (IFOut , alakitran (LEFT) );
       RETURN ZoomOut;
+      //RETURN IF(coun=5,ZoomOut2 ,ZoomOut);
     END; // END ZoomingStep
     
     
@@ -1686,8 +1706,107 @@ bracket(HIpos) = bracket(LOpos);
     ToPass_Zooming := zoom_ready_b1_b2;
     //ToPass_Zooming := PROJECT(BracketingResult, TRANSFORM(zooming_record, SELF := LEFT));
     ZoomingResult := LOOP(ToPass_Zooming, COUNTER <= Zoom_Max_Itr AND ~ROWS(LEFT)[1].done AND ~ROWS(LEFT)[1].break, ZoomingStep(ROWS(LEFT),COUNTER));
-      RETURN ZoomingResult;
+    
+    
+    
+    WolfeOutput_Record finaltTran (BracketingResult l) := TRANSFORM
+      SELF.t := l.bracket1_ ;
+      SELF.f_new := l.bracket1_f_ ;
+      SELF.g_new := l.bracket1_g_;
+      SELF.WolfeFunEval := l.funEvals_;
+      SELF := l;
+    END;
+    final_t_output := PROJECT (BracketingResult, finaltTran(LEFT));
+    
+    
+    WolfeOutput_Record MaxItrTran_f_new (BracketingResult l) := TRANSFORM
+      SELF.t := l.t_;
+      SELF.f_new := l.f_new_ ;
+      SELF.g_new := l.g_new_ ;
+      SELF.WolfeFunEval := l.funEvals_;
+      SELF := l;
+    END;
+    MaxItr_output_f_new := PROJECT (BracketingResult, MaxItrTran_f_new(LEFT)); 
+    
+    MaxItr_output_f := FUNCTION
+      WolfeOutput_Record MaxItrTran_f (BracketingResult l) := TRANSFORM
+        SELF.t := 0;
+        SELF.f_new := f;
+        SELF.g_new := [];
+        SELF.WolfeFunEval := l.funEvals_;
+        SELF := l;
+      END;
+      MaxItr_output_f_ready := PROJECT (BracketingResult, MaxItrTran_f(LEFT));       
+      RETURN DENORMALIZE(MaxItr_output_f_ready, appendID2mat (ML.Types.ToMatrix(g)), LEFT.id = RIGHT.id, wolfeout_DeNorm_g(LEFT,RIGHT));
+    END;
+    MaxItr_output := IF (f < BracketingResult[1].f_new_, MaxItr_output_f,  MaxItr_output_f_new);
+    
+    WolfeOutput_Record ZoomTran (ZoomingResult l) := TRANSFORM
+      con := l.bracket1_f_ < l.bracket2_f_;
+      SELF.t := IF (con, l.bracket1_, l.bracket2_) ;
+      SELF.f_new := IF (con, l.bracket1_f_, l.bracket2_f_) ;
+      SELF.g_new := IF (con, l.bracket1_g_, l.bracket2_g_ );
+      SELF.WolfeFunEval := l.funEvals_;
+      SELF := l;
+    END;
+    zoom_output := PROJECT (ZoomingResult, ZoomTran(LEFT));
+    FinalResult := IF (final_t_found,final_t_output , IF (Zoom_Max_itr_tmp=0,MaxItr_output,zoom_output));
+    
+    RETURN ZoomingResult;
+      
+      
+      
+      
+      /*
+
+SHARED WolfeOutput_Record := RECORD
+      REAL8 t;
+      REAL8 f_new;
+      DATASET(IdElementRec) g_new;
+      INTEGER8 funEvals;
+     END;
+      
+      OutputRecord finaltTran (BracketingResult l) := TRANSFORM
+      SELF.t := l.bracket1_ ;
+      SELF.f_new := l.bracket1_f_ ;
+      SELF.g_new := l.bracket1_g_;
+      SELF.WolfeFunEval := l.funEvals_;
+    END;
+    final_t_output := PROJECT (BracketingResult, finaltTran(LEFT));
+    
+    OutputRecord MaxItrTran (BracketingResult l) := TRANSFORM
+      con := f < l.f_new_;
+      SELF.t := IF (con, 0, l.t_) ;
+      SELF.f_new := IF (con, f, l.f_new_) ;
+      SELF.g_new := IF (con, ML.Types.ToMatrix(g), l.g_new_ );
+      SELF.WolfeFunEval := l.funEvals_;
+    END;
+    MaxItr_output := PROJECT (BracketingResult, MaxItrTran(LEFT));
+    
+    OutputRecord ZoomTran (ZoomingResult l) := TRANSFORM
+      con := l.bracket1_f_ < l.bracket2_f_;
+      SELF.t := IF (con, l.bracket1_, l.bracket2_) ;
+      SELF.f_new := IF (con, l.bracket1_f_, l.bracket2_f_) ;
+      SELF.g_new := IF (con, l.bracket1_g_, l.bracket2_g_ );
+      SELF.WolfeFunEval := l.funEvals_;
+    END;
+    zoom_output := PROJECT (ZoomingResult, ZoomTran(LEFT));
+    FinalResult := IF (final_t_found,final_t_output , IF (Zoom_Max_itr_tmp=0,MaxItr_output,zoom_output));
+   
+    
+    RETURN FinalResult; */
+ 
+
     END;// END WolfeLineSearch3
+    
+     EXPORT wolfe_gnew_ext4  (DATASET (WolfeOutput_Record) wolfeout) := FUNCTION
+    IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+      SELF := R;
+    END;
+    NewChilds := NORMALIZE(wolfeout,LEFT.g_new,NewChildren(RIGHT));
+  
+    RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
+  END;  
   
   EXPORT wolfe_gnew_ext3  (DATASET (zooming_record) wolfeout) := FUNCTION
     IdElementRec NewChildren(IdElementRec R) := TRANSFORM
@@ -2423,7 +2542,7 @@ bracket(HIpos) = bracket(LOpos);
     // WolfeLineSearch3(INTEGER cccc, DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
     t_neworig := WolfeLineSearch3(1, ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 25, 0.000000001, CostFunc_params, TrainData , TrainLabel, CostFunc , prows, pcols, Maxrows, Maxcols);
     t_new := 1;
-    g_Next := wolfe_gnew_ext3(t_neworig);
+    g_Next := ML.Types.ToMatrix(d);//wolfe_gnew_ext4(t_neworig);
     Cost_Next := 2;
     FunEval_Wolfe := 3;
     /*
@@ -2500,7 +2619,7 @@ bracket(HIpos) = bracket(LOpos);
     RETURN IF(dlegalstep,MF,MF_dnotlegal);
   END; // END MinFstep
   
-  MinFstepout := LOOP(ToPassMinF, COUNTER <= 1 AND ROWS(LEFT)[1].dLegal AND ROWS(LEFT)[1].ProgAlongDir   
+  MinFstepout := LOOP(ToPassMinF, COUNTER <= 2 AND ROWS(LEFT)[1].dLegal AND ROWS(LEFT)[1].ProgAlongDir   
   AND ~ROWS(LEFT)[1].optcond AND ~ROWS(LEFT)[1].lackprog1 AND ~ROWS(LEFT)[1].lackprog2 AND ~ROWS(LEFT)[1].exceedfuneval  , MinFstep(ROWS(LEFT),COUNTER));
   
   //RETURN MinFstep(ToPassMinF,1);
