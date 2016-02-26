@@ -103,7 +103,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       d1 := gtdmin + gtdmax - (3*(fmin-fmax)/(tmin-tmax));
       //d2 = sqrt(d1^2 - points(minPos,3)*points(notMinPos,3));
       d2 := SQRT ((d1*d1)-(gtdmin*gtdmax));
-      d2real := TRUE; //check it ???
+      d2real := IF((d1*d1)-(gtdmin*gtdmax) >=0 , TRUE, FALSE);
       //t = points(notMinPos,1) - (points(notMinPos,1) - points(minPos,1))*((points(notMinPos,3) + d2 - d1)/(points(notMinPos,3) - points(minPos,3) + 2*d2));
       temp := tmax - ((tmax-tmin)*((gtdmax+d2-d1)/(gtdmax-gtdmin+(2*d2))));
       //min(max(t,points(minPos,1)),points(notMinPos,1));

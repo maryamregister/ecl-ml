@@ -156,6 +156,34 @@ end*/
     RETURN polResult;
   END;//end polyinterp_both
   //polyinterp when no boundry values are provided
+  
+  
+ EXPORT  polyinterp_noboundry_alaki (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
+      tmin := IF (t_1<t_2,t_1 , t_2);
+      tmax := IF (t_1<t_2,t_2 , t_1);
+      fmin := IF (t_1<t_2,f_1 , f_2);
+      fmax := IF (t_1<t_2,f_2 , f_1);
+      gtdmin := IF (t_1<t_2,gtd_1 , gtd_2);
+      gtdmax := IF (t_1<t_2,gtd_2 , gtd_1);
+      // d1 = points(minPos,3) + points(notMinPos,3) - 3*(points(minPos,2)-points(notMinPos,2))/(points(minPos,1)-points(notMinPos,1));
+      d1 := gtdmin + gtdmax - (3*(fmin-fmax)/(tmin-tmax));
+      //d2 = sqrt(d1^2 - points(minPos,3)*points(notMinPos,3));
+      d2 := SQRT ((d1*d1)-(gtdmin*gtdmax));
+      d2real := IF((d1*d1)-(gtdmin*gtdmax) >=0 , TRUE, FALSE);
+      //t = points(notMinPos,1) - (points(notMinPos,1) - points(minPos,1))*((points(notMinPos,3) + d2 - d1)/(points(notMinPos,3) - points(minPos,3) + 2*d2));
+      temp := tmax - ((tmax-tmin)*((gtdmax+d2-d1)/(gtdmax-gtdmin+(2*d2))));
+      //min(max(t,points(minPos,1)),points(notMinPos,1));
+      minpos1 := MIN([MAX([temp,tmin]),tmax]);
+      minpos2 := (t_1+t_2)/2;
+      pol2Result := IF (d2real,minpos1,minpos2);
+    //RETURN  (((gtdmax+d2-d1)/(gtdmax-gtdmin+(2*d2))));
+    RETURN gtdmax;
+    //RETURN d1;
+  END;//end polyinterp_noboundry  
+  
+  
+  
+  
   EXPORT  polyinterp_noboundry (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
       tmin := IF (t_1<t_2,t_1 , t_2);
       tmax := IF (t_1<t_2,t_2 , t_1);
@@ -1657,16 +1685,17 @@ bracket(HIpos) = bracket(LOpos);
         SELF := l;
       END;
       //tTmp := polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
+      //tTmp := polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
       zooming_record alakitran (IFOut l) := TRANSFORM
         // IF ~done && abs((bracket(1)-bracket(2))*gtd_new) < tolX then break
-        SELF.bracket1_ := tTmp;
-        SELF.bracket2_ :=  polyinterp_noboundry (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
+        SELF.bracket1_ :=  tTmp;
+        SELF.bracket2_ :=  polyinterp_noboundry_alaki (t_first, f_first, gtd_first[1].value, t_second, f_second, gtd_second[1].value);
         SELF := l;
       END;
       ZoomOut := PROJECT (IFOut , BreakTran (LEFT) );
-      //ZoomOut2 := PROJECT (IFOut , alakitran (LEFT) );
-      RETURN ZoomOut;
-      //RETURN IF(coun=5,ZoomOut2 ,ZoomOut);
+      ZoomOut2 := PROJECT (IFOut , alakitran (LEFT) );
+      //RETURN ZoomOut;
+     RETURN IF(coun=5,ZoomOut2 ,ZoomOut);
     END; // END ZoomingStep
     
     
@@ -1752,7 +1781,10 @@ bracket(HIpos) = bracket(LOpos);
     zoom_output := PROJECT (ZoomingResult, ZoomTran(LEFT));
     FinalResult := IF (final_t_found,final_t_output , IF (Zoom_Max_itr_tmp=0,MaxItr_output,zoom_output));
     
-    RETURN ZoomingResult;
+    
+    
+   // RETURN FinalResult; orig
+    RETURN FinalResult;
       
       
       
@@ -1795,18 +1827,30 @@ SHARED WolfeOutput_Record := RECORD
    
     
     RETURN FinalResult; */
- 
 
     END;// END WolfeLineSearch3
     
-     EXPORT wolfe_gnew_ext4  (DATASET (WolfeOutput_Record) wolfeout) := FUNCTION
-    IdElementRec NewChildren(IdElementRec R) := TRANSFORM
-      SELF := R;
+    EXPORT wolfe_gnew_ext4  (DATASET (WolfeOutput_Record) wolfeout) := FUNCTION
+      IdElementRec NewChildren(IdElementRec R) := TRANSFORM
+        SELF := R;
+      END;
+      NewChilds := NORMALIZE(wolfeout,LEFT.g_new,NewChildren(RIGHT));
+    
+      RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
     END;
-    NewChilds := NORMALIZE(wolfeout,LEFT.g_new,NewChildren(RIGHT));
-  
-    RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
-  END;  
+    
+    
+    EXPORT wolfe_t_ext4  (DATASET (WolfeOutput_Record) wolfeout) := FUNCTION   
+      RETURN wolfeout[1].t;
+    END;
+    
+    EXPORT wolfe_f_new_ext4  (DATASET (WolfeOutput_Record) wolfeout) := FUNCTION   
+      RETURN wolfeout[1].f_new;
+    END;
+    
+    EXPORT wolfe_WolfeFunEval_ext4  (DATASET (WolfeOutput_Record) wolfeout) := FUNCTION   
+      RETURN wolfeout[1].WolfeFunEval;
+    END; 
   
   EXPORT wolfe_gnew_ext3  (DATASET (zooming_record) wolfeout) := FUNCTION
     IdElementRec NewChildren(IdElementRec R) := TRANSFORM
@@ -2541,17 +2585,18 @@ SHARED WolfeOutput_Record := RECORD
     //[t,f,g,LSfunEvals] = WolfeLineSearch(x,t,d,f,g,gtd,c1,c2,LS,25,tolX,debug,doPlot,1,funObj,varargin{:});
     // WolfeLineSearch3(INTEGER cccc, DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
     t_neworig := WolfeLineSearch3(1, ML.Types.FromMatrix(x_pre), t, d, f_pre, ML.Types.FromMatrix(g_pre), gtd[1].value, 0.0001, 0.9, 25, 0.000000001, CostFunc_params, TrainData , TrainLabel, CostFunc , prows, pcols, Maxrows, Maxcols);
-    t_new := 1;
-    g_Next := ML.Types.ToMatrix(d);//wolfe_gnew_ext4(t_neworig);
-    Cost_Next := 2;
-    FunEval_Wolfe := 3;
-    /*
-    orig
-    t_new := wolfe_t_ext2(t_neworig);
-    g_Next := wolfe_gnew_ext2(t_neworig);
-    Cost_Next := wolfe_fnew_ext2(t_neworig);
-    FunEval_Wolfe := wolfe_funeval_ext2(t_neworig);
-    */
+   
+    t_new := wolfe_t_ext4(t_neworig);
+    g_Next := wolfe_gnew_ext4(t_neworig);//wolfe_gnew_ext4(t_neworig);
+    Cost_Next := wolfe_f_new_ext4(t_neworig);
+    FunEval_Wolfe := wolfe_WolfeFunEval_ext4(t_neworig);
+    
+    
+    // t_new := 1;
+    // g_Next := ML.Types.ToMatrix(d);//wolfe_gnew_ext4(t_neworig);
+    // Cost_Next := 1;
+    // FunEval_Wolfe := 1;
+ 
     FunEval_next := FunEval_pre + FunEval_Wolfe;
     x_pre_updated :=  ML.Mat.Add((x_pre),ML.Mat.Scale(ML.Types.ToMatrix(d),t_new));
     x_Next := ML.Types.FromMatrix(x_pre_updated);
@@ -2619,7 +2664,7 @@ SHARED WolfeOutput_Record := RECORD
     RETURN IF(dlegalstep,MF,MF_dnotlegal);
   END; // END MinFstep
   
-  MinFstepout := LOOP(ToPassMinF, COUNTER <= 2 AND ROWS(LEFT)[1].dLegal AND ROWS(LEFT)[1].ProgAlongDir   
+  MinFstepout := LOOP(ToPassMinF, COUNTER <= MaxIter AND ROWS(LEFT)[1].dLegal AND ROWS(LEFT)[1].ProgAlongDir   
   AND ~ROWS(LEFT)[1].optcond AND ~ROWS(LEFT)[1].lackprog1 AND ~ROWS(LEFT)[1].lackprog2 AND ~ROWS(LEFT)[1].exceedfuneval  , MinFstep(ROWS(LEFT),COUNTER));
   
   //RETURN MinFstep(ToPassMinF,1);

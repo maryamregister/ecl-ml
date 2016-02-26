@@ -1257,7 +1257,7 @@ EXPORT Sparse_Autoencoder_mine (INTEGER4 NumberofFeatures, INTEGER4 NumberofHidd
     //CostFunc_params
     CostFunc_params_input := DATASET([{1, 1, BETA},{2,1,sparsityParam},{3,1,LAMBDA}], Types.NumericField);
     //MinFUNC( x0,CostFunc ,  CostFunc_params, TrainData ,  TrainLabel,  MaxIter = 500,  tolFun = 0.00001, TolX = 0.000000001,  maxFunEvals = 1000,  corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
-    LearntMod:=  Optimization (0, 0, 0, 0).MinFUNC (W1_field+W2_field+B1_field+B2_field, SparseAutoencoderCost, CostFunc_params_input, Indep , emptyC, MaxIter, 0.00001, 0.000000001,100, 3,0, 0, 0,0);
+    LearntMod:=  Optimization2 (0, 0, 0, 0).MinFUNC3 (W1_field+W2_field+B1_field+B2_field, SparseAutoencoderCost, CostFunc_params_input, Indep , emptyC, MaxIter, 0.00001, 0.000000001,100, 3,0, 0, 0,0);
   RETURN LearntMod;
   
  
