@@ -131,5 +131,5 @@ OUTPUT(IntW,ALL, named ('IntW2'));
 OUTPUT(IntB,ALL, named ('IntB1'));
 OUTPUT(IntB,ALL, named ('IntB2'));
 
-lbfgs_model_mine := SA_mine.LearnC_lbfgs(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, MaxIter);
+lbfgs_model_mine := SA_mine.LearnC_lbfgs(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, 10);
 OUTPUT(lbfgs_model_mine,NAMED('lbfgs_model_mine'));
