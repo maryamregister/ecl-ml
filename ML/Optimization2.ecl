@@ -2444,6 +2444,7 @@ SHARED WolfeOutput_Record := RECORD
     BOOLEAN lackprog1; //Check for lack of progress 1
     BOOLEAN lackprog2; //Check for lack of progress 2
     BOOLEAN exceedfuneval; //Check for going over evaluation limit
+    INTEGER itr;
   END;
   MinFRecord_nomat := RECORD
     INTEGER1 id;
@@ -2458,6 +2459,7 @@ SHARED WolfeOutput_Record := RECORD
     BOOLEAN lackprog1; //Check for lack of progress 1
     BOOLEAN lackprog2; //Check for lack of progress 2
     BOOLEAN exceedfuneval; //Check for going over evaluation limit
+    INTEGER itr;
   END;
 
 
@@ -2552,7 +2554,7 @@ SHARED WolfeOutput_Record := RECORD
       RETURN p_x_g_od_os;
     END; // END BuildMinfuncData
   
-  TopassMinF_nomat := DATASET ([{GlobalID,Hdiag0,Cost0,FunEval,100 +tolFun,1,TRUE,TRUE,FALSE,FALSE,FALSE,FALSE}], MinFRecord_nomat);
+  TopassMinF_nomat := DATASET ([{GlobalID,Hdiag0,Cost0,FunEval,100 +tolFun,1,TRUE,TRUE,FALSE,FALSE,FALSE,FALSE,0}], MinFRecord_nomat);
   
   //ToPassMinF := DATASET ([{ML.Types.ToMatrix(x0),ML.Types.ToMatrix(g0),old_steps0,old_dir0,Hdiag0,Cost0,FunEval,emptyE,100 +tolFun,1,TRUE,TRUE,FALSE,FALSE,FALSE,FALSE}],MinFRecord);
 
@@ -2629,6 +2631,7 @@ SHARED WolfeOutput_Record := RECORD
         SELF.lackprog1 := lack1; //Check for lack of progress 1
         SELF.lackprog2 := lack2; //Check for lack of progress 2
         SELF.exceedfuneval := evalimit;
+        SELF.itr := coun;
         SELF := l;
       END;
       //1 - fill in the inputp with Empty datasets
@@ -2651,6 +2654,7 @@ SHARED WolfeOutput_Record := RECORD
         
         SELF.d := [];
         SELF.dLegal := FALSE;
+        SELF.itr := coun;
         SELF := l;
       END;
       //1 - fill in the inputp with Empty datasets
@@ -2669,6 +2673,7 @@ SHARED WolfeOutput_Record := RECORD
   
   //RETURN MinFstep(ToPassMinF,1);
   RETURN MinFstepout;
+  //RETURN TopassMinF;
   END;//END MinFUNC3
 END;// END Optimization2
 

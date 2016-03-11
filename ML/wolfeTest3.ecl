@@ -19,7 +19,7 @@ emptyC := DATASET([], Types.NumericField);
       Types.NumericField gen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
         SELF.id := c;
         SELF.number := 1;
-        SELF.value := 0.1;
+        SELF.value := 0.001;
       END;
       
       Types.NumericField gen10(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM

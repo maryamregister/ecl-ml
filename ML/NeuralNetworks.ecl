@@ -16,7 +16,7 @@ EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net,UNSIGNED4 prows=0, UNSIG
     Mat.Types.Element RandGen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
       SELF.x := ((c-1) % NumRows) + 1;
       SELF.y := ((c-1) DIV NumRows) + 1;
-      SELF.value := 1;
+      SELF.value := 0;
     END;
     //Creat the first weight matrix with no=1 (weight matrix between layer 1 and layer 2)
     b1rows := net(id=(2))[1].value;

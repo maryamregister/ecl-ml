@@ -4,92 +4,30 @@ IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
 //This is the test on MNIST patches
 
-INTEGER4 hl := 4;//number of nodes in the hiddenlayer
-INTEGER4 f := 64;//number of input features
+INTEGER4 hl := 2;//number of nodes in the hiddenlayer
+INTEGER4 f := 3;//number of input features
 
 //input data
 
+
 value_record := RECORD
-real	f1	;
-real	f2	;
-real	f3	;
-real	f4	;
-real	f5	;
-real	f6	;
-real	f7	;
-real	f8	;
-real	f9	;
-real	f10	;
-real	f11	;
-real	f12	;
-real	f13	;
-real	f14	;
-real	f15	;
-real	f16	;
-real	f17	;
-real	f18	;
-real	f19	;
-real	f20	;
-real	f21	;
-real	f22	;
-real	f23	;
-real	f24	;
-real	f25	;
-real	f26	;
-real	f27	;
-real	f28	;
-real	f29	;
-real	f30	;
-real	f31	;
-real	f32	;
-real	f33	;
-real	f34	;
-real	f35	;
-real	f36	;
-real	f37	;
-real	f38	;
-real	f39	;
-real	f40	;
-real	f41	;
-real	f42	;
-real	f43	;
-real	f44	;
-real	f45	;
-real	f46	;
-real	f47	;
-real	f48	;
-real	f49	;
-real	f50	;
-real	f51	;
-real	f52	;
-real	f53	;
-real	f54	;
-real	f55	;
-real	f56	;
-real	f57	;
-real	f58	;
-real	f59	;
-real	f60	;
-real	f61	;
-real	f62	;
-real	f63	;
-real	f64	;
+  unsigned  id;
+  real  f1;
+  real  f2;
+  real  f3;
 END;
+input_data := DATASET([
+{1, 0.1, 0.2, 0.2},
+{2, 0.8, 0.9,0.4},
+{3, 0.5, 0.9,0.5},
+{4, 0.8, 0.7, 0.8},
+{5, 0.9,0.1,0.1},
+{6, 0.1, 0.3,0.7}],
+ value_record);
 
-input_data_tmp := DATASET('~maryam::mytest::mnist_patches', value_record, CSV); // this is a dataset of size 60000 samples,  each sample is a random patch of MNIST data.
-//input_data_tmp := DATASET('~maryam::mytest::mnist_patches_100sa.csv', value_record, CSV); // this is a dataset of size 100 samples,  each sample is a random patch of MNIST data.
+OUTPUT(input_data, NAMED('input_data'));
 
-OUTPUT(input_data_tmp, NAMED('input_data_tmp'));
-
-ML.AppendID(input_data_tmp, id, input_data);
-OUTPUT  (input_data, NAMED ('input_data'));
-
-
-
-sample_table := input_data;
-OUTPUT  (sample_table, NAMED ('sample_table'));
-
-ML.ToField(sample_table, indepDataC);
+ML.ToField(input_data, indepDataC);
 OUTPUT  (indepDataC, NAMED ('indepDataC'));
 
 
@@ -100,7 +38,7 @@ REAL8 sparsityParam  := 0.01;
 REAL8 BETA := 3;
 REAL8 ALPHA := 0.1;
 REAL8 LAMBDA :=0.0001;
-UNSIGNED2 MaxIter :=1;
+UNSIGNED2 MaxIter :=100;
 UNSIGNED4 prows:=0;
 UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
@@ -109,7 +47,7 @@ UNSIGNED4 Maxcols:=0;
 IntW := DeepLearning.Sparse_Autoencoder_IntWeights(f,hl);
 Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
 //output(IntW, named ('IntW'));
-output(IntB, named ('IntB'));
+//output(IntB, named ('IntB'));
 //trainer module
 // SA :=DeepLearning.Sparse_Autoencoder(f,hl,prows, pcols, Maxrows,  Maxcols);
 
@@ -128,12 +66,26 @@ output(IntB, named ('IntB'));
 SA_mine :=DeepLearning.Sparse_Autoencoder_mine (f, hl, 0, 0,0,0);
 
 //IntW1 := Mat.MU.From(IntW,1);
+IntW1 := DATASET ([{1	,1	,0.199817},
+{2	,1	,0.184172},
+{1,	2	,0.650816},
+{2	,2,	0.771599},
+{1,	3,	0.21031},
+{2,	3,	0.151326}
+], ML.Mat.Types.Element);
 
-IntW1 := DATASET('~maryam::mytest::w1_4_64', ML.Mat.Types.Element, CSV);
-IntW2 := DATASET('~maryam::mytest::w2_64_4', ML.Mat.Types.Element, CSV);
+// IntW1 := DATASET('~maryam::mytest::w1_4_64', ML.Mat.Types.Element, CSV);
+// IntW2 := DATASET('~maryam::mytest::w2_64_4', ML.Mat.Types.Element, CSV);
 
 
 //IntW2 := Mat.MU.From(IntW,2);
+IntW2 := DATASET ([{1,	1,	0.986138},
+{2,	1,0.301454},
+{3,	1	,0.263632},
+{1,	2	,0.261552},
+{2,	2,	0.5883930000000001},
+{3,	2	,0.530342}
+], ML.Mat.Types.Element);
 
 Intb1 := Mat.MU.From(Intb,1);
 
@@ -145,7 +97,7 @@ OUTPUT(IntW2,ALL, named ('IntW2'));
 OUTPUT(IntB1,ALL, named ('IntB1'));
 OUTPUT(IntB2,ALL, named ('IntB2'));
 
-lbfgs_model_mine := SA_mine.LearnC_lbfgs(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, 1);
+lbfgs_model_mine := SA_mine.LearnC_lbfgs(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, 200);
 
 IdElementRec := RECORD
       INTEGER1 id;
