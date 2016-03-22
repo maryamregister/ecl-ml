@@ -1,4 +1,4 @@
-// Tests for the multiplication.  Compares single block results as
+﻿// Tests for the multiplication.  Compares single block results as
 //the starndard against multi-block.
 // alpha AB + beta C is the function.  A and B could be transposed.
 IMPORT PBblas;
@@ -63,4 +63,9 @@ test3 := Tests.DiffReport.Compare_Parts('C - BtB', t_BtB_C_1, t_BtB_C_9);
 
 // Report
 rpt := test1 + test2 + test3;
-EXPORT Multiply := rpt;
+output(a_cells,named('a_cells'));
+output(a1, named('a1'));
+output(a9, named('a9'));
+output(map_11x8_9);
+
+output(DMat.Converted.FromPart2Cell(a9))

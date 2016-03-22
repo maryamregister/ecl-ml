@@ -6,6 +6,7 @@ IMPORT * FROM ML.Types;
 IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
+matrix_t     := SET OF REAL8;
      OutputRecord := RECORD
       REAL8 t;
       REAL8 f_new;
@@ -1829,6 +1830,178 @@ SHARED WolfeOutput_Record := RECORD
     RETURN FinalResult; */
 
     END;// END WolfeLineSearch3
+    
+   // id =1 for g_prev and id=2 for g_next 
+   SHARED  bracketing_record4 := RECORD(Layout_Part)
+        INTEGER8 id; // id=1 means prev values, id=2 means new values
+        REAL8 f_;
+        REAL8 t_;
+        INTEGER8 funEvals_;
+        REAL8 gtd_;
+        INTEGER8 c; //Counter
+        INTEGER1 Which_cond; // which bracketing condition is satisfied
+        //-1 :- no condition satisfied, continue the loop
+        // 1 : if f_new > f + c1*t*gtd || (LSiter > 1 && f_new >= f_prev) is satisfied, break!
+        // 2 : if abs(gtd_new) <= -c2*gtd is satisfied , break!
+        // 3 : if gtd_new >= 0 is satisfied, break!
+        END; 
+
+ EXPORT WolfeLineSearch4(INTEGER cccc, DATASET(Layout_Part) x, PBblas.IMatrix_Map param_map, UNSIGNED param_num, REAL8 t, DATASET(Layout_Part) d, REAL8 f, DATASET(Layout_Part) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
+    //maps used
+    one_map := PBblas.Matrix_Map(1,1,1,1);
+    //Extract the gradient layout_part from the cost function result
+    ExtractGrad (DATASET(PBblas.Types.MUElement) inp) := FUNCTION
+      RETURN PBblas.MU.FROM(inp,1); 
+    END;
+    //Extract the gradient part from the cost value result
+    ExtractCost (DATASET(PBblas.Types.MUElement) inp) := FUNCTION
+      inp2 := inp (no=2);
+      RETURN inp2[1].mat_part[1]; 
+    END;
+    Extractvalue (DATASET(Layout_Part) inp) := FUNCTION
+      RETURN inp[1].mat_part[1]; 
+    END;
+
+  
+    // Evaluate the Objective and Gradient at the Initial Step
+    //x_new = x+t*d
+    x_new := PBblas.PB_daxpy(t, d, x);
+    CostGrad_new := myfunc(x_new,param_map,param_num);
+    g_new := ExtractGrad (CostGrad_new);
+    f_new := ExtractCost (CostGrad_new);
+    //gtd_new = g_new'*d;
+    gtd_new := Extractvalue(PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, g_new,param_map, d,one_map ));
+    funEvals := 1;
+    
+    // Bracket an Interval containing a point satisfying the Wolfe criteria
+    t_prev := 0;
+    f_prev := f;
+    g_prev := g;
+    gtd_prev := gtd;
+    
+   //Bracketing algorithm, either produces the final t value or a bracket that contains the final t value
+   Load_bracketing_record := FUNCTION
+   
+     bracketing_record4 load_scalars_g_prev (Layout_Part l) := TRANSFORM
+        SELF.id := 1;
+        SELF.f_ := f_prev;
+        SELF.t_ := t_prev;
+        SELF.funEvals_ := funEvals;
+        SELF.gtd_ := gtd_prev;
+        SELF.c := 0; //Counter
+        SELF.Which_cond := -1;
+        SELF := l;
+      END;
+    R1 := PROJECT(g_prev, load_scalars_g_prev(LEFT) );
+    bracketing_record4 load_scalars_g_new (Layout_Part l) := TRANSFORM
+        SELF.id := 2;
+        SELF.f_ := f_new;
+        SELF.t_ := t;
+        SELF.funEvals_ := funEvals;
+        SELF.gtd_ := gtd_new;
+        SELF.c := 0; //Counter
+        SELF.Which_cond := -1;
+        SELF := l;
+      END;
+    R2 := PROJECT(g_new, load_scalars_g_new(LEFT) );
+    RETURN R1+R2;
+   END; // END Load_bracketing_record
+   ToPassBracketing := Load_bracketing_record;
+   BracketingStep (DATASET (bracketing_record4) inputp, INTEGER coun) := FUNCTION
+    in1 := inputp (id=1);
+    in2 := inputp (id=2);
+    
+    fPrev_ := DEDUP(TABLE(in1,{f_},LOCAL),LOCAL);
+    fPrev := fPrev_[1].f_;
+    
+    fNew_ := DEDUP(TABLE(in2,{f_},LOCAL),LOCAL);
+    fNew := fNew_[1].f_;
+    
+    gtdPrev_ := DEDUP(TABLE(in1,{gtd_},LOCAL),LOCAL);
+    gtdPrev := gtdPrev_[1].gtd_;
+    
+    gtdNew_ := DEDUP(TABLE(in2,{gtd_},LOCAL),LOCAL);
+    gtdNew := gtdNew_[1].gtd_;
+    
+    tPrev_ := DEDUP(TABLE(in1,{t_},LOCAL),LOCAL);
+    tPrev := tPrev_[1].t_;
+    
+    tt_ := DEDUP(TABLE(in2,{t_},LOCAL),LOCAL);
+    tt := tt_[1].t_;
+    
+    BrackfunEval_ := DEDUP(TABLE(inputp,{funEvals_},LOCAL),LOCAL);
+    BrackfunEval := BrackfunEval_[1].funEvals_;
+
+    BrackLSiter := coun-1;
+    
+    // check conditions
+    // 1- f_new > f + c1*t*gtd || (LSiter > 1 && f_new >= f_prev)
+    con1 := (fNew > f + c1 * tt* gtd)| ((BrackLSiter > 1) & (fNew >= fPrev)) ;
+    //2- abs(gtd_new) <= -c2*gtd
+    con2 := ABS(gtdNew) <= (-1*c2*gtd);
+    // 3- gtd_new >= 0
+    con3 := gtdNew >= 0;
+    WhichCon := IF (con1, 1, IF(con2, 2, IF (con3,3,-1)));
+    
+    //update which_cond in the input dataset. updating which_cond to value other than -1 makes the loop to ended (break)
+    inputp_con :=  PROJECT(inputp, TRANSFORM(bracketing_record4, SELF.Which_cond := WhichCon; SELF:=LEFT));
+    
+    //the bracketing results when none of the above conditions are satsfied (calculate a new t and update f,g, etc. values)
+    bracketing_Nocon := FUNCTION
+      //calculate new t
+      minstep := tt + 0.01* (tt-tPrev);
+      maxstep := tt*10;
+      newt := polyinterp_both (tPrev, fPrev,gtdPrev, tt, fNew, gtdNew, minstep, maxstep);
+      //calculate fnew gnew gtdnew
+      xNew := PBblas.PB_daxpy(newt, d, x);
+      CostGradNew := myfunc(xNew,param_map,param_num);
+      gNewbrack := ExtractGrad (CostGrad_new);
+      fNewbrack := ExtractCost (CostGrad_new);
+      gtdNewbrack := Extractvalue(PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, gNewbrack,param_map, d,one_map ));
+      //update inputp :
+      //current _prev values in inputp are replaced with current _new values
+      //current _new values in inputp are replaced with the new calculated values based on newt are
+      //funEvals_ is increased by 1
+
+      bracketing_record4 load_scalars_g_prev (bracketing_record4 l) := TRANSFORM
+        SELF.id := 1;
+        SELF.funEvals_ := BrackfunEval;
+        SELF.c := coun; //Counter
+        SELF := l;
+      END;
+      R_id_1 := PROJECT(in2, load_scalars_g_prev(LEFT) ); //id value is changed from 2 to 1. It is the same as :  f_prev = f_new;g_prev = g_new; gtd_prev = gtd_new; : the new values in the current loop iteration are actually prev values for the next iteration
+
+      bracketing_record4 load_scalars_g_new (Layout_Part l) := TRANSFORM
+        SELF.id := 2;
+        SELF.f_ := fNewbrack;
+        SELF.t_ := newt;
+        SELF.funEvals_ := BrackfunEval;
+        SELF.gtd_ := gtdNewbrack;
+        SELF.c := coun; //Counter
+        SELF.Which_cond := -1;
+        SELF := l;
+      END;
+      R_id_2 := PROJECT(gNewbrack, load_scalars_g_new(LEFT) ); // scalar values are wrapped around gNewbrack with id=2 , these are actually the new values for the next iteration
+     
+      RETURN R_id_1 + R_id_2;
+    END;
+
+    LoopResult := IF (WhichCon=-1, bracketing_Nocon, inputp_con);
+    RETURN LoopResult;
+   END;//END BracketingStep
+   
+   loopcond(DATASET (bracketing_record4) loopdataset) := FUNCTION
+    co := DEDUP(TABLE(loopdataset,{Which_cond},LOCAL),LOCAL);
+    RETURN co[1].Which_cond;
+   END;
+   BracketingResult := LOOP(ToPassBracketing, COUNTER <= maxLS AND loopcond(ROWS(LEFT))=-1 , BracketingStep(ROWS(LEFT),COUNTER));
+   RETURN BracketingResult;
+    
+ END;// END WolfeLineSearch4    
+    
+    
+    
+    
     
     EXPORT wolfe_gnew_ext4  (DATASET (WolfeOutput_Record) wolfeout) := FUNCTION
       IdElementRec NewChildren(IdElementRec R) := TRANSFORM
