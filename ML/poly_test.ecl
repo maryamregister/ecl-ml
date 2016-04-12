@@ -7,8 +7,8 @@ Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
 emptyC := DATASET([], Types.NumericField);
 
- EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
-    poly1 := FUNCTION
+  EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
+
       points_t1 :=[t_1,t_2,f_1,f_2,gtd_1,gtd_2];
       points_t2 := [t_2,t_1,f_2,f_1,gtd_2,gtd_1];
       orderedp := IF (t_1<t_2,points_t1 , points_t2);    
@@ -25,31 +25,11 @@ emptyC := DATASET([], Types.NumericField);
       //b = [f_1 f_2 dtg_1 gtd_2]'
       Aset := [POWER(t_1,3),POWER(t_2,3),3*POWER(t_1,2),3*POWER(t_2,2),
       POWER(t_1,2),POWER(t_2,2), 2*t_1,2*t_2,
-      POWER(t_1,3),POWER(t_2,1), 1, 1,
+      POWER(t_1,1),POWER(t_2,1), 1, 1,
       1, 1, 0, 0]; // A 4*4 Matrix      
       Bset := [f_1, f_2, gtd_1, gtd_2]; // A 4*1 Matrix
       // Find interpolating polynomial
       //params = A\b;
-      bset2 := [ 7.3332,
-    5.9910,
-  -15.1637,
-  -14.0700];
-  Aset2 := [  0,
-    0.0008,
-         0,
-    0.0252,
-         0,
-    0.0084,
-         0,
-    0.1834,
-         0,
-    0.0917,
-    1.0000,
-    1.0000,
-    1.0000,
-    1.0000,
-         0,
-         0];
       params_partset := PBblas.BLAS.solvelinear (Aset, Bset, 4,1,4,4);
       //params_partset := [1,2,3,4];
       params1 := params_partset[1];
@@ -96,7 +76,7 @@ for xCP = cp
         end
     end
 end*/
-      
+      // I was using LOOP before to implement this part and it make some LOOP related errors in the wolfesearch function later, so I changed the code in a way that it does not use LOOP
       out := FUNCTION
         fmin1 := 1000000;
         minpos1 := (xminBound+xmaxBound)/2;
@@ -161,64 +141,12 @@ end*/
         
       END;
 
-      
-      
-      
-      
-      
-      // Test Critical Points
-      topa :=  DATASET([{1,1,(xminBound+xmaxBound)/2},{2,1,1000000}], Types.NumericField);//send minpos and fmin value to Resultsstep
-      Resultstep (DATASET(Types.NumericField) x, UNSIGNED coun) := FUNCTION
-        inr := x(id=1)[1].value;
-        f_min := x(id=2)[1].value;
-        // if imag(xCP)==0 && xCP >= xminBound && xCP <= xmaxBound
-        xCP := cp(id=coun)[1].value;
-        cond := xCP >= xminBound AND xCP <= xmaxBound; //???
-        // fCP = polyval(params,xCP);
-        fCP := params1*POWER(xCP,3)+params2*POWER(xCP,2)+params3*xCP+params4;
-        //if imag(fCP)==0 && fCP < fmin
-        cond2 := (coun=1 OR fCP<f_min) AND ISrootsreal; // If the roots are imaginary so is FCP
-        rr := IF (cond,IF (cond2, xCP, inr),inr);
-        ff := IF (cond,IF (cond2, fCP, f_min),f_min);
-        RETURN DATASET([{1,1,rr},{2,1,ff}], Types.NumericField);
-      END;
-      
-      polyrec := RECORD
-        REAL8 fm;
-        REAL8 minp;
-      END;
-      topassploy :=  DATASET([{(xminBound+xmaxBound)/2,1000000}], polyrec);//send minpos and fmin value to Resultsstep
-      polystep (DATASET(polyrec) x, UNSIGNED coun) := FUNCTION
-
-        polyrec pt (polyrec l):=TRANSFORM
-          inr := l.minp;
-          f_min :=l.fm;
-          // if imag(xCP)==0 && xCP >= xminBound && xCP <= xmaxBound
-          xCP := cp(id=coun)[1].value;
-          cond := xCP >= xminBound AND xCP <= xmaxBound; //???
-          // fCP = polyval(params,xCP);
-          fCP := params1*POWER(xCP,3)+params2*POWER(xCP,2)+params3*xCP+params4;
-          //if imag(fCP)==0 && fCP < fmin
-          cond2 := (coun=1 OR fCP<f_min) AND ISrootsreal; // If the roots are imaginary so is FCP
-          rr := IF (cond,IF (cond2, xCP, inr),inr);
-          ff := IF (cond,IF (cond2, fCP, f_min),f_min);
-          SELF.minp := inr;
-          SELF.fm := f_min;
-        END;
-        RETURN PROJECT(x,pt(LEFT));
-      END;
-      finalresult := LOOP(topa, COUNTER <= itr, Resultstep(ROWS(LEFT),COUNTER));
-      thisR := LOOP(topassploy, COUNTER <= itr, polystep(ROWS(LEFT),COUNTER)); 
-      fieldR :=  DATASET([{1,1,thisR[1].minp},{2,1,thisR[1].fm}], Types.NumericField);
-     //RETURN out;
-  RETURN params_partset;
-    END;//END poly1
-    polResult := poly1;
-    RETURN polResult;
+    polResult := out;
+    RETURN params_partset;
   END;//end polyinterp_both
   
   
-  //EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
+  
    
-  newt := polyinterp_both (0,    7.3332  ,-15.1637,    0.0917  ,  5.9910  ,-14.0700, 0.0926, 0.9168);
+  newt := polyinterp_both (10.0000  , 17.4416  , -0.0235,    100.0000 ,  12.4581 ,  -0.0101, 100.9000, 1000);
   output(newt, named('newt'));

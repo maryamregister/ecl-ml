@@ -21,13 +21,13 @@ emptyC := DATASET([], Types.NumericField);
       Types.NumericField gen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
         SELF.id := c;
         SELF.number := 1;
-        SELF.value := 0.001;
+        SELF.value := 100;
       END;
       
       Types.NumericField gen10(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
         SELF.id := c;
         SELF.number := 1;
-        SELF.value := 0.03;
+        SELF.value := 0.1;
       END;
       //Create Ones Vector for the calculations in the step fucntion
       Ones_Vec := DATASET(5, gen(COUNTER, 1));
@@ -37,6 +37,8 @@ emptyC := DATASET([], Types.NumericField);
 //OUTPUT(ten_vec);
 
 x:= Ones_Vec;
+// x := DATASET(
+// [{1,1,100},{2,1,20},{3,1,90},{4,1,80},{5,1,90}],Types.NumericField);
 
 d:= ten_vec;
 
@@ -97,3 +99,7 @@ WResult := Optimization2 (0, 0, 0, 0).WolfeLineSearch4( 1, xdist,  param_map, P_
 // output(gtd,named('gtd'));
 
 output(WResult,named('WResult'));
+
+
+
+    

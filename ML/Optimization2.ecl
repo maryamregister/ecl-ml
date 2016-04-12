@@ -37,7 +37,7 @@ EXPORT Optimization2 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0,
       //b = [f_1 f_2 dtg_1 gtd_2]'
       Aset := [POWER(t_1,3),POWER(t_2,3),3*POWER(t_1,2),3*POWER(t_2,2),
       POWER(t_1,2),POWER(t_2,2), 2*t_1,2*t_2,
-      POWER(t_1,3),POWER(t_2,1), 1, 1,
+      POWER(t_1,1),POWER(t_2,1), 1, 1,
       1, 1, 0, 0]; // A 4*4 Matrix      
       Bset := [f_1, f_2, gtd_1, gtd_2]; // A 4*1 Matrix
       // Find interpolating polynomial
@@ -1839,13 +1839,17 @@ SHARED WolfeOutput_Record := RECORD
         INTEGER8 funEvals_;
         REAL8 gtd_;
         INTEGER8 c; //Counter
-        INTEGER1 Which_cond; // which bracketing condition is satisfied
+        INTEGER8 Which_cond; // which bracketing condition is satisfied
         //-1 :- no condition satisfied, continue the loop
         // 1 : if f_new > f + c1*t*gtd || (LSiter > 1 && f_new >= f_prev) is satisfied, break!
         // 2 : if abs(gtd_new) <= -c2*gtd is satisfied , break!
         // 3 : if gtd_new >= 0 is satisfied, break!
-        END; 
-
+    END;
+    SHARED zooming_record4 := RECORD (bracketing_record4)
+      BOOLEAN insufProgress := FALSE;
+      BOOLEAN LoopTermination := FALSE;
+    END;
+    
  EXPORT WolfeLineSearch4(INTEGER cccc, DATASET(Layout_Part) x, PBblas.IMatrix_Map param_map, UNSIGNED param_num, REAL8 t, DATASET(Layout_Part) d, REAL8 f, DATASET(Layout_Part) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
     //maps used
     one_map := PBblas.Matrix_Map(1,1,1,1);
@@ -1908,42 +1912,39 @@ SHARED WolfeOutput_Record := RECORD
    END; // END Load_bracketing_record
    ToPassBracketing := Load_bracketing_record;
    BracketingStep (DATASET (bracketing_record4) inputp, INTEGER coun) := FUNCTION
-    in1 := inputp (id=1);
-    in2 := inputp (id=2);
+    // if ~isLegal(f_new) || ~isLegal(g_new) ????
+    in_table := TABLE(inputp, {id, f_,t_,funevals_,gtd_}, id, FEW);
+    in1 := in_table(id=1);
+    in2 := in_table (id=2);
     
-    fPrev_ := DEDUP(TABLE(in1,{f_},LOCAL),LOCAL);
-    fPrev := fPrev_[1].f_;
+    fPrev := in1[1].f_;
     
-    fNew_ := DEDUP(TABLE(in2,{f_},LOCAL),LOCAL);
-    fNew := fNew_[1].f_;
+    fNew := in2[1].f_;
     
-    gtdPrev_ := DEDUP(TABLE(in1,{gtd_},LOCAL),LOCAL);
-    gtdPrev := gtdPrev_[1].gtd_;
+    gtdPrev := in1[1].gtd_;
+
+    gtdNew := in2[1].gtd_;
     
-    gtdNew_ := DEDUP(TABLE(in2,{gtd_},LOCAL),LOCAL);
-    gtdNew := gtdNew_[1].gtd_;
+    tPrev := in1[1].t_;
     
-    tPrev_ := DEDUP(TABLE(in1,{t_},LOCAL),LOCAL);
-    tPrev := tPrev_[1].t_;
+    tt := in2[1].t_;
     
-    tt_ := DEDUP(TABLE(in2,{t_},LOCAL),LOCAL);
-    tt := tt_[1].t_;
-    
-    BrackfunEval_ := DEDUP(TABLE(inputp,{funEvals_},LOCAL),LOCAL);
-    BrackfunEval := BrackfunEval_[1].funEvals_;
+    BrackfunEval := in1[1].funEvals_;
 
     BrackLSiter := coun-1;
     
     // check conditions
     // 1- f_new > f + c1*t*gtd || (LSiter > 1 && f_new >= f_prev)
-    con1 := (fNew > f + c1 * tt* gtd)| ((BrackLSiter > 1) & (fNew >= fPrev)) ;
-    //2- abs(gtd_new) <= -c2*gtd
+    con1 := (fNew > f + c1 * tt* gtd)| ((BrackLSiter > 1) & (fNew >= fPrev));
+   //con1 := FALSE;
+    //2- abs(gtd_new) <= -c2*gtd orig
     con2 := ABS(gtdNew) <= (-1*c2*gtd);
+   //con2 := TRUE;
     // 3- gtd_new >= 0
     con3 := gtdNew >= 0;
     WhichCon := IF (con1, 1, IF(con2, 2, IF (con3,3,-1)));
     
-    //update which_cond in the input dataset. updating which_cond to value other than -1 makes the loop to ended (break)
+    //update which_cond in the input dataset. If which_cond != -1 the loop ends (break)
     inputp_con :=  PROJECT(inputp, TRANSFORM(bracketing_record4, SELF.Which_cond := WhichCon; SELF:=LEFT));
     
     //the bracketing results when none of the above conditions are satsfied (calculate a new t and update f,g, etc. values)
@@ -1955,27 +1956,27 @@ SHARED WolfeOutput_Record := RECORD
       //calculate fnew gnew gtdnew
       xNew := PBblas.PB_daxpy(newt, d, x);
       CostGradNew := myfunc(xNew,param_map,param_num);
-      gNewbrack := ExtractGrad (CostGrad_new);
-      fNewbrack := ExtractCost (CostGrad_new);
+      gNewbrack := ExtractGrad (CostGradNew);
+      fNewbrack := ExtractCost (CostGradNew);
       gtdNewbrack := Extractvalue(PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, gNewbrack,param_map, d,one_map ));
       //update inputp :
       //current _prev values in inputp are replaced with current _new values
       //current _new values in inputp are replaced with the new calculated values based on newt are
       //funEvals_ is increased by 1
-
+      BrackfunEval_1 := BrackfunEval + 1;
       bracketing_record4 load_scalars_g_prev (bracketing_record4 l) := TRANSFORM
         SELF.id := 1;
-        SELF.funEvals_ := BrackfunEval;
+        SELF.funEvals_ := BrackfunEval_1;
         SELF.c := coun; //Counter
         SELF := l;
       END;
-      R_id_1 := PROJECT(in2, load_scalars_g_prev(LEFT) ); //id value is changed from 2 to 1. It is the same as :  f_prev = f_new;g_prev = g_new; gtd_prev = gtd_new; : the new values in the current loop iteration are actually prev values for the next iteration
+      R_id_1 := PROJECT(inputp(id=2), load_scalars_g_prev(LEFT) ); //id value is changed from 2 to 1. It is the same as :  f_prev = f_new;g_prev = g_new; gtd_prev = gtd_new; : the new values in the current loop iteration are actually prev values for the next iteration
 
       bracketing_record4 load_scalars_g_new (Layout_Part l) := TRANSFORM
         SELF.id := 2;
         SELF.f_ := fNewbrack;
         SELF.t_ := newt;
-        SELF.funEvals_ := BrackfunEval;
+        SELF.funEvals_ := BrackfunEval_1;
         SELF.gtd_ := gtdNewbrack;
         SELF.c := coun; //Counter
         SELF.Which_cond := -1;
@@ -1990,19 +1991,244 @@ SHARED WolfeOutput_Record := RECORD
     RETURN LoopResult;
    END;//END BracketingStep
    
-   loopcond(DATASET (bracketing_record4) loopdataset) := FUNCTION
-    co := DEDUP(TABLE(loopdataset,{Which_cond},LOCAL),LOCAL);
-    RETURN co[1].Which_cond;
-   END;
-   BracketingResult := LOOP(ToPassBracketing, COUNTER <= maxLS AND loopcond(ROWS(LEFT))=-1 , BracketingStep(ROWS(LEFT),COUNTER));
-   RETURN BracketingResult;
+
+  
+  // BracketingResult := LOOP(ToPassBracketing, COUNTER <= maxLS AND loopcond(ROWS(LEFT))=-1 , BracketingStep(ROWS(LEFT),COUNTER)); orig
+  BracketingResult := LOOP(ToPassBracketing, LEFT.Which_cond = -1, COUNTER <= maxLS AND EXISTS(ROWS(LEFT)) , BracketingStep(ROWS(LEFT),COUNTER)); 
+  brack_table := TABLE(BracketingResult, {id, c}, id, FEW);
+ 
+  Zoom_Max_itr_tmp :=   maxLS - brack_table[1].c; // orig ???
+  Zoom_Max_Itr := IF (Zoom_Max_itr_tmp >0, Zoom_Max_itr_tmp, 0);
+
+   // Zoom Phase
+   
+   //We now either have a point satisfying the criteria, or a bracket
+   //surrounding a point satisfying the criteria
+   // Refine the bracket until we find a point satisfying the criteria
+   ZoomingStep (DATASET (zooming_record4) inputp, INTEGER coun) := FUNCTION
+    // At the begining of the loop find High and Low Points in bracket:
+    // Assign id=1 to the low point
+    // Assign id=2 to the high point
+    // pass_thru := inputp0(LoopTermination = TRUE);
+    // inputp:= inputp0(LoopTermination = FALSE);
+    in_table := TABLE(inputp, {id, f_,t_,funevals_,gtd_, insufProgress,c}, id, FEW);
+    in1 := in_table (id=1);
+    in2 := in_table (id=2);
+
+    bracketFval_1 := in1[1].f_;
+    
+    bracketFval_2 := in2[1].f_;
+    
+    bracket_1 := in1[1].t_;
+    
+    bracket_2 := in2[1].t_;
+    
+    bracketGval_1 := PROJECT(inputp(id=1),TRANSFORM(Layout_Part,SELF := LEFT),LOCAL);
+    
+    bracketGval_2 := PROJECT(inputp(id=2),TRANSFORM(Layout_Part,SELF := LEFT),LOCAL);
+    
+    bracketGTDval_1  := Extractvalue(PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, bracketGval_1,param_map, d,one_map ));
+    
+    bracketGTDval_2  := Extractvalue(PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, bracketGval_2,param_map, d,one_map ));
+    
+    insufprog := in1[1].insufProgress;
+    
+    zoom_funevals := in1[1].funEvals_;
+    zoom_c := in1[1].c;
+    
+    // Find High and Low Points in bracket
+    LO_id := IF (bracketFval_1 < bracketFval_2, 1, 2);
+    HI_id := 3 - LO_id;
+    
+    // Compute new trial value
+    // t = polyinterp([bracket(1) bracketFval(1) bracketGval(:,1)'*d bracket(2) bracketFval(2) bracketGval(:,2)'*d],doPlot);
+    tTmp := polyinterp_noboundry (bracket_1, bracketFval_1, bracketGTDval_1, bracket_2, bracketFval_2, bracketGTDval_2);
+    BList := [bracket_1,bracket_2];
+    max_bracket := MAX(Blist);
+    min_bracket := MIN(Blist);
+    
+    //Test that we are making sufficient progress
+    // if min(max(bracket)-t,t-min(bracket))/(max(bracket)-min(bracket)) < 0.1
+    insuf_cond_1 := MIN ((max_bracket-tTmp),(tTmp-min_bracket))/(max_bracket - min_bracket) < 0.1 ;
+    //if insufProgress || t>=max(bracket) || t <= min(bracket)
+    insuf_cond_2 := insufprog | (tTmp >= max_bracket ) | (tTmp <= min_bracket);
+    //abs(t-max(bracket)) < abs(t-min(bracket))
+    insuf_cond_3 := ABS (tTmp-max_bracket) < ABS (tTmp-min_bracket);
+    
+    max_min_bracket := 0.1 * (max_bracket - min_bracket);
+    //t = max(bracket)-0.1*(max(bracket)-min(bracket));
+    tIF := max_bracket - max_min_bracket;
+    //t = min(bracket)+0.1*(max(bracket)-min(bracket));
+    tELSE := min_bracket + max_min_bracket;
+    tZoom := IF (insuf_cond_1, IF (insuf_cond_2,  IF (insuf_cond_3, tIF, tELSE) , tTmp), tTmp);
+    insufprog_new := IF (insuf_cond_1, IF (insuf_cond_2, FALSE, TRUE) , FALSE);
+    zoom_c_new := zoom_c + 1;
+    // Evaluate new point with tZoom
+    
+    xNew := PBblas.PB_daxpy(tZoom, d, x);
+    CostGradNew := myfunc(xNew,param_map,param_num);
+    gNewZoom := ExtractGrad (CostGradNew);
+    fNewZoom := ExtractCost (CostGradNew);
+    //gtd_new = g_new'*d;
+    gtdNewZoom := Extractvalue(PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, gNewZoom,param_map, d,one_map ));
+    zoom_funevals_new := zoom_funevals + 1;
+    //Zoom Conditions
+    max_bracketFval := IF (HI_id = 1 , bracketFval_1, bracketFval_2);
+    min_bracketFval := IF (HI_id = 1 , bracketFval_2, bracketFval_1);
+    
+    HI_bracket := IF (HI_id = 1 , bracket_1, bracket_2);
+    LO_bracket := IF (HI_id = 1 , bracket_2, bracket_1);
+    //if f_new > f + c1*t*gtd || f_new >= f_LO
+    zoom_cond_1 := (fNewZoom > f + c1 * tZoom * gtd) | (fNewZoom >= min_bracketFval);
+    // if abs(gtd_new) <= - c2*gtd
+    zoom_cond_2 := ABS (gtdNewZoom) <= (-1 * c2 * gtd);
+    //if gtd_new*(bracket(HIpos)-bracket(LOpos)) >= 0
+    zoom_cond_3 := gtdNewZoom * (max_bracket - min_bracket) >= 0; 
+ 
+    whichcond := IF (zoom_cond_1, 11, IF (zoom_cond_2, 12, IF (zoom_cond_3, 13, -2)));
+    
+    zooming_cond_1 := FUNCTION
+      // ~ done & abs((bracket(1)-bracket(2))*gtd_new) < tolX
+      //Since we are in zooming_cond_1 it means that condition 2 is already not satisfied (~done is true) so we only check the other condition
+      zoomter := ABS ((tZoom-LO_bracket)*gtdNewZoom) < tolX;
+      zooming_record4 load_scalars_g_new (Layout_Part l) := TRANSFORM
+        SELF.id := HI_id;
+        SELF.f_ := fNewZoom;
+        SELF.t_ := tZoom;
+        SELF.funEvals_ := zoom_funevals_new;
+        SELF.gtd_ := gtdNewZoom;
+        SELF.c := zoom_c_new; //Counter
+        SELF.insufProgress := insufprog_new;
+        SELF.which_cond := whichcond;
+        SELF.LoopTermination := zoomter;
+        SELF := l;
+      END;
+      R_HI_id := PROJECT(gNewZoom, load_scalars_g_new(LEFT) );
+      zooming_record4 load_scalars_LOID (zooming_record4 l) := TRANSFORM
+        SELF.funEvals_ := zoom_funevals_new;
+        SELF.c := zoom_c_new; //Counter
+        SELF.insufProgress := insufprog_new;
+        SELF.which_cond := whichcond;
+        SELF.LoopTermination := zoomter;
+        SELF := l;
+      END;
+      R_LO_id := PROJECT (inputp (id=LO_id), load_scalars_LOID(LEFT) );
+      RETURN R_HI_id + R_LO_id ;
+    END; // END zooming_cond_1
+    
+    zooming_cond_2 := FUNCTION
+      zoomter := TRUE; // IF condition 2 is correct, then loop should terminates, in case that other conditions are corect abs((bracket(1)-bracket(2))*gtd_new) < tolX should be checked for the zoom termination
+      // Old HI becomes new LO
+      zooming_record4 HIID (zooming_record4 l) := TRANSFORM
+        SELF.funEvals_ := zoom_funevals_new;
+        SELF.c := zoom_c_new; //Counter
+        SELF.insufProgress := insufprog_new;
+        SELF.which_cond := whichcond;
+        SELF.LoopTermination := FALSE;
+        SELF := l;
+      END;
+      R_HI_id := PROJECT(inputp(id=HI_id), HIID(LEFT) );
+      zooming_record4 load_scalars_g_new (Layout_Part l) := TRANSFORM
+        SELF.id := LO_id;
+        SELF.f_ := fNewZoom;
+        SELF.t_ := tZoom;
+        SELF.funEvals_ := zoom_funevals_new;
+        SELF.gtd_ := gtdNewZoom;
+        SELF.c := zoom_c_new; //Counter
+        SELF.insufProgress := insufprog_new;
+        SELF.which_cond := whichcond;
+        SELF.LoopTermination := FALSE;
+        SELF := l;
+      END;
+      // New point becomes new LO
+      R_LO_id := PROJECT(gNewZoom, load_scalars_g_new(LEFT) );
+      RETURN R_HI_id + R_LO_id;
+    END;// END zooming_cond_2
+    
+    zooming_cond_3 := FUNCTION
+      //Since we are in zooming_cond_1 it means that condition 2 is already not satisfied (~done is true) so we only check the other condition
+      zoomter := ABS ((tZoom-LO_bracket)*gtdNewZoom) < tolX;
+      zooming_record4 LOID (zooming_record4 l) := TRANSFORM
+        SELF.id := HI_id;
+        SELF.funEvals_ := zoom_funevals_new;
+        SELF.c := zoom_c_new; //Counter
+        SELF.insufProgress := insufprog_new;
+        SELF.which_cond := whichcond;
+        SELF.LoopTermination := zoomter;
+        SELF := l;
+      END;
+      R_HI_id := PROJECT(inputp(id=LO_id), LOID(LEFT) );
+      zooming_record4 load_scalars_g_new (Layout_Part l) := TRANSFORM
+        SELF.id := LO_id;
+        SELF.f_ := fNewZoom;
+        SELF.t_ := tZoom;
+        SELF.funEvals_ := zoom_funevals_new;
+        SELF.gtd_ := gtdNewZoom;
+        SELF.c := zoom_c_new; //Counter
+        SELF.insufProgress := insufprog_new;
+        SELF.which_cond := whichcond;
+        SELF.LoopTermination := zoomter;
+        SELF := l;
+      END; //END zooming_cond_3
+      // New point becomes new LO
+      R_LO_id := PROJECT(gNewZoom, load_scalars_g_new(LEFT) );
+      RETURN R_HI_id + R_LO_id;
+    END;
+    zooming_nocond := zooming_cond_2;
+    
+    zooming_result := IF (zoom_cond_1, zooming_cond_1, IF (zoom_cond_2, zooming_cond_2, IF (zoom_cond_3, zooming_cond_3, zooming_nocond )));
+    
+
+    RETURN IF (EXISTS(inputp),zooming_result,inputp);//ZoomingStep produces an output even when it recives an empty dataset, I would like to avoid that so I can make sure when loopfilter avoids a dataset to be passed to the loop (in case of which_cond==2 which means we already have found final t) then zooming_step would not produce any output
+   END; // END ZoomingStep
+   
+   //BracketingResult is provided as input to the Zooming LOOP 
+   //Since in the bracketing results in case of cond 1 and cond2 the prev and new values are assigned to bracket_1 and bracket_2 so when we pass the bracketing result to the zooming loop, in fact we have:
+   //id = 1 indicates bracket_1 
+   //id = 2 indicates bracket_2
+  // LOOP( dataset, loopcount, loopfilter, loopbody [, PARALLEL( iterations | iterationlist [, default ] ) ] )
+
+
+   Topass_zooming := PROJECT (BracketingResult, TRANSFORM(zooming_record4 ,SELF.LoopTermination:=(LEFT.which_cond=2) | (LEFT.c=MaxLS); SELF := LEFT)); // If in the bracketing step condition 2 has been meet or we have reaached MaxLS then we don't need to pass zoom step, so the termination condition for soom will be set as true here
+   ZoomingResult := LOOP(Topass_zooming, LEFT.LoopTermination =FALSE , COUNTER <= Zoom_Max_Itr AND EXISTS(ROWS(LEFT)) , ZoomingStep(ROWS(LEFT),COUNTER));
+   // based on whichcond value in the very final result we figure out the flow of the data and what we should return as output
+   // 2: final t is found in the bracketing step
+
+
+    bracketing_record4 load_scalars_g (Layout_Part l) := TRANSFORM
+      SELF.id := 1;
+      SELF.f_ := f;
+      SELF.t_ := 0;
+      SELF.funEvals_ := maxLS + 1;//when the bracketing loop get to MAX_itr number of iterations, it means that funcation has been evaluated Max_Itr + 1 (one time before the loop starts) Times.
+      SELF.gtd_ := gtd;
+      SELF.c := maxLS; //Counter
+      SELF.which_cond := -1; // when the bracketing loop get to MAX_itr number of iterations, it means that no condition in the bracketing_step has ever been satisfied for the loop to break
+      SELF := l;
+    END; //END zooming_cond_3
+   //wolfecond :
+   // -1 : begining of the wolfe algorithm and when we are still in the bracketing step and no condition in satisfied, or we are out of bracketing step with cond=-1 which means we reached MAX_LS
+   // 1 : we're out of bracketing step and the condition that break the bracketing step loop was condition number 1 -> go to zooming loop
+   // 2 : we're out of bracketing step and the condition that break the bracketing step loop was condition number 2 -> final t found
+   // 3 : we're out of bracketing step and the condition that break the bracketing step loop was condition number 3 -> go to zooming loop
+   //11, 12, 13, -2 means we are in the zooming loop and condition 1, condition 2 , condition 3 and no condition have been satisfied respectively
+   zoomTBL :=  TABLE(ZoomingResult, {id, which_cond, f_}, id, FEW);
+   zoomfnew := zoomTBL(id=2)[1].f_;
+   zoomfold := zoomTBL(id=1)[1].f_;
+   wolfe_cond := zoomTBL[1].which_cond;
+   final_t_found := wolfe_cond = 2;
+   t_new_result := PROJECT (ZoomingResult (id=2), TRANSFORM(bracketing_record4 ,SELF := LEFT));
+   t_old_result := PROJECT (ZoomingResult (id=1), TRANSFORM(bracketing_record4 ,SELF := LEFT));
+   t_0_result := PROJECT(g, load_scalars_g(LEFT) );
+   final_t_result := t_new_result;
+   MaxLS_result := IF ( zoomfnew < f, t_new_result , t_0_result);
+   zoom_result := IF ( zoomfnew < zoomfold, t_new_result , t_old_result);
+   wolfe_result := IF (final_t_found,final_t_result , IF (Zoom_Max_itr_tmp=0,MaxLS_result,zoom_result));
+   RETURN ZoomingResult;
+
+  // RETURN Topass_zooming;
     
  END;// END WolfeLineSearch4    
-    
-    
-    
-    
-    
+
     EXPORT wolfe_gnew_ext4  (DATASET (WolfeOutput_Record) wolfeout) := FUNCTION
       IdElementRec NewChildren(IdElementRec R) := TRANSFORM
         SELF := R;
