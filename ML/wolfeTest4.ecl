@@ -36,9 +36,18 @@ emptyC := DATASET([], Types.NumericField);
 //OUTPUT(ones_vec);
 //OUTPUT(ten_vec);
 
-x:= Ones_Vec;
-// x := DATASET(
-// [{1,1,100},{2,1,20},{3,1,90},{4,1,80},{5,1,90}],Types.NumericField);
+//x:= Ones_Vec;
+x := DATASET(
+[{1,1,100},{2,1,20},{3,1,90},{4,1,80},{5,1,90}],Types.NumericField);
+
+x2 := DATASET(
+[{1,1,10},{2,1,20},{3,1,2},{4,1,87},{5,1,40}],Types.NumericField);
+
+x3 := DATASET(
+[{1,1,1},{2,1,2},{3,1,3},{4,1,4},{5,1,5}],Types.NumericField);
+
+x4 := DATASET(
+[{1,1,78},{2,1,200},{3,1,30},{4,1,56},{5,1,90}],Types.NumericField);
 
 d:= ten_vec;
 
@@ -65,6 +74,9 @@ ExtractGrad (DATASET(PBblas.Types.MUElement) inp) := FUNCTION
 param_map := PBblas.Matrix_Map(P_num,1,3,1);
 
 xdist := ML.DMat.Converted.FromNumericFieldDS(x, param_map);
+x2dist := ML.DMat.Converted.FromNumericFieldDS(x2, param_map);
+x3dist := ML.DMat.Converted.FromNumericFieldDS(x3, param_map);
+x4dist := ML.DMat.Converted.FromNumericFieldDS(x4, param_map);
 
 
 ddist := ML.DMat.Converted.FromNumericFieldDS(d, param_map);
@@ -85,21 +97,15 @@ gtd := gtddist[1].mat_part[1];
 
 //WolfeLineSearch4( cccc, x,  param_map, param_num,  t, d,  f,  g,  gtd,  c1=0.0001,  c2=0.9,  maxLS=25,  tolX=0.000000001)
 WResult := Optimization2 (0, 0, 0, 0).WolfeLineSearch4( 1, xdist,  param_map, P_num,  t, ddist,  f,  g,  gtd, 0.0001,  0.9,  25,  0.000000001);
-
-
-// output(x,named('xxxx'));
-// output(d,named('dddd'));
-
-// output(xdist,named('xdist'));
-// output(ddist,named('ddist'));
-// output(CostGrad_new,named('CostGrad_new'));
-
- // output(g, named('ggg'));
- // output(f,named('fff'));
-// output(gtd,named('gtd'));
-
-output(WResult,named('WResult'));
-
-
-
-    
+//lbfgs_4 (DATASET(Layout_Part) g, DATASET(PBblas.Types.MUElement) s, DATASET(PBblas.Types.MUElement) y, REAL8 Hdiag, PBblas.IMatrix_Map param_map)
+PBblas.Types.value_t h_mul(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := v * v;
+PBblas.Types.value_t h_sin(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := SIN(v);
+x_2 := PBblas.Apply2Elements(param_map, xdist, h_mul);
+g_2 := PBblas.Apply2Elements(param_map, g, h_mul);
+g_3 := PBblas.Apply2Elements(param_map, g, h_sin);
+s := PBblas.MU.TO(xdist,1)+ PBblas.MU.TO(x2dist,2)+PBblas.MU.TO(x3dist,3)+ PBblas.MU.TO(x4dist,4);
+y := PBblas.MU.TO(g,5)+ PBblas.MU.TO(g_2,6)+PBblas.MU.TO(g_3,7)+PBblas.MU.TO(xdist,8);
+LB := Optimization2 (0, 0, 0, 0).lbfgs_4(g,s,y,1,param_map);
+output(y,named('yyyy'));
+output(s,named('ssss'));
+//OUTPUT(LB);

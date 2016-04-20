@@ -17,7 +17,103 @@ matrix_t     := SET OF REAL8;
 
 //Func : handle to the function we want to minimize it, its output should be the error cost and the error gradient
 EXPORT Optimization2 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
-
+    // BFGS Search Direction
+    //
+    // This function returns the (L-BFGS) approximate inverse Hessian,
+    // multiplied by the gradient
+    //
+    // If you pass in all previous directions/sizes, it will be the same as full BFGS
+    // If you truncate to the k most recent directions/sizes, it will be L-BFGS
+    //
+    // s - previous search directions (p by k) , p : length of the parameter vector , k : number of corrcetions
+    // y - previous step sizes (p by k)
+    // g - gradient (p by 1)
+    // Hdiag - value of initial Hessian diagonal elements (scalar)
+    part_id := RECORD (Layout_Part)
+      UNSIGNED2 id;
+    END;
+    
+    dot_tmp_rec := RECORD
+      UNSIGNED2 id;
+      REAL8 ro;
+    END;
+    //s : no starts from 1 to k
+    //d: no starts from k+1 to 2*k
+    EXPORT lbfgs_4 (DATASET(Layout_Part) g, DATASET(PBblas.Types.MUElement) s, DATASET(PBblas.Types.MUElement) y, REAL8 Hdiag, PBblas.IMatrix_Map param_map) := FUNCTION
+      one_map := PBblas.Matrix_Map(1,1,1,1);
+      k := MAX(s,no); // k is the number of previous step vectors included in the s strcuture
+      Product(REAL8 val1, REAL8 val2) := val1 * val2;
+      Elem := {REAL8 v};  //short-cut record def
+      //I am implementing this myself instead of using PBblas library because this can be done in paralel for all the vectors in s and y recordsest (the vector with corresponding ids can dot product simultaniously)
+      dot_tmp_rec hadPart(PBblas.Types.MUElement xrec, PBblas.Types.MUElement yrec) := TRANSFORM //hadamard product
+        elemsX := DATASET(xrec.mat_part, Elem);
+        elemsY := DATASET(yrec.mat_part, Elem);
+        new_elems := COMBINE(elemsX, elemsY, TRANSFORM(Elem, SELF.v := Product(LEFT.v,RIGHT.v)));
+        SELF.ro :=  SUM(new_elems,new_elems.v);
+        SELF.id := xrec.no;
+      END;
+      //calculate ro values,  ro(i) = 1/(y(i)'*s(i)); 
+      ro_tmp := JOIN(s, y, LEFT.partition_id=RIGHT.partition_id AND LEFT.no=RIGHT.no-k, hadPart(LEFT,RIGHT), FULL OUTER, LOCAL);
+      ro_rec := RECORD
+        ro_tmp.id;
+        REAL ro_val := 1/SUM(GROUP,ro_tmp.ro) ;
+      END; 
+      ro := TABLE(ro_tmp,ro_rec,id,FEW);
+      
+      //calculate q and al
+      //inp has the previous q value with no=1 and the al values start from no+1 to no++k+1 whihc correpond to al[1] to al[k], each al[i] is calculated in one iteration from i=k to i=1
+      q_step (DATASET(PBblas.Types.MUElement) inp, INTEGER8 coun) := FUNCTION
+        inp_ := PBblas.MU.From(inp,1); // this is actually old_q, its has no=1
+        ind := k-coun+1;
+        s_ := PBblas.Mu.From(s,ind);
+        y_ := PBblas.MU.From(y,ind+k);
+        ro_ := ro(id=ind)[1].ro_val;
+        //calculate al_ 
+        //al_ = ro(i)*s(:,i)'*q(:,i+1);
+        al_tmp := Pbblas.PB_dgemm(TRUE, FALSE, ro_, param_map, s_, param_map, inp_, one_map);
+        al_ := al_tmp[1].mat_part[1];
+        al_no := Pbblas.MU.TO(al_tmp,ind+1); //+1 is added to make sure that the last al[1] gets no=1 so it does not gets mixed up with q that has no=1
+        //calculate q
+        //q(:,i) = q(:,i+1)-al(i)*y(:,i); // new_q = old_q - al_ * y_
+        new_q := PBblas.PB_daxpy(-1*al_, y_, inp_);
+        new_q_no := Pbblas.MU.TO(new_q,1); // this goanna be old_q (no=1) for the next loop iteration
+        RETURN al_no+new_q_no+inp(no!=1);
+      END; //END q_step
+      
+      topass_q := PBblas.MU.TO(g,1);
+      q_tmp := LOOP(topass_q, COUNTER <= k, q_step(ROWS(LEFT),COUNTER));
+      //q_tmp : no=1 has the q vector, n=2 to n=k+1 have al values corespondant ro al[1] tp al[k]
+      q := Pbblas.MU.FROM(q_tmp,1);
+      al_tmp := q_tmp (no>1);
+      al_rec := RECORD
+        INTEGER8 id;
+        REAL al_val;
+      END; 
+      al := PROJECT(al_tmp, TRANSFORM(al_rec, SELF.id:=LEFT.no-1, SELF.al_val := LEFT.mat_part[1])); //al contains al values with id starting from 1 to k
+      
+      //calculate r
+      //inp(no=1) includes r calculate in teh previous step
+      //inp(n=2) to inp(n=k+1) includes be values, which each one is calculated in one step
+      r_step (DATASET(Layout_Part) inp, INTEGER8 coun) := FUNCTION
+        inp_ := inp; // this is actually old_r, it has no=1
+        y_ := PBblas.MU.From(y,coun+k);
+        s_ := PBblas.MU.From(s,coun);
+        ro_ := ro(id=coun)[1].ro_val;
+        al_ := al (id=coun)[1].al_val;
+        // be(i) = ro(i)*y(:,i)'*r(:,i);
+        be_tmp := Pbblas.PB_dgemm(TRUE, FALSE, ro_, param_map, y_, param_map, inp_, one_map);
+        be_ := be_tmp[1].mat_part[1];
+        //r(:,i+1) = r(:,i) + s(:,i)*(al(i)-be(i));
+        al_be := al_ - be_;
+        new_r := PBblas.PB_daxpy(al_be, s_, inp_);
+        RETURN new_r ;
+      END;
+      //Functions needed in calculations
+      PBblas.Types.value_t h_mul(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := v * Hdiag;
+      topass_r := PBblas.Apply2Elements(param_map, q, h_mul); //r(:,1) = Hdiag*q(:,1);
+      d := LOOP(topass_r, COUNTER <= k, r_step(ROWS(LEFT),COUNTER));
+     RETURN d;
+    END; // END lbfgs_4
   //polyinterp when the boundry values are provided
   EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
 
@@ -420,6 +516,9 @@ end*/
       //R2_ := PBblas.PB_dscal(-1, R2) ;
       RETURN R2;
     END;// END lbfgs
+    
+
+    
     //This function adds the most recent vectors differences (vec_next-vec_pre) to the matrix (old_mat) and removes the oldest vector from the matrix
     //old_mat can be a P*K matrix that each column can be a parameter vector or a gradient vector in lbfgs algorithm i.e. Steps and Dirs matrices respectively
     //in each step of the lbfgs algorithm Steps and Dirs matrices should be updated. The most recent vector should be added and the oldest vector should be removed
