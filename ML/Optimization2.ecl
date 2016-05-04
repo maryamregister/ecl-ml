@@ -1,4 +1,5 @@
-﻿//#option ('divideByZero', 'nan');
+﻿
+//#option ('divideByZero', 'nan');
 IMPORT ML;
 IMPORT * FROM $;
 IMPORT $.Mat;
@@ -29,17 +30,16 @@ EXPORT Optimization2 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0,
     // y - previous step sizes (p by k)
     // g - gradient (p by 1)
     // Hdiag - value of initial Hessian diagonal elements (scalar)
-    part_id := RECORD (Layout_Part)
-      UNSIGNED2 id;
-    END;
+
     
-    dot_tmp_rec := RECORD
-      UNSIGNED2 id;
-      REAL8 ro;
-    END;
-    //s : no starts from 1 to k
-    //d: no starts from k+1 to 2*k
+    
+    //s : old_dirs: no starts from 1 to k
+    //d: old_steps : no starts from k+1 to 2*k
     EXPORT lbfgs_4 (DATASET(Layout_Part) g, DATASET(PBblas.Types.MUElement) s, DATASET(PBblas.Types.MUElement) y, REAL8 Hdiag, PBblas.IMatrix_Map param_map) := FUNCTION
+      dot_tmp_rec := RECORD
+        UNSIGNED2 id;
+        REAL8 ro;
+      END;
       one_map := PBblas.Matrix_Map(1,1,1,1);
       k := MAX(s,no); // k is the number of previous step vectors included in the s strcuture
       Product(REAL8 val1, REAL8 val2) := val1 * val2;
@@ -79,7 +79,7 @@ EXPORT Optimization2 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0,
         new_q_no := Pbblas.MU.TO(new_q,1); // this goanna be old_q (no=1) for the next loop iteration
         RETURN al_no+new_q_no+inp(no!=1);
       END; //END q_step
-      
+      g_ind := 2*k+1;
       topass_q := PBblas.MU.TO(g,1);
       q_tmp := LOOP(topass_q, COUNTER <= k, q_step(ROWS(LEFT),COUNTER));
       //q_tmp : no=1 has the q vector, n=2 to n=k+1 have al values corespondant ro al[1] tp al[k]
@@ -114,6 +114,51 @@ EXPORT Optimization2 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0,
       d := LOOP(topass_r, COUNTER <= k, r_step(ROWS(LEFT),COUNTER));
      RETURN d;
     END; // END lbfgs_4
+    
+    //olsy include old s and y values, where s vectors have no=1 to no =k and y values have no=k+1 to k+k (k is the number of vector  we are storing by now (k<= corrections)
+    //s is the new vector s which we need to add to the oldsy dataset
+    //y is the new vector y which we need to add to the oldsy dataset
+    //corrections is the lbfgs parameter value for the number of s and y vectore we are saving in the memory ( that's why it is called limited memory-bfgs), if we save all the s and y vector it would be bfgs 
+    EXPORT lbfgsUpdate ( DATASET(PBblas.Types.MUElement) oldsy, DATASET(Layout_Part) y,DATASET(Layout_Part) s , INTEGER8 corrections, PBblas.IMatrix_Map param_map, REAL8 ys) := FUNCTION
+      one_map := PBblas.Matrix_Map(1,1,1,1);
+      k := MAX(oldsy,no)/2;
+      K_corr := k<corrections;
+      s_new_ind := IF (K_corr, k+1, k);
+      y_new_ind := IF (K_corr, 2*(k+1), 2*k);
+      s_new_no := PBblas.MU.TO(s,s_new_ind);
+      y_new_no := PBBlas.MU.TO(y, y_new_ind);
+      //IF the dataset is not still full (k<corrections)
+      PBblas.Types.MUElement no_update_notfull (PBblas.Types.MUElement old) := TRANSFORM
+        SELF.no := IF (old.no <=k, old.no, old.no+1);
+        SELF := old;
+      END;
+      //IF the dataset is full (k<corrections)
+      PBblas.Types.MUElement no_update_full (PBblas.Types.MUElement old) := TRANSFORM
+        SELF.no := old.no-1;
+        SELF := old;
+      END;
+      oldsy_reduced := oldsy(no != 1 AND no != (k+1));
+      old_notfull_updated := PROJECT(oldsy, no_update_notfull(LEFT),LOCAL);
+      old_full_updated := PROJECT(oldsy_reduced, no_update_full(LEFT),LOCAL);
+      old_updated := IF (K_corr, old_notfull_updated, old_full_updated);
+      //calculate ys
+      //ys = y'*s;
+      // ys_ := PBblas.PB_dgemm (TRUE, FALSE, 1.0, param_map, y, param_map, s, one_map);
+      // ys := ys_[1].mat_part[1];
+      R := IF (ys<10^(-10), oldsy, old_updated + s_new_no + y_new_no);
+      RETURN R; 
+    END; // END lbfgsUpdate 
+    
+    //update HDiag value
+    EXPORT lbfgsUpdate_Hdiag ( DATASET(Layout_Part) y , PBblas.IMatrix_Map param_map, REAL8 ys, REAL8 hdiag) := FUNCTION
+      one_map := PBblas.Matrix_Map(1,1,1,1);
+      yy_ := PBblas.PB_dgemm (TRUE, FALSE, 1.0, param_map, y, param_map, y, one_map);
+      yy := yy_[1].mat_part[1];
+      hdiag_new := ys/yy;
+      R := IF (ys<10^(-10), hdiag_new, hdiag);
+      RETURN R;
+    END;
+
   //polyinterp when the boundry values are provided
   EXPORT  polyinterp_both (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2, REAL8 xminBound, REAL8 xmaxBound) := FUNCTION
 
@@ -2223,7 +2268,7 @@ SHARED WolfeOutput_Record := RECORD
         SELF.c := zoom_c_new; //Counter
         SELF.insufProgress := insufprog_new;
         SELF.which_cond := whichcond;
-        SELF.LoopTermination := FALSE;
+        SELF.LoopTermination := TRUE;
         SELF := l;
       END;
       R_HI_id := PROJECT(inputp(id=HI_id), HIID(LEFT) );
@@ -2236,7 +2281,7 @@ SHARED WolfeOutput_Record := RECORD
         SELF.c := zoom_c_new; //Counter
         SELF.insufProgress := insufprog_new;
         SELF.which_cond := whichcond;
-        SELF.LoopTermination := FALSE;
+        SELF.LoopTermination := TRUE;
         SELF := l;
       END;
       // New point becomes new LO
@@ -2322,11 +2367,408 @@ SHARED WolfeOutput_Record := RECORD
    MaxLS_result := IF ( zoomfnew < f, t_new_result , t_0_result);
    zoom_result := IF ( zoomfnew < zoomfold, t_new_result , t_old_result);
    wolfe_result := IF (final_t_found,final_t_result , IF (Zoom_Max_itr_tmp=0,MaxLS_result,zoom_result));
-   RETURN ZoomingResult;
+   RETURN wolfe_result;
 
-  // RETURN Topass_zooming;
     
- END;// END WolfeLineSearch4    
+ END;// END WolfeLineSearch4
+ 
+ 
+
+EXPORT WolfeLineSearch5(INTEGER cccc, DATASET(Layout_Part) x, PBblas.IMatrix_Map param_map, UNSIGNED param_num, REAL8 t, DATASET(Layout_Part) d, REAL8 f, DATASET(Layout_Part) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
+    //maps used
+    one_map := PBblas.Matrix_Map(1,1,1,1);
+    //Extract the gradient layout_part from the cost function result
+    ExtractGrad (DATASET(PBblas.Types.MUElement) inp) := FUNCTION
+      RETURN PBblas.MU.FROM(inp,1); 
+    END;
+    //Extract the gradient part from the cost value result
+    ExtractCost (DATASET(PBblas.Types.MUElement) inp) := FUNCTION
+      inp2 := inp (no=2);
+      RETURN inp2[1].mat_part[1]; 
+    END;
+    Extractvalue (DATASET(Layout_Part) inp) := FUNCTION
+      RETURN inp[1].mat_part[1]; 
+    END;
+
+  
+    // Evaluate the Objective and Gradient at the Initial Step
+    //x_new = x+t*d
+    x_new := PBblas.PB_daxpy(t, d, x);
+    CostGrad_new := myfunc(x_new,param_map,param_num);
+    g_new := ExtractGrad (CostGrad_new);
+    f_new := ExtractCost (CostGrad_new);
+    //gtd_new = g_new'*d;
+    gtd_new := Extractvalue(PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, g_new,param_map, d,one_map ));
+    funEvals := 1;
+    
+    // Bracket an Interval containing a point satisfying the Wolfe criteria
+    t_prev := 0;
+    f_prev := f;
+    g_prev := g;
+    gtd_prev := gtd;
+    
+   //Bracketing algorithm, either produces the final t value or a bracket that contains the final t value
+   Load_bracketing_record := FUNCTION
+   
+     bracketing_record4 load_scalars_g_prev (Layout_Part l) := TRANSFORM
+        SELF.id := 1;
+        SELF.f_ := f_prev;
+        SELF.t_ := t_prev;
+        SELF.funEvals_ := funEvals;
+        SELF.gtd_ := gtd_prev;
+        SELF.c := 0; //Counter
+        SELF.Which_cond := -1;
+        SELF := l;
+      END;
+    R1 := PROJECT(g_prev, load_scalars_g_prev(LEFT) );
+    bracketing_record4 load_scalars_g_new (Layout_Part l) := TRANSFORM
+        SELF.id := 2;
+        SELF.f_ := f_new;
+        SELF.t_ := t;
+        SELF.funEvals_ := funEvals;
+        SELF.gtd_ := gtd_new;
+        SELF.c := 0; //Counter
+        SELF.Which_cond := -1;
+        SELF := l;
+      END;
+    R2 := PROJECT(g_new, load_scalars_g_new(LEFT) );
+    RETURN R1+R2;
+   END; // END Load_bracketing_record
+   ToPassBracketing := Load_bracketing_record;
+   BracketingStep (DATASET (bracketing_record4) inputp, INTEGER coun) := FUNCTION
+    // if ~isLegal(f_new) || ~isLegal(g_new) ????
+    in_table := TABLE(inputp, {id, f_,t_,funevals_,gtd_}, id, FEW);
+    in1 := in_table(id=1);
+    in2 := in_table (id=2);
+    
+    fPrev := in1[1].f_;
+    
+    fNew := in2[1].f_;
+    
+    gtdPrev := in1[1].gtd_;
+
+    gtdNew := in2[1].gtd_;
+    
+    tPrev := in1[1].t_;
+    
+    tt := in2[1].t_;
+    
+    BrackfunEval := in1[1].funEvals_;
+
+    BrackLSiter := coun-1;
+    
+    // check conditions
+    // 1- f_new > f + c1*t*gtd || (LSiter > 1 && f_new >= f_prev)
+    con1 := (fNew > f + c1 * tt* gtd)| ((BrackLSiter > 1) & (fNew >= fPrev));
+   //con1 := FALSE;
+    //2- abs(gtd_new) <= -c2*gtd orig
+    con2 := ABS(gtdNew) <= (-1*c2*gtd);
+   //con2 := TRUE;
+    // 3- gtd_new >= 0
+    con3 := gtdNew >= 0;
+    WhichCon := IF (con1, 1, IF(con2, 2, IF (con3,3,-1)));
+    
+    //update which_cond in the input dataset. If which_cond != -1 the loop ends (break)
+    inputp_con :=  PROJECT(inputp, TRANSFORM(bracketing_record4, SELF.Which_cond := WhichCon; SELF:=LEFT));
+    
+    //the bracketing results when none of the above conditions are satsfied (calculate a new t and update f,g, etc. values)
+    bracketing_Nocon := FUNCTION
+      //calculate new t
+      minstep := tt + 0.01* (tt-tPrev);
+      maxstep := tt*10;
+      newt := polyinterp_both (tPrev, fPrev,gtdPrev, tt, fNew, gtdNew, minstep, maxstep);
+      //calculate fnew gnew gtdnew
+      xNew := PBblas.PB_daxpy(newt, d, x);
+      CostGradNew := myfunc(xNew,param_map,param_num);
+      gNewbrack := ExtractGrad (CostGradNew);
+      fNewbrack := ExtractCost (CostGradNew);
+      gtdNewbrack := Extractvalue(PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, gNewbrack,param_map, d,one_map ));
+      //update inputp :
+      //current _prev values in inputp are replaced with current _new values
+      //current _new values in inputp are replaced with the new calculated values based on newt are
+      //funEvals_ is increased by 1
+      BrackfunEval_1 := BrackfunEval + 1;
+      bracketing_record4 load_scalars_g_prev (bracketing_record4 l) := TRANSFORM
+        SELF.id := 1;
+        SELF.funEvals_ := BrackfunEval_1;
+        SELF.c := coun; //Counter
+        SELF := l;
+      END;
+      R_id_1 := PROJECT(inputp(id=2), load_scalars_g_prev(LEFT) ); //id value is changed from 2 to 1. It is the same as :  f_prev = f_new;g_prev = g_new; gtd_prev = gtd_new; : the new values in the current loop iteration are actually prev values for the next iteration
+
+      bracketing_record4 load_scalars_g_new (Layout_Part l) := TRANSFORM
+        SELF.id := 2;
+        SELF.f_ := fNewbrack;
+        SELF.t_ := newt;
+        SELF.funEvals_ := BrackfunEval_1;
+        SELF.gtd_ := gtdNewbrack;
+        SELF.c := coun; //Counter
+        SELF.Which_cond := -1;
+        SELF := l;
+      END;
+      R_id_2 := PROJECT(gNewbrack, load_scalars_g_new(LEFT) ); // scalar values are wrapped around gNewbrack with id=2 , these are actually the new values for the next iteration
+     
+      RETURN R_id_1 + R_id_2;
+    END;
+
+    LoopResult := IF (WhichCon=-1, bracketing_Nocon, inputp_con);
+    RETURN LoopResult;
+   END;//END BracketingStep
+   
+
+  
+  // BracketingResult := LOOP(ToPassBracketing, COUNTER <= maxLS AND loopcond(ROWS(LEFT))=-1 , BracketingStep(ROWS(LEFT),COUNTER)); orig
+  BracketingResult := LOOP(ToPassBracketing, LEFT.Which_cond = -1, COUNTER <= maxLS AND EXISTS(ROWS(LEFT)) , BracketingStep(ROWS(LEFT),COUNTER)); 
+  brack_table := TABLE(BracketingResult, {id, c}, id, FEW);
+ 
+  Zoom_Max_itr_tmp :=   maxLS - brack_table[1].c; // orig ???
+  Zoom_Max_Itr := IF (Zoom_Max_itr_tmp >0, Zoom_Max_itr_tmp, 0);
+
+   // Zoom Phase
+   
+   //We now either have a point satisfying the criteria, or a bracket
+   //surrounding a point satisfying the criteria
+   // Refine the bracket until we find a point satisfying the criteria
+   ZoomingStep (DATASET (zooming_record4) inputp, INTEGER coun) := FUNCTION
+    // At the begining of the loop find High and Low Points in bracket:
+    // Assign id=1 to the low point
+    // Assign id=2 to the high point
+    // pass_thru := inputp0(LoopTermination = TRUE);
+    // inputp:= inputp0(LoopTermination = FALSE);
+    in_table := TABLE(inputp, {id, f_,t_,funevals_,gtd_, insufProgress,c}, id, FEW);
+    in1 := in_table (id=1);
+    in2 := in_table (id=2);
+
+    bracketFval_1 := in1[1].f_;
+    
+    bracketFval_2 := in2[1].f_;
+    
+    bracket_1 := in1[1].t_;
+    
+    bracket_2 := in2[1].t_;
+    
+    bracketGval_1 := PROJECT(inputp(id=1),TRANSFORM(Layout_Part,SELF := LEFT),LOCAL);
+    
+    bracketGval_2 := PROJECT(inputp(id=2),TRANSFORM(Layout_Part,SELF := LEFT),LOCAL);
+    
+    bracketGTDval_1  := Extractvalue(PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, bracketGval_1,param_map, d,one_map ));
+    
+    bracketGTDval_2  := Extractvalue(PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, bracketGval_2,param_map, d,one_map ));
+    
+    insufprog := in1[1].insufProgress;
+    
+    zoom_funevals := in1[1].funEvals_;
+    zoom_c := in1[1].c;
+    
+    // Find High and Low Points in bracket
+    LO_id := IF (bracketFval_1 < bracketFval_2, 1, 2);
+    HI_id := 3 - LO_id;
+    
+    // Compute new trial value
+    // t = polyinterp([bracket(1) bracketFval(1) bracketGval(:,1)'*d bracket(2) bracketFval(2) bracketGval(:,2)'*d],doPlot);
+    tTmp := polyinterp_noboundry (bracket_1, bracketFval_1, bracketGTDval_1, bracket_2, bracketFval_2, bracketGTDval_2);
+    BList := [bracket_1,bracket_2];
+    max_bracket := MAX(Blist);
+    min_bracket := MIN(Blist);
+    
+    //Test that we are making sufficient progress
+    // if min(max(bracket)-t,t-min(bracket))/(max(bracket)-min(bracket)) < 0.1
+    insuf_cond_1 := MIN ((max_bracket-tTmp),(tTmp-min_bracket))/(max_bracket - min_bracket) < 0.1 ;
+    //if insufProgress || t>=max(bracket) || t <= min(bracket)
+    insuf_cond_2 := insufprog | (tTmp >= max_bracket ) | (tTmp <= min_bracket);
+    //abs(t-max(bracket)) < abs(t-min(bracket))
+    insuf_cond_3 := ABS (tTmp-max_bracket) < ABS (tTmp-min_bracket);
+    
+    max_min_bracket := 0.1 * (max_bracket - min_bracket);
+    //t = max(bracket)-0.1*(max(bracket)-min(bracket));
+    tIF := max_bracket - max_min_bracket;
+    //t = min(bracket)+0.1*(max(bracket)-min(bracket));
+    tELSE := min_bracket + max_min_bracket;
+    tZoom := IF (insuf_cond_1, IF (insuf_cond_2,  IF (insuf_cond_3, tIF, tELSE) , tTmp), tTmp);
+    insufprog_new := IF (insuf_cond_1, IF (insuf_cond_2, FALSE, TRUE) , FALSE);
+    zoom_c_new := zoom_c + 1;
+    // Evaluate new point with tZoom
+    
+    xNew := PBblas.PB_daxpy(tZoom, d, x);
+    CostGradNew := myfunc(xNew,param_map,param_num);
+    gNewZoom := ExtractGrad (CostGradNew);
+    fNewZoom := ExtractCost (CostGradNew);
+    //gtd_new = g_new'*d;
+    gtdNewZoom := Extractvalue(PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, gNewZoom,param_map, d,one_map ));
+    zoom_funevals_new := zoom_funevals + 1;
+    //Zoom Conditions
+    max_bracketFval := IF (HI_id = 1 , bracketFval_1, bracketFval_2);
+    min_bracketFval := IF (HI_id = 1 , bracketFval_2, bracketFval_1);
+    
+    HI_bracket := IF (HI_id = 1 , bracket_1, bracket_2);
+    LO_bracket := IF (HI_id = 1 , bracket_2, bracket_1);
+    //if f_new > f + c1*t*gtd || f_new >= f_LO
+    zoom_cond_1 := (fNewZoom > f + c1 * tZoom * gtd) | (fNewZoom >= min_bracketFval);
+    // if abs(gtd_new) <= - c2*gtd
+    zoom_cond_2 := ABS (gtdNewZoom) <= (-1 * c2 * gtd);
+    //if gtd_new*(bracket(HIpos)-bracket(LOpos)) >= 0
+    zoom_cond_3 := gtdNewZoom * (max_bracket - min_bracket) >= 0; 
+ 
+    whichcond := IF (zoom_cond_1, 11, IF (zoom_cond_2, 12, IF (zoom_cond_3, 13, -2)));
+    
+    zooming_cond_1 := FUNCTION
+      // ~ done & abs((bracket(1)-bracket(2))*gtd_new) < tolX
+      //Since we are in zooming_cond_1 it means that condition 2 is already not satisfied (~done is true) so we only check the other condition
+      zoomter := ABS ((tZoom-LO_bracket)*gtdNewZoom) < tolX;
+      zooming_record4 load_scalars_g_new (Layout_Part l) := TRANSFORM
+        SELF.id := HI_id;
+        SELF.f_ := fNewZoom;
+        SELF.t_ := tZoom;
+        SELF.funEvals_ := zoom_funevals_new;
+        SELF.gtd_ := gtdNewZoom;
+        SELF.c := zoom_c_new; //Counter
+        SELF.insufProgress := insufprog_new;
+        SELF.which_cond := whichcond;
+        SELF.LoopTermination := zoomter;
+        SELF := l;
+      END;
+      R_HI_id := PROJECT(gNewZoom, load_scalars_g_new(LEFT) );
+      zooming_record4 load_scalars_LOID (zooming_record4 l) := TRANSFORM
+        SELF.funEvals_ := zoom_funevals_new;
+        SELF.c := zoom_c_new; //Counter
+        SELF.insufProgress := insufprog_new;
+        SELF.which_cond := whichcond;
+        SELF.LoopTermination := zoomter;
+        SELF := l;
+      END;
+      R_LO_id := PROJECT (inputp (id=LO_id), load_scalars_LOID(LEFT) );
+      RETURN R_HI_id + R_LO_id ;
+    END; // END zooming_cond_1
+    
+    zooming_cond_2 := FUNCTION
+      zoomter := TRUE; // IF condition 2 is correct, then loop should terminates, in case that other conditions are corect abs((bracket(1)-bracket(2))*gtd_new) < tolX should be checked for the zoom termination
+      // Old HI becomes new LO
+      zooming_record4 HIID (zooming_record4 l) := TRANSFORM
+        SELF.funEvals_ := zoom_funevals_new;
+        SELF.c := zoom_c_new; //Counter
+        SELF.insufProgress := insufprog_new;
+        SELF.which_cond := whichcond;
+        SELF.LoopTermination := TRUE;
+        SELF := l;
+      END;
+      R_HI_id := PROJECT(inputp(id=HI_id), HIID(LEFT) );
+      zooming_record4 load_scalars_g_new (Layout_Part l) := TRANSFORM
+        SELF.id := LO_id;
+        SELF.f_ := fNewZoom;
+        SELF.t_ := tZoom;
+        SELF.funEvals_ := zoom_funevals_new;
+        SELF.gtd_ := gtdNewZoom;
+        SELF.c := zoom_c_new; //Counter
+        SELF.insufProgress := insufprog_new;
+        SELF.which_cond := whichcond;
+        SELF.LoopTermination := TRUE;
+        SELF := l;
+      END;
+      // New point becomes new LO
+      R_LO_id := PROJECT(gNewZoom, load_scalars_g_new(LEFT) );
+      RETURN R_HI_id + R_LO_id;
+    END;// END zooming_cond_2
+    
+    zooming_cond_3 := FUNCTION
+      //Since we are in zooming_cond_1 it means that condition 2 is already not satisfied (~done is true) so we only check the other condition
+      zoomter := ABS ((tZoom-LO_bracket)*gtdNewZoom) < tolX;
+      zooming_record4 LOID (zooming_record4 l) := TRANSFORM
+        SELF.id := HI_id;
+        SELF.funEvals_ := zoom_funevals_new;
+        SELF.c := zoom_c_new; //Counter
+        SELF.insufProgress := insufprog_new;
+        SELF.which_cond := whichcond;
+        SELF.LoopTermination := zoomter;
+        SELF := l;
+      END;
+      R_HI_id := PROJECT(inputp(id=LO_id), LOID(LEFT) );
+      zooming_record4 load_scalars_g_new (Layout_Part l) := TRANSFORM
+        SELF.id := LO_id;
+        SELF.f_ := fNewZoom;
+        SELF.t_ := tZoom;
+        SELF.funEvals_ := zoom_funevals_new;
+        SELF.gtd_ := gtdNewZoom;
+        SELF.c := zoom_c_new; //Counter
+        SELF.insufProgress := insufprog_new;
+        SELF.which_cond := whichcond;
+        SELF.LoopTermination := zoomter;
+        SELF := l;
+      END; //END zooming_cond_3
+      // New point becomes new LO
+      R_LO_id := PROJECT(gNewZoom, load_scalars_g_new(LEFT) );
+      RETURN R_HI_id + R_LO_id;
+    END;
+    zooming_nocond := zooming_cond_2;
+    
+    zooming_result := IF (zoom_cond_1, zooming_cond_1, IF (zoom_cond_2, zooming_cond_2, IF (zoom_cond_3, zooming_cond_3, zooming_nocond )));
+    
+
+    RETURN IF (EXISTS(inputp),zooming_result,inputp);//ZoomingStep produces an output even when it recives an empty dataset, I would like to avoid that so I can make sure when loopfilter avoids a dataset to be passed to the loop (in case of which_cond==2 which means we already have found final t) then zooming_step would not produce any output
+   END; // END ZoomingStep
+   
+   //BracketingResult is provided as input to the Zooming LOOP 
+   //Since in the bracketing results in case of cond 1 and cond2 the prev and new values are assigned to bracket_1 and bracket_2 so when we pass the bracketing result to the zooming loop, in fact we have:
+   //id = 1 indicates bracket_1 
+   //id = 2 indicates bracket_2
+  // LOOP( dataset, loopcount, loopfilter, loopbody [, PARALLEL( iterations | iterationlist [, default ] ) ] )
+
+
+   Topass_zooming := PROJECT (BracketingResult, TRANSFORM(zooming_record4 ,SELF.LoopTermination:=(LEFT.which_cond=2) | (LEFT.c=MaxLS); SELF := LEFT)); // If in the bracketing step condition 2 has been meet or we have reaached MaxLS then we don't need to pass zoom step, so the termination condition for soom will be set as true here
+   ZoomingResult := LOOP(Topass_zooming, LEFT.LoopTermination =FALSE , COUNTER <= Zoom_Max_Itr AND EXISTS(ROWS(LEFT)) , ZoomingStep(ROWS(LEFT),COUNTER));
+   // based on whichcond value in the very final result we figure out the flow of the data and what we should return as output
+   // 2: final t is found in the bracketing step
+
+
+    bracketing_record4 load_scalars_g (Layout_Part l) := TRANSFORM
+      SELF.id := 1;
+      SELF.f_ := f;
+      SELF.t_ := 0;
+      SELF.funEvals_ := maxLS + 1;//when the bracketing loop get to MAX_itr number of iterations, it means that funcation has been evaluated Max_Itr + 1 (one time before the loop starts) Times.
+      SELF.gtd_ := gtd;
+      SELF.c := maxLS; //Counter
+      SELF.which_cond := -1; // when the bracketing loop get to MAX_itr number of iterations, it means that no condition in the bracketing_step has ever been satisfied for the loop to break
+      SELF := l;
+    END; //END zooming_cond_3
+   //wolfecond :
+   // -1 : begining of the wolfe algorithm and when we are still in the bracketing step and no condition in satisfied, or we are out of bracketing step with cond=-1 which means we reached MAX_LS
+   // 1 : we're out of bracketing step and the condition that break the bracketing step loop was condition number 1 -> go to zooming loop
+   // 2 : we're out of bracketing step and the condition that break the bracketing step loop was condition number 2 -> final t found
+   // 3 : we're out of bracketing step and the condition that break the bracketing step loop was condition number 3 -> go to zooming loop
+   //11, 12, 13, -2 means we are in the zooming loop and condition 1, condition 2 , condition 3 and no condition have been satisfied respectively
+   zoomTBL :=  TABLE(ZoomingResult, {id, which_cond, f_}, id, FEW);
+   zoomfnew := zoomTBL(id=2)[1].f_;
+   zoomfold := zoomTBL(id=1)[1].f_;
+   wolfe_cond := zoomTBL[1].which_cond;
+   final_t_found := wolfe_cond = 2;
+   t_new_result := PROJECT (ZoomingResult (id=2), TRANSFORM(bracketing_record4 ,SELF := LEFT));
+   t_old_result := PROJECT (ZoomingResult (id=1), TRANSFORM(bracketing_record4 ,SELF := LEFT));
+   t_0_result := PROJECT(g, load_scalars_g(LEFT) );
+   final_t_result := t_new_result;
+   MaxLS_result := IF ( zoomfnew < f, t_new_result , t_0_result);
+   zoom_result := IF ( zoomfnew < zoomfold, t_new_result , t_old_result);
+   wolfe_result := IF (final_t_found,final_t_result , IF (Zoom_Max_itr_tmp=0,MaxLS_result,zoom_result));
+   //RETURN wolfe_result;
+RETURN LOOP(Topass_zooming, LEFT.LoopTermination =FALSE , COUNTER <= 25 AND EXISTS(ROWS(LEFT)) , ZoomingStep(ROWS(LEFT),COUNTER));
+    
+ END;// END WolfeLineSearch5
+EXPORT wolfe_g (DATASET(bracketing_record4) wolfeout) := FUNCTION
+  RETURN PROJECT(wolfeout, TRANSFORM(Layout_Part, SELF:=LEFT));
+END;
+
+EXPORT wolfe_f (DATASET(bracketing_record4) wolfeout) := FUNCTION
+  t := TABLE(wolfeout, {f_}, FEW);
+  RETURN t[1].f_;
+END;
+
+EXPORT wolfe_t (DATASET(bracketing_record4) wolfeout) := FUNCTION
+  t := TABLE(wolfeout, {t_}, FEW);
+  RETURN t[1].t_;
+END;
+
+EXPORT wolfe_funEvals (DATASET(bracketing_record4) wolfeout) := FUNCTION
+  t := TABLE(wolfeout, {funEvals_}, FEW);
+  RETURN t[1].funEvals_;
+END;
 
     EXPORT wolfe_gnew_ext4  (DATASET (WolfeOutput_Record) wolfeout) := FUNCTION
       IdElementRec NewChildren(IdElementRec R) := TRANSFORM
@@ -3173,6 +3615,170 @@ SHARED WolfeOutput_Record := RECORD
   RETURN MinFstepout;
   //RETURN TopassMinF;
   END;//END MinFUNC3
+  
+  
+  EXPORT MinFUNC_4(DATASET(Layout_Part) x0, PBblas.IMatrix_Map param_map, INTEGER8 param_num, INTEGER MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
+    //calculate sum(abs(g_in))
+   sum_abs (DATASET(Layout_Part) g_in) := FUNCTION
+      Elem := {REAL8 v};  //short-cut record def
+      Elem su(Layout_Part xrec) := TRANSFORM //hadamard product
+        elemsX := DATASET(xrec.mat_part, Elem);
+        elemX_abs := PROJECT(elemsX,TRANSFORM(Elem,SELF.v := ABS(LEFT.v)));
+        SELF.v :=  SUM(elemX_abs,elemX_abs.v);
+      END;
+      ss_ := PROJECT (g_in, su (LEFT), LOCAL);
+      ss := SUM (ss_, ss_.v);
+      RETURN ss;
+    END;//sum_abs
+    //check optimality 
+    //if sum(abs(g)) <= tolFun
+    optimality_check (DATASET(Layout_Part) g_in) := FUNCTION
+      Elem := {REAL8 v};  //short-cut record def
+      Elem su(Layout_Part xrec) := TRANSFORM //hadamard product
+        elemsX := DATASET(xrec.mat_part, Elem);
+        elemX_abs := PROJECT(elemsX,TRANSFORM(Elem,SELF.v := ABS(LEFT.v)));
+        SELF.v :=  SUM(elemX_abs,elemX_abs.v);
+      END;
+      ss_ := PROJECT (g_in, su (LEFT), LOCAL);
+      ss := SUM (ss_, ss_.v);
+      RETURN ss<tolFun;
+    END;//END optimality_check
+    //maps used
+    one_map := PBblas.Matrix_Map(1,1,1,1);
+    //Extract the gradient layout_part from the cost function result
+    ExtractGrad (DATASET(PBblas.Types.MUElement) inp) := FUNCTION
+      RETURN PBblas.MU.FROM(inp,1); 
+    END;// END ExtractGrad
+    //Extract the gradient part from the cost value result
+    ExtractCost (DATASET(PBblas.Types.MUElement) inp) := FUNCTION
+      inp2 := inp (no=2);
+      RETURN inp2[1].mat_part[1]; 
+    END;//End ExtractCost
+    Extractvalue (DATASET(Layout_Part) inp) := FUNCTION
+      RETURN inp[1].mat_part[1]; 
+    END;// END Extractvalue
+    IsLegal (DATASET(Layout_Part) inp) := FUNCTION
+      RETURN TRUE;
+    END;//END IsLegal ???
+  
+    // Evaluate Initial Point
+    CostGrad := myfunc(x0,param_map,param_num);
+    g0 := ExtractGrad (CostGrad);
+    f0 := ExtractCost (CostGrad);
+    funEvals := 1;
+    Is_Initialpoint_Optimal := optimality_check (g0);
+    g0_no := PBblas.MU.TO(g0,1);
+    x0_no := PBblas.MU.TO(x0,2);
+    minfRec := RECORD (PBblas.Types.MUElement)
+      REAL8 h ;//hdiag value
+      REAL8 f ; //f from the previous iteration
+      INTEGER8 min_funEval ;
+      INTEGER break_cond ;
+    END;
+    topass_min := PROJECT(g0_no+x0_no, TRANSFORM(minfrec, SELF.h := 1; SELF.f := f0, SELF.min_funEval:=funEvals, SELF.break_cond := -1, SELF:= LEFT));
+    //in min_step:
+    //first d is calculated based on whether it is the first or not_first iteration
+    //d is checked to be legal, if it is not legal we return the same input (inp) with break code =1
+    //gtd if calculated
+    //IF gtd satisfies that there is no progress along the direction then again we return the input inp with break code =2
+    // If none of the condition above are satisfied then we calculate new step length that satisfies wolfe condition
+    // After Wolfe calulation gives us the new f, g, and t values we check some other break conditions
+    //If any of them are satisfied we retunr new g, new f, and the corresponding break code
+    //if no break condition is satisfied we retunr the same things as above plus the updated hdiag and sy values which will be used in the next iteraion (if a break cond is satisfied then thers is not gonna
+    //be any next iteration so there is no need to calculate updated hdiga nd sy values
+    //inp includes : no[1 k] is old_dirs matrix or s. no[k+1 2*k] is old steps or y, no[2*k+1] is g from previous iteration, no [2*k+2] is x from previous iteration
+
+    min_step (DATASET(minfRec) inp, INTEGER8 coun) := FUNCTION
+      k_ := MAX(inp,no);
+      k := (k_-2)/2; //k_ is the index for s which is from 1 to k, y is from k+1 to 2*k, then g has 2*k+1 and the index for x is 2*k+2
+      g_pre_ind :=k_-1;
+      x_pre_ind := k_;
+      inp_ :=  PROJECT(inp, TRANSFORM(PBblas.Types.MUElement, SELF:=LEFT));
+      g_pre := PBblas.MU.FROM (inp_,g_pre_ind); // This is the g calculated in the preceding iteration
+      x_pre := PBblas.MU.FROM (inp_,x_pre_ind); // This is the x calculated in the preceding iteration
+      d_steap := PBblas.PB_dscal(-1, g_pre); // Steepest_Descent
+      s_pre := inp_(no>=1 AND no<=k); // old_dirs
+      y_pre := inp_(no>k AND no <= 2*k); // old_steps
+      funmin_table := TABLE (inp, {min_funEval}, LOCAL);
+      funmin_pre := funmin_table[1].min_funEval;
+      h_table := TABLE(inp, {h}, LOCAL);
+      hDiag_pre := h_table[1].h;
+      f_table := TABLE(inp, {f}, LOCAL);
+      f_pre := f_table[1].f;
+      d_lbfgs := lbfgs_4 (d_steap, s_pre, y_pre, hDiag_pre, param_map);// orig Hdiga should be defined
+      d:= IF (coun=1, d_steap, d_lbfgs);
+      dlegalstep := IsLegal (d);
+      // Computer step length
+      // Directional Derivative : gtd = g'*d;
+      gtd := Extractvalue(PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, g_pre,param_map, d,one_map ));
+      //Check that progress can be made along direction : if gtd > -tolX then break!
+      gtdprogress := IF (gtd > -1*tolX, FALSE, TRUE);
+      // Select Initial Guess If coun =1 then t = min(1,1/sum(abs(g)));
+      t_init := IF (coun = 1,MIN ([1, 1/(sum_abs(g_pre))]),1);
+      // Find Point satisfying Wolfe
+      w := WolfeLineSearch4(1, x_pre, param_map, param_num, t_init, d, f_pre, g_pre,gtd, 0.0001, 0.9, 25, 0.000000001);
+      w_feval := wolfe_funEvals (w);
+      w_t := wolfe_t (w);
+      w_f := wolfe_f (w);
+      w_g := wolfe_g (w);
+      x_updated := PBblas.PB_daxpy(w_t, d, x_pre);
+      //update hdiag, s and y
+      // lbfgsUpdate ( DATASET(PBblas.Types.MUElement) oldsy, DATASET(Layout_Part) s,DATASET(Layout_Part) y , INTEGER8 corrections, PBblas.IMatrix_Map param_map, REAL8 ys) := FUNCTION
+      sy_pre := inp_(no<=2*k);
+      //s_s_ = t*d
+      s_s := PBblas.PB_dscal(w_t, d);
+      //y_y := g_new - g_old
+      y_y := PBblas.PB_daxpy(-1, g_pre, w_g);
+      //y_s = y_y'*s_s
+      y_s := PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, y_y,param_map, s_s,one_map );
+      sy_updated := lbfgsUpdate ( sy_pre, y_y, s_s, corrections, param_map, y_s[1].mat_part[1]);
+      y_y_ := PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, y_y,param_map, y_y,one_map );
+      hdiag_updated := y_s[1].mat_part[1]/ y_y_[1].mat_part[1];
+      w_g_ := PBblas.PB_dscal(-1, w_g);
+      // do the optimality (break condition) checks
+      //~isLegal(d)
+      IsLegald := IsLegal (d);
+      legal_d_code := IF (IsLegald, -1, 1);
+      //% Check that progress can be made along direction: if gtd > -tolX
+      Isprog1 := gtd > -1 * tolX;
+      prog1_code := IF (Isprog1, 2, -1 );
+      // % Check Optimality Condition : sum(abs(g)) <= tolFun
+      Isprog2 := sum_abs(w_g)<= tolFun;
+      opt1_code := IF (Isprog2, 3, -1);
+      //% ******************* Check for lack of progress ******************* : if sum(abs(t*d)) <= tolX
+      Islack1 := ABS(w_t)*sum_abs(d)<= tolX;
+      lack1_code := IF (Islack1, 4, -1);
+      //if abs(f-f_old) < tolX
+      Islack2 := ABS(w_f-f_pre) < tolX;
+      lack2_code := IF (Islack2, 5, -1);
+      // Check for going over iteration/evaluation limit *******************
+      // if funEvals > maxFunEvals
+      updated_funEvals := w_feval + funmin_pre;
+      Isoverfun := updated_funEvals > maxFunEvals;
+      fun_code := IF (Isoverfun, 6, -1 );
+      break_code := IF(Isprog2, 3, IF (Islack1, 4, IF (Islack2, 5, IF(Isoverfun, 6, -1) )));
+      //If breakcode!=-1 it means that we will exit the loop so there is no need to update hdiag and sy
+      no_part_break := inp_ (no <= 2*k) + Pbblas.MU.TO(w_g, k_-1) + PBblas.MU.TO(x_updated, k_);
+      to_return_break := PROJECT(no_part_break, TRANSFORM(minfrec, SELF.h := hDiag_pre; SELF.f := w_f, SELF.min_funEval:=updated_funEvals, SELF.break_cond := break_code, SELF:= LEFT));
+      //IF none of break conditions are satisfied, we will continue the loop. Means that we have to update hdiag and sy values for the next iteration
+      max_no := MAX(sy_updated, sy_updated.no);
+      no_part := sy_updated + Pbblas.MU.TO(w_g, max_no+1)+ PBblas.MU.TO(x_updated, max_no+2);
+      to_return := PROJECT(no_part, TRANSFORM(minfrec, SELF.h := hdiag_updated; SELF.f := w_f, SELF.min_funEval:=updated_funEvals, SELF.break_cond := break_code, SELF:= LEFT));
+      //After d is calculated check whether it is legal, if itis legal continue, otherwise return with the break_cond=1
+      dnot_legal_return := PROJECT(inp, TRANSFORM(minfrec, SELF.break_cond := 1, SELF:= LEFT ));
+      Noprogalong_return := PROJECT(inp, TRANSFORM(minfrec, SELF.break_cond := 2, SELF:= LEFT ));
+      FinalResult := IF (IsLegald, IF (Isprog1, Noprogalong_return, IF (break_code!=-1, to_return_break, to_return)), dnot_legal_return);
+      RETURN IF (EXISTS(inp),FinalResult,inp);
+      //RETURN (IF (coun=6,PROJECT(Pbblas.MU.TO(d, 100), TRANSFORM(minfrec, SELF.h := hdiag_updated; SELF.f := w_f, SELF.min_funEval:=w_feval, SELF.break_cond := break_code, SELF:= LEFT)) , FinalResult));
+      //RETURN FinalResult;
+      
+    END;// min_step
+    
+    min_result := LOOP(topass_min, LEFT.break_cond=-1, COUNTER <= 20 AND EXISTS(ROWS(LEFT)) , min_step(ROWS(LEFT),COUNTER));
+    //RETURN min_step2( min_step(topass_min,1),2);
+    RETURN min_result;
+    
+  END;// END MinFUNC_4
 END;// END Optimization2
 
 
