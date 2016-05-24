@@ -64,13 +64,14 @@ model3:= trainer3.LearnD(Indep, Dep);
 
 OUTPUT(model1, NAMED('Model1'));
 OUTPUT(SORT(trainer1.Model(model1), level, node_id), NAMED('DecTree_1'), ALL);
+/*
 OUTPUT(model2, NAMED('Model2'));
 OUTPUT(SORT(trainer2.Model(model2), level, node_id), NAMED('DecTree_2'), ALL);
 OUTPUT(model2b, NAMED('Model2b'));
 OUTPUT(SORT(trainer2.Model(model2b), level, node_id), NAMED('DecTree_2b'), ALL);
 OUTPUT(model3, NAMED('Model3'));
 OUTPUT(SORT(trainer2.Model(model3), level, node_id), NAMED('DecTree_3'), ALL);
-
+/*
 //Classifying independent test data and comparing with dependent test data 
 ClassDist1:= trainer1.ClassProbDistribD(indep_t, model1);
 AUC1_0:= Classify.AUC_ROC(ClassDist1, 0, dep_t); //Area under ROC Curve for class "0"
@@ -115,3 +116,4 @@ OUTPUT(results31.RecallByClass, NAMED('RecallByClass3'));
 //OUTPUT(results31.PrecisionByClass, NAMED('PrecByClass3'));
 //OUTPUT(SORT(results31.FP_Rate_ByClass, classifier, class), NAMED('FPR_ByClass3'));
 OUTPUT(results31.Accuracy, NAMED('Accur3'));
+*/

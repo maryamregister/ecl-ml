@@ -17,7 +17,7 @@ matrix_t     := SET OF REAL8;
       
 
 //Func : handle to the function we want to minimize it, its output should be the error cost and the error gradient
-EXPORT Optimization2 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
+EXPORT Optimization4 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
     // BFGS Search Direction
     //
     // This function returns the (L-BFGS) approximate inverse Hessian,
@@ -3617,7 +3617,7 @@ END;
   END;//END MinFUNC3
   
   
-  EXPORT MinFUNC_4(DATASET(Layout_Part) x0, PBblas.IMatrix_Map param_map, INTEGER8 param_num, INTEGER MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
+  EXPORT MinFUNC_4(DATASET(Layout_Part) x0, PBblas.IMatrix_Map param_map ,INTEGER8 param_num, INTEGER8 MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
     //calculate sum(abs(g_in))
    sum_abs (DATASET(Layout_Part) g_in) := FUNCTION
       Elem := {REAL8 v};  //short-cut record def
@@ -3779,7 +3779,7 @@ END;
     RETURN min_result;
     
   END;// END MinFUNC_4
-END;// END Optimization2
+END;// END Optimization4
 
 
 

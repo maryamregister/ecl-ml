@@ -4,6 +4,7 @@ IMPORT * FROM $;
 IMPORT $.Mat;
 IMPORT * FROM ML.Types;
 IMPORT PBblas;
+IMPORT std.system.Thorlib;
 Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
 
@@ -38,30 +39,43 @@ emptyC := DATASET([], Types.NumericField);
 
 //x:= Ones_Vec;
 
+   
+   
+   
+   
+   
 x_test := DATASET(
-[{1,1,97.1459},{2,1,16.9339},{3,1,92.0726},{4,1,79.5439},{5,1,92.0726}],Types.NumericField);
+[{1,1,-0.5610},{2,1,-1.6323},{3,1,-1.3247},{4,1,-1.6170},{5,1,-1.5600}],Types.NumericField);
 
 
 t_test := 1;
-
+ 
+   
+   
+   
+   
    d_test := DATASET(
-[{1,1,33.2634},{2,1,-10.0455},{3,1,-15.2143},{4,1,-15.0851},{5,1,-15.2143 }],Types.NumericField);
+[{1,1,-1.9738},{2,1,-0.2270},{3,1,-0.8289},{4,1,-0.2577},{5,1,-0.3712 }],Types.NumericField);
 
-  f_test :=  11.8106;
-  gtd_test :=  -3.4948;
+  f_test :=   10.5011;
+  gtd_test :=   -1.8513;
+     
   
+    
+   
+    
   g_test := DATASET(
-[{1,1,-0.9705},{2,1,-0.3381},{3,1,-0.5683},{4,1,-0.5369},{5,1,-0.5683}],Types.NumericField);
+[{1,1,0.8467},{2,1, -0.0615},{3,1,0.2437},{4,1,-0.0462},{5,1,0.0107}],Types.NumericField);
 
   
    
    
    
    
-   
+    
    
 x := DATASET(
-[{1,1,1},{2,1,1},{3,1,1},{4,1,1},{5,1,1}],Types.NumericField);
+[{1,1,1},{2,1,20},{3,1,45},{4,1,90},{5,1,2}],Types.NumericField);
 
 x2 := DATASET(
 [{1,1,10},{2,1,20},{3,1,2},{4,1,87},{5,1,40}],Types.NumericField);
@@ -134,7 +148,7 @@ LB := Optimization2 (0, 0, 0, 0).lbfgs_4(g,s,y,1,param_map);
 // output(g,named('ssss'));
 //OUTPUT(LP_up);
 MF := Optimization2 (0, 0, 0, 0).MinFUNC_4(xdist,param_map, 5, 10, 0.00001, 0.000000001,  1000, 3, 0, 0, 0,0) ;
-OUTPUT(MF);
+//OUTPUT(MF);
 
 // iteration number 6 does not produce the right value for t, check it out
 
@@ -145,3 +159,36 @@ g_test_dist :=  ML.DMat.Converted.FromNumericFieldDS(g_test, param_map);
 //WolfeLineSearch4( cccc, x,  param_map, param_num,  t, d,  f,  g,  gtd,  c1=0.0001,  c2=0.9,  maxLS=25,  tolX=0.000000001)
 WResult_test := Optimization2 (0, 0, 0, 0).WolfeLineSearch4( 1, x_test_dist,  param_map, P_num,  t_test, d_test_dist,  f_test,  g_test_dist,  gtd_test, 0.0001,  0.9,  25,  0.000000001);
 //OUTPUT(WResult_test);
+//output (param_map)
+//EXPORT MinFUNC_4( x0,  param_map , param_num,  MaxIter = 100,  tolFun = 0.00001,  TolX = 0.000000001,  maxFunEvals = 1000,  corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
+emptyL := DATASET([], Layout_Part);
+MF2 := Optimization4 (0, 0, 0, 0).MinFUNC_4(xdist,param_map,emptyC,emptyL,emptyL,myfunc4, 5,10, 0.00001, 0.000000001,  1000, 3, 0, 0, 0,0) ;
+
+
+ SumProduct (DATASET(Layout_Part) inp1, DATASET(Layout_Part) inp2) := FUNCTION
+
+      Product(REAL8 val1, REAL8 val2) := val1 * val2;
+      Elem := {REAL8 v};  //short-cut record def
+      Elem hadPart(Layout_Part xrec, Layout_Part yrec) := TRANSFORM //hadamard product
+        elemsX := DATASET(xrec.mat_part, Elem);
+        elemsY := DATASET(yrec.mat_part, Elem);
+        new_elems := COMBINE(elemsX, elemsY, TRANSFORM(Elem, SELF.v := Product(LEFT.v,RIGHT.v)));
+        SELF.v :=  SUM(new_elems,new_elems.v);
+      END;
+
+      prod := JOIN(inp1, inp2, LEFT.partition_id=RIGHT.partition_id, hadPart(LEFT,RIGHT), FULL OUTER, LOCAL);
+      RETURN prod;
+    END;//END SumProduct
+    
+    //LB2 := Optimization4 (0, 0, 0, 0).lbfgs_4(g,s,y,1);
+    WResult2 := Optimization4 (0, 0, 0, 0).WolfeLineSearch4( 1, xdist,emptyC,emptyL,emptyL,myfunc4, P_num,  t, ddist,  f,  g,  gtd, 0.0001,  0.9,  25,  0.000000001);
+    
+    //WResult_test2 := Optimization4 (0, 0, 0, 0).WolfeLineSearch4( 1, x_test_dist,  emptyC,emptyL,emptyL,myfunc4, P_num,  t_test, d_test_dist,  f_test,  g_test_dist,  gtd_test, 0.0001,  0.9,  25,  0.000000001);
+OUTPUT(MF2);
+hrec := RECORD 
+      REAL8 h ;//hdiag value
+    END;
+ // hproj := PROJECT(MF2, TRANSFORM(hrec, SELF.h:=LEFT.h));
+     // hdup := dedup(hproj, hproj.h,LOCAL);
+//OUTPUT(hproj);
+//OUTPUT(hdup);
