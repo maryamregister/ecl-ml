@@ -144,7 +144,7 @@ EXPORT Optimization4 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0,
     //s is the new vector s which we need to add to the oldsy dataset
     //y is the new vector y which we need to add to the oldsy dataset
     //corrections is the lbfgs parameter value for the number of s and y vectore we are saving in the memory ( that's why it is called limited memory-bfgs), if we save all the s and y vector it would be bfgs 
-    EXPORT lbfgsUpdate ( DATASET(PBblas.Types.MUElement) oldsy, DATASET(Layout_Part) y,DATASET(Layout_Part) s , INTEGER8 corrections, PBblas.IMatrix_Map param_map, REAL8 ys) := FUNCTION
+    EXPORT lbfgsUpdate ( DATASET(PBblas.Types.MUElement) oldsy, DATASET(Layout_Part) y,DATASET(Layout_Part) s , INTEGER8 corrections, REAL8 ys) := FUNCTION
       one_map := PBblas.Matrix_Map(1,1,1,1);
       k := MAX(oldsy,no)/2;
       K_corr := k<corrections;
@@ -3305,7 +3305,7 @@ END;
   END;//END MinFUNC3
   
   
-  EXPORT MinFUNC_4(DATASET(Layout_Part) x0, PBblas.IMatrix_Map param_map ,DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(PBblas.Types.MUElement) CostFunc (DATASET(Layout_Part) x0, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), INTEGER8 param_num, INTEGER8 MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
+  EXPORT MinFUNC_4(DATASET(Layout_Part) x0,DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(PBblas.Types.MUElement) CostFunc (DATASET(Layout_Part) x0, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), INTEGER8 param_num, INTEGER8 MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
     //calculate sum(abs(g_in))
    sum_abs (DATASET(Layout_Part) g_in) := FUNCTION
       Elem := {REAL8 v};  //short-cut record def
@@ -3405,7 +3405,7 @@ END;
       //y_s = y_y'*s_s
       //y_s := PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, y_y,param_map, s_s,one_map );
       y_s := SumProduct (y_y, s_s);
-      sy_updated := lbfgsUpdate ( sy_pre, y_y, s_s, corrections, param_map, y_s);
+      sy_updated := lbfgsUpdate ( sy_pre, y_y, s_s, corrections,  y_s);
       //y_y_ := PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, y_y,param_map, y_y,one_map );
       y_y_ := SumProduct (y_y, y_y);
       hdiag_updated := y_s/ y_y_;
@@ -3502,7 +3502,7 @@ END;
       //y_s = y_y'*s_s
       //y_s := PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, y_y,param_map, s_s,one_map );
       y_s := SumProduct (y_y, s_s);
-      sy_updated := lbfgsUpdate ( sy_pre, y_y, s_s, corrections, param_map, y_s);
+      sy_updated := lbfgsUpdate ( sy_pre, y_y, s_s, corrections,  y_s);
       //y_y_ := PBblas.PB_dgemm(TRUE, FALSE, 1.0,param_map, y_y,param_map, y_y,one_map );
       y_y_ := SumProduct (y_y, y_y);
       hdiag_updated := y_s/ y_y_;
@@ -3555,7 +3555,8 @@ END;
     first_itr_break := break_table[1].break_cond;
     min_result_nextitr := LOOP(min_result_firstitr, MaxIter ,LEFT.break_cond=-1, min_step(ROWS(LEFT),COUNTER));      
     min_result := IF(first_itr_break!=-1, min_result_firstitr, min_result_nextitr );
-    RETURN min_result;
+    //RETURN min_result; orig
+    RETURN  LOOP(min_result_firstitr, 400 ,LEFT.break_cond=-1, min_step(ROWS(LEFT),COUNTER));   
     
     //RETURN min_step(min_result_firstitr,1);
     //RETURN min_result_firstitr;

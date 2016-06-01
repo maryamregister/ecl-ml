@@ -4,7 +4,7 @@ IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
 //This is the test on MNIST patches
 
-INTEGER4 hl := 4;//number of nodes in the hiddenlayer
+INTEGER4 hl := 16;//number of nodes in the hiddenlayer
 INTEGER4 f := 64;//number of input features
 
 //input data
@@ -126,7 +126,7 @@ output(IntB, named ('IntB'));
 
 //MINE
 SA_mine :=DeepLearning.Sparse_Autoencoder_mine (f, hl, 0, 0,0,0);
-
+SA_mine4_1 :=DeepLearning4_1.Sparse_Autoencoder_mine (f, hl, 0, 0,0,0);
 //IntW1 := Mat.MU.From(IntW,1);
 
 IntW1 := DATASET('~maryam::mytest::w1_4_64', ML.Mat.Types.Element, CSV);
@@ -146,6 +146,7 @@ OUTPUT(IntB1,ALL, named ('IntB1'));
 OUTPUT(IntB2,ALL, named ('IntB2'));
 
 lbfgs_model_mine := SA_mine.LearnC_lbfgs(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, 1);
+lbfgs_model_mine4_1 := SA_mine4_1.LearnC_lbfgs_4(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, 200);
 
 IdElementRec := RECORD
       INTEGER1 id;
@@ -212,16 +213,17 @@ MinFRecord := RECORD
 
     RETURN PROJECT(NewChilds, TRANSFORM(Mat.Types.Element, SELF := LEFT));
   END; // END d_ext
-OUTPUT(lbfgs_model_mine,NAMED('lbfgs_model'));
-OUTPUT(x_ext(lbfgs_model_mine),NAMED('lbfgs_x'));
-OUTPUT(g_ext(lbfgs_model_mine),NAMED('lbfgs_g'));
-OUTPUT(d_ext(lbfgs_model_mine),NAMED('lbfgs_d'));
-OUTPUT(old_dirs_ext(lbfgs_model_mine),NAMED('lbfgs_olddirs'));
-OUTPUT(old_steps_ext(lbfgs_model_mine),NAMED('lbfgs_oldsteps'));
+// OUTPUT(lbfgs_model_mine,NAMED('lbfgs_model'));
+// OUTPUT(x_ext(lbfgs_model_mine),NAMED('lbfgs_x'));
+// OUTPUT(g_ext(lbfgs_model_mine),NAMED('lbfgs_g'));
+// OUTPUT(d_ext(lbfgs_model_mine),NAMED('lbfgs_d'));
+// OUTPUT(old_dirs_ext(lbfgs_model_mine),NAMED('lbfgs_olddirs'));
+// OUTPUT(old_steps_ext(lbfgs_model_mine),NAMED('lbfgs_oldsteps'));
 
-OUTPUT(lbfgs_model_mine[1].t_,NAMED('lbfgs_t'));
-OUTPUT(lbfgs_model_mine[1].Cost,NAMED('lbfgs_Cost'));
-OUTPUT(lbfgs_model_mine[1].hdiag,NAMED('lbfgs_Hdiag'));
+// OUTPUT(lbfgs_model_mine[1].t_,NAMED('lbfgs_t'));
+// OUTPUT(lbfgs_model_mine[1].Cost,NAMED('lbfgs_Cost'));
+// OUTPUT(lbfgs_model_mine[1].hdiag,NAMED('lbfgs_Hdiag'));
+OUTPUT(lbfgs_model_mine4_1, NAMED('lbfgs_model_mine4'));
 
 CG := SA_mine.CostGrad_cal(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, MaxIter);
 //OUTPUT(CG,ALL, named ('cost_grad'));

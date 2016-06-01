@@ -162,7 +162,7 @@ WResult_test := Optimization2 (0, 0, 0, 0).WolfeLineSearch4( 1, x_test_dist,  pa
 //output (param_map)
 //EXPORT MinFUNC_4( x0,  param_map , param_num,  MaxIter = 100,  tolFun = 0.00001,  TolX = 0.000000001,  maxFunEvals = 1000,  corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
 emptyL := DATASET([], Layout_Part);
-MF2 := Optimization4 (0, 0, 0, 0).MinFUNC_4(xdist,param_map,emptyC,emptyL,emptyL,myfunc4, 5,10, 0.00001, 0.000000001,  1000, 3, 0, 0, 0,0) ;
+MF2 := Optimization4 (0, 0, 0, 0).MinFUNC_4(xdist,emptyC,emptyL,emptyL,myfunc4, 5,10, 0.00001, 0.000000001,  1000, 3, 0, 0, 0,0) ;
 
 
  SumProduct (DATASET(Layout_Part) inp1, DATASET(Layout_Part) inp2) := FUNCTION
