@@ -2,12 +2,17 @@
 IMPORT * FROM $;
 IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
+// W20160607-093421 is when I feed maryam::mytest::patches to the sparseautoencoder and trained the model
+// W20160609-100819 I feed the features extracted from digist 0 to 4 by using models build above (using patches) and test it on digist from 5 to 9, accuracy is 91%
 //This is not test on MNIST, this is test on image patches
-// LBFGS 400 iterations on ~maryam::mytest::mnist_5digits_traindata :  W20160602-132158
+
 INTEGER4 hl := 25;//number of nodes in the hiddenlayer
 INTEGER4 f := 28*28;//number of input features
 
 //input data
+
+
+
 
 value_record := RECORD
 real	f1	;
@@ -796,40 +801,15 @@ real	f783	;
 real	f784	;
 END;
 
-input_data_tmp := DATASET('~maryam::mytest::mnist_5digits_traindata', value_record, CSV); // This dataset is a subset of MNISt dtaset that includes 5 digits (0 to 4), it is used for traibn
+input_data_tmp := DATASET('~maryam::mytest::mnist_5digits_traindata', value_record, CSV);// This dataset is a subset of MNISt dtaset that includes 5 digits (0 to 4), it is used for traibn
 
-input_data_tmp_test := DATASET('~maryam::mytest::mnist_5digits_testdata', value_record, CSV); // This dataset is a subset of MNISt dtaset that includes 5 digits ( 5 to 9) , it is used for test
-
-
-
-//OUTPUT(input_data_tmp, NAMED('input_data_tmp'));
 
 ML.AppendID(input_data_tmp, id, input_data);
-ML.AppendID(input_data_tmp_test, id, input_data_test);
-//OUTPUT  (input_data, NAMED ('input_data'));
 
 
-
-sample_table := input_data;
-//OUTPUT  (sample_table, NAMED ('sample_table'));
-
-ML.ToField(sample_table, indepDataC);
-ML.ToField(input_data_test, indepDataC_test);
-//OUTPUT  (indepDataC, NAMED ('indepDataC'));
+ML.ToField(input_data, indepDataC);
 
 
-//define the parameters for the Sparse Autoencoder
-//ALPHA is learning rate
-//LAMBDA is weight decay rate
-REAL8 sparsityParam  := 0.1;
-REAL8 BETA := 3;
-REAL8 ALPHA := 0.1;
-REAL8 LAMBDA :=0.003;
-UNSIGNED2 MaxIter :=400;
-UNSIGNED4 prows:=0;
-UNSIGNED4 pcols:=0;
-UNSIGNED4 Maxrows:=0;
-UNSIGNED4 Maxcols:=0;
 //initialize weight and bias values for the Back Propagation algorithm
 IntW := DeepLearning4_1.Sparse_Autoencoder_IntWeights(f,hl);
 Intb := DeepLearning4_1.Sparse_Autoencoder_IntBias(f,hl);
@@ -837,7 +817,7 @@ Intb := DeepLearning4_1.Sparse_Autoencoder_IntBias(f,hl);
 
 
 //MINE
-SA_mine4_1 :=DeepLearning4_1.Sparse_Autoencoder_mine (f, hl, 0, 0,0,0);
+//SA_mine4_1 :=DeepLearning4_1.Sparse_Autoencoder_mine (f, hl, 392,7649, 392,7649);
 IntW1 := Mat.MU.From(IntW,1);
 
 IntW2 := Mat.MU.From(IntW,2);
@@ -847,138 +827,67 @@ Intb1 := Mat.MU.From(Intb,1);
 
 Intb2 := Mat.MU.From(Intb,2);
 
-
-// OUTPUT(IntW1,ALL, named ('IntW1'));
-// OUTPUT(IntW2,ALL, named ('IntW2'));
-// OUTPUT(IntB1,ALL, named ('IntB1'));
-// OUTPUT(IntB2,ALL, named ('IntB2'));
-
-// train the sparse autoencoer with train data
- 
-lbfgs_model_mine4_1 := SA_mine4_1.LearnC_lbfgs_4(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, MaxIter);
-
-//OUTPUT(lbfgs_model_mine4_1);
-
-
-//save the model in order to be used later
-
-MatrixModel := SA_mine4_1.Model (lbfgs_model_mine4_1);
-//OUTPUT(MatrixModel, named ('MatrixModel'));
-
-//Out := SA_mine4_1.SAOutput (indepDataC, lbfgs_model_mine4_1);
-//OUTPUT(Out, named ('Out'));
-
-Extractedweights := SA_mine4_1.ExtractWeights (lbfgs_model_mine4_1);
-//OUTPUT(Extractedweights, named ('Extractedweights'));
-
-ExtractedBias := SA_mine4_1.ExtractBias (lbfgs_model_mine4_1);
-//OUTPUT(ExtractedBias, named ('ExtractedBias'));
-
-
-W1_matrix := ML.Mat.MU.FROM(Extractedweights,1) ;
-//OUTPUT(W1_matrix, NAMED('W1_matrix'));
-
-W2_matrix := ML.Mat.MU.FROM(Extractedweights,2) ;
-//OUTPUT(W2_matrix, NAMED('W2_matrix'));
-
-b1_matrix := ML.Mat.MU.FROM(ExtractedBias,1) ;
-//OUTPUT(b1_matrix, NAMED('b1_matrix'));
-
-b2_matrix := ML.Mat.MU.FROM(ExtractedBias,2) ;
-//OUTPUT(b2_matrix, NAMED('b2_matrix'));
-
-
-// OUTPUT(W1_matrix,,'~thor::maryam::mytest::W1_matrix_MNIST_5digits1.csv',CSV(HEADING(SINGLE)));
-// OUTPUT(W2_matrix,,'~thor::maryam::mytest::W2_matrix_MNIST_5digits1.csv',CSV(HEADING(SINGLE)));
-// OUTPUT(b1_matrix,,'~thor::maryam::mytest::b1_matrix_MNIST_5digits1.csv',CSV(HEADING(SINGLE)));
-// OUTPUT(b2_matrix,,'~thor::maryam::mytest::b2_matrix_MNIST_5digits1.csv',CSV(HEADING(SINGLE)));
-
-//after SA model is learnt use it to extract features from train and test dataset
-//extract features by using the model in W20160602-132158
-optW1 := DATASET('~thor::maryam::mytest::W1_matrix_MNIST_5digits1.csv', ML.mat.Types.element, CSV(HEADING(1)));
-//OUTPUT(optW1, NAMED('optW1'));
-
-optW2 := DATASET('~thor::maryam::mytest::W2_matrix_MNIST_5digits1.csv', ML.mat.Types.element, CSV(HEADING(1)));
-//OUTPUT(optW2, NAMED('optW2'));
-
-optb1 := DATASET('~thor::maryam::mytest::b1_matrix_MNIST_5digits1.csv', ML.mat.Types.element, CSV(HEADING(1)));
-//OUTPUT(optb1, NAMED('optb1'));
-
-optb2 := DATASET('~thor::maryam::mytest::b2_matrix_MNIST_5digits1.csv', ML.mat.Types.element, CSV(HEADING(1)));
-//OUTPUT(optb2, NAMED('optb2'));
-
-//convert this to a model that can be feed to sparsequtoencoder
-
-    SAprm1_mat := optW1;
-    SAprm2_mat := optW2;
-    SAprm3_mat := optb1;
-    SAprm4_mat := optb2;
-    SAprm1_mat_no := Mat.MU.TO(SAprm1_mat,1);
-    SAprm2_mat_no := Mat.MU.TO(SAprm2_mat,2);
-    SAprm3_mat_no := Mat.MU.TO(SAprm3_mat,3);
-    SAprm4_mat_no := Mat.MU.TO(SAprm4_mat,4);
-    SAprm_MUE := SAprm1_mat_no + SAprm2_mat_no + SAprm3_mat_no + SAprm4_mat_no;
-    AppendID(SAprm_MUE, id, SAprm_MUE_id);
-    ToField (SAprm_MUE_id, SAprm_model_out, id, 'x,y,value,no');
-//extract the features for training data
-extractedfeatures_out := SA_mine4_1.SAOutput (indepDataC, SAprm_model_out);
-extractedfeatures_out_test := SA_mine4_1.SAOutput (indepDataC_test, SAprm_model_out);
-//OUTPUT(extractedfeatures_out, named ('extractedfeatures_out'));
-
-//read label for training data, this will be used to train softmax classifier
-label := DATASET('~maryam::mytest::mnist_5digits_trainlabel',Types.DiscreteField, CSV); // label correspondance to the training data
-OUTPUT(label, NAMED('label'));
-// read test labels in order to evaluate the clasifier
-label_test := DATASET('~maryam::mytest::mnist_5digits_testlabel',Types.DiscreteField, CSV); // label correspondance to the training data
-OUTPUT(label_test, NAMED('label_test'));
-// based on new traning data which is extracted features SA extracted from traning data and label train a softmax
-LoopNum := 100; // Number of iterations in softmax algortihm
-softLAMBDA := 0.0001; // weight decay parameter in  claculation of SoftMax Cost fucntion
-
-//input data
-
-
-//initialize THETA
-Numclass := MAX (label, label.value);
-OUTPUT  (Numclass, ALL, NAMED ('Numclass'));
-InputSize := MAX (extractedfeatures_out,extractedfeatures_out.number);
-OUTPUT  (InputSize, ALL, NAMED ('InputSize'));
-T1 := Mat.RandMat (Numclass,InputSize+1);
-OUTPUT  (T1, ALL, NAMED ('T1'));
-IntTHETA := Mat.Scale (T1,0.005);
-OUTPUT  (IntTHETA, ALL, NAMED ('IntTHETA'));
-//SoftMax_Sparse Classfier
-
-softtrainer:= ML.Classify.SoftMax_mine( softLAMBDA, ALPHA, LoopNum, 0, 0, 0,  0);
-
-//Learning Phase
-softMod := softtrainer.LearnC_lbfgs_4(IntTHETA,extractedfeatures_out, label);
- 
-//OUTPUT(softMod,,'~thor::maryam::mytest::softmax_model_MNIST_5digits1.csv',CSV(HEADING(SINGLE)));
-//use the learnt sofmax model (softmod) to do prediction on test data
-softMod := DATASET('~thor::maryam::mytest::softmax_model_MNIST_5digits1.csv', ML.Types.NumericField, CSV(HEADING(1)));
-OUTPUT  (softMod, ALL, NAMED ('softMod'));
-dist := softtrainer.ClassProbDistribC(extractedfeatures_out_test,softMod );
-classified := softtrainer.ClassifyC(extractedfeatures_out_test,softMod);
-OUTPUT  (dist, ALL, NAMED ('dist'));
-OUTPUT  (classified, ALL, NAMED ('classified'));
-//calculate accuracy
-acc_rec := RECORD
-  ML.Types.t_RecordID id;
-  ML.Types.t_Discrete actual_class;
-  ML.Types.t_Discrete predicted_class;
-  INTEGER match; // if actual_class= predicted_class then match=1 else match=0
+X := indepDataC;
+dt := Types.ToMatrix (X);
+dTmp := dt;
+d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
+m := MAX (d, d.y); //number of samples
+sizeRec := RECORD
+PBblas.Types.dimension_t m_rows;
+PBblas.Types.dimension_t m_cols;
+PBblas.Types.dimension_t f_b_rows;
+PBblas.Types.dimension_t f_b_cols;
 END;
+//Map for Matrix d.
+dstats := Mat.Has(d).Stats;
+d_n := dstats.XMax;
+d_m := dstats.YMax;
+output_num := d_n;
+derivemap := PBblas.AutoBVMap(d_n, d_m,392,7649);
+sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derivemap.part_rows(1),derivemap.part_cols(1)}], sizeRec);
 
-acc_rec build_acc (label_test l, classified r) := TRANSFORM
-  SELF.id := l.id;
-  SELF.actual_class := l.value;
-  SELF.predicted_class := r.value;
-  SELF.match := IF (l.value=r.value, 1, 0);
+
+
+//Create block matrix d
+dmap := PBblas.Matrix_Map(sizeTable[1].m_rows,sizeTable[1].m_cols,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+ddist := DMAT.Converted.FromElement(d,dmap);
+//Creat block matrices for weights
+w1_mat := IntW1;
+w1_mat_x := Mat.Has(w1_mat).Stats.Xmax;
+w1_mat_y := Mat.Has(w1_mat).Stats.Ymax;
+w1map := PBblas.Matrix_Map(w1_mat_x, w1_mat_y, MIN([sizeTable[1].f_b_rows,w1_mat_x ]), sizeTable[1].f_b_rows);
+w1dist := DMAT.Converted.FromElement(w1_mat,w1map);
+
+
+
+b1vec := Intb1;
+b1vec_x := Mat.Has(b1vec).Stats.Xmax;
+b1vecmap := PBblas.Matrix_Map(b1vec_x, 1, MIN([sizeTable[1].f_b_rows,b1vec_x]), 1);
+b1vecdist := DMAT.Converted.FromElement(b1vec,b1vecmap);
+
+
+
+
+b1map := PBblas.Matrix_Map(b1vec_x, m, MIN([b1vec_x,sizeTable[1].f_b_rows]) , sizeTable[1].f_b_cols);
+Ones_VecMap := PBblas.Matrix_Map(1, m, 1,sizeTable[1].f_b_cols);
+//New Vector Generator
+Layout_Cell gen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
+SELF.y := ((c-1) % NumRows) + 1;
+SELF.x := ((c-1) DIV NumRows) + 1;
+SELF.v := 1;
 END;
+//Create Ones Vector for the calculations in the step fucntion
+Ones_Vec := DATASET(m, gen(COUNTER, m));
+Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
+b1mt := PBblas.PB_dgemm(FALSE, FALSE, 1.0,b1vecmap, b1vecdist, Ones_VecMap, Ones_Vecdist, b1map);
 
-acc_data := JOIN(label_test, classified, LEFT.id=RIGHT.id,build_acc(LEFT,RIGHT));
-OUTPUT(acc_data);
-OUTPUT(sum(acc_data, acc_data.match));
-OUTPUT(MAX(label_test, label_test.id));
-OUTPUT(sum(acc_data, acc_data.match)/MAX(label_test, label_test.id), NAMED('accuracy'));
+// dx1 this does not work and gives the error
+dx1 := PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1dist, dmap, ddist, b1map,b1mt, 0.1);
+
+//dx2 works with no error
+dx_ := PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1dist, dmap, ddist, b1map);
+dx2 := PBblas.PB_daxpy(0.1, dx_, b1mt);
+OUTPUT(dx1);
+OUTPUT(b1mt);
+OUTPUT(w1dist);
+OUTPUT(b1vecdist);

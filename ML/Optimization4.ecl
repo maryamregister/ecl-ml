@@ -3556,7 +3556,7 @@ END;
     min_result_nextitr := LOOP(min_result_firstitr, MaxIter ,LEFT.break_cond=-1, min_step(ROWS(LEFT),COUNTER));      
     min_result := IF(first_itr_break!=-1, min_result_firstitr, min_result_nextitr );
     //RETURN min_result; orig
-    RETURN  LOOP(min_result_firstitr, 1 ,LEFT.break_cond=-1, min_step(ROWS(LEFT),COUNTER));   
+    RETURN  LOOP(min_result_firstitr, 400 ,LEFT.break_cond=-1, min_step(ROWS(LEFT),COUNTER));   
     //RETURN min_result_firstitr;
     
     //RETURN min_step(min_result_firstitr,1);
