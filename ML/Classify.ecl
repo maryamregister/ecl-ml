@@ -1402,7 +1402,7 @@ EXPORT  Soft_compatible_lbfgs( DATASET(Layout_Part) theta, DATASET(Types.Numeric
     RETURN ThetaGradno + Cost_part_no ;
 
   END; //END Soft_compatible_lbfgs 
-EXPORT SoftMax_mine( REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
+EXPORT SoftMax_lbfgs( REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
   UNSIGNED4 prows=0, UNSIGNED4 pcols=0,UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE(DEFAULT)
   
    Soft(DATASET (MAT.Types.Element) IntTHETA, DATASET(Types.NumericField) X,DATASET(Types.NumericField) Y) := MODULE
@@ -1483,7 +1483,7 @@ EXPORT SoftMax_mine( REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
   
     
  
-    lbfgs_results := Optimization4 (0, 0, 0, 0).MinFUNC_4(IntTHETAdist,soft_params,ddist,groundTruthdist,Soft_compatible_lbfgs, paramnumber,LBFGS_MAXitr, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0) ;
+    lbfgs_results := Optimization (0, 0, 0, 0).MinFUNC(IntTHETAdist,soft_params,ddist,groundTruthdist,Soft_compatible_lbfgs, paramnumber,LBFGS_MAXitr, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0) ;
     
     
     maxno := MAX(lbfgs_results, lbfgs_results.no);
@@ -1496,90 +1496,11 @@ EXPORT SoftMax_mine( REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
     
     //EXPORT Mod := lbfgs_results;
   END; //END Soft
-  EXPORT LearnC_lbfgs_4(DATASET (MAT.Types.Element) IntTHETA, DATASET(Types.NumericField) Indep, DATASET(Types.DiscreteField) Dep) := Soft(IntTHETA, Indep,PROJECT(Dep,Types.NumericField)).mod;
+  EXPORT LearnC_lbfgs(DATASET (MAT.Types.Element) IntTHETA, DATASET(Types.NumericField) Indep, DATASET(Types.DiscreteField) Dep) := Soft(IntTHETA, Indep,PROJECT(Dep,Types.NumericField)).mod;
   EXPORT Model(DATASET(Types.NumericField) mod) := FUNCTION
     o:= Types.ToMatrix (Mod);
     RETURN o;
-  END; // END Model
-  
-  
-  EXPORT ClassProbDistribC_mine(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) mod) :=FUNCTION
-    // take the same steps take in step function to calculate prob
-    X := Indep;
-    dt := Types.ToMatrix (X);
-    dTmp := Mat.InsertColumn(dt,1,1.0);
-    d := Mat.Trans(dTmp);
-    sizeRec := RECORD
-      PBblas.Types.dimension_t m_rows;
-      PBblas.Types.dimension_t m_cols;
-      PBblas.Types.dimension_t f_b_rows;
-      PBblas.Types.dimension_t f_b_cols;
-    END;
-   //Map for Matrix d.
-    havemaxrow := maxrows > 0;
-    havemaxcol := maxcols > 0;
-    havemaxrowcol := havemaxrow and havemaxcol;
-    dstats := Mat.Has(d).Stats;
-    d_n := dstats.XMax;
-    d_m := dstats.YMax;
-    derivemap := IF(havemaxrowcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows, maxcols),
-                   IF(havemaxrow, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows),
-                      IF(havemaxcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,,maxcols),
-                      PBblas.AutoBVMap(d_n, d_m,prows,pcols))));
-    sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derivemap.part_rows(1),derivemap.part_cols(1)}], sizeRec);
-    dmap := PBblas.Matrix_Map(sizeTable[1].m_rows,sizeTable[1].m_cols,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
-    //Create block matrix d
-    ddist := DMAT.Converted.FromElement(d,dmap);
-    param := Model (mod);//convert mod to matrix
-    NumClass := Mat.Has(param).Stats.XMax;
-    Ones_VecMap := PBblas.Matrix_Map(1, NumClass, 1, NumClass);
-    //New Vector Generator
-    Layout_Cell gen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
-      SELF.y := ((c-1) % NumRows) + 1;
-      SELF.x := ((c-1) DIV NumRows) + 1;
-      SELF.v := 1;
-    END;
-    //Create Ones Vector for the calculations in the step fucntion
-    Ones_Vec := DATASET(NumClass, gen(COUNTER, NumClass));
-    Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
-    THETAmap := PBblas.Matrix_Map(NumClass, sizeTable[1].m_rows, NumClass, sizeTable[1].f_b_rows);
-    THETA := DMAT.Converted.FromElement(param, THETAmap);
-    txmap := PBblas.Matrix_Map(NumClass, sizeTable[1].m_cols, NumClass, sizeTable[1].f_b_cols);
-    SumColMap := PBblas.Matrix_Map(1, sizeTable[1].m_cols, 1, sizeTable[1].f_b_cols);
-    col_col_map := PBblas.Matrix_Map(sizeTable[1].m_cols, sizeTable[1].m_cols, sizeTable[1].f_b_cols, sizeTable[1].f_b_cols);
-    PBblas.Types.value_t reci(PBblas.Types.value_t v,PBblas.Types.dimension_t r,PBblas.Types.dimension_t c) := 1/v;
-
-    PBblas.Types.value_t e(PBblas.Types.value_t v,PBblas.Types.dimension_t r,PBblas.Types.dimension_t c) := exp(v);
-    
-    // tx=(theta*d);
-      tx := PBblas.PB_dgemm(FALSE, FALSE, 1.0, THETAmap, THETA, dmap, ddist, txmap);
-      // tx_M = bsxfun(@minus, tx, max(tx, [], 1));
-      tx_mat := DMat.Converted.FromPart2Elm(tx);
-      MaxCol_tx_mat := Mat.Has(tx_mat).MaxCol;
-      MaxCol_tx := DMAT.Converted.FromElement(MaxCol_tx_mat, SumColMap);
-      tx_M := PBblas.PB_dgemm(TRUE, FALSE, -1.0, Ones_VecMap, Ones_Vecdist, SumColMap, MaxCol_tx, txmap, tx, 1.0);
-     
-      exp_tx_M := PBblas.Apply2Elements(txmap, tx_M, e);
-      //Prob = bsxfun(@rdivide, exp_tx_M, sum(exp_tx_M));
-      SumCol_exp_tx_M := PBblas.PB_dgemm(FALSE, FALSE, 1.0, Ones_VecMap, Ones_Vecdist, txmap, exp_tx_M, SumColMap);
-      SumCol_exp_tx_M_rcip := PBblas.Apply2Elements(SumColMap, SumCol_exp_tx_M, Reci);
-      SumCol_exp_tx_M_rcip_diag := PBblas.Vector2Diag(SumColMap, SumCol_exp_tx_M_rcip, col_col_map);
-      Prob := PBblas.PB_dgemm(FALSE, FALSE, 1.0, txmap, exp_tx_M, col_col_map, SumCol_exp_tx_M_rcip_diag, txmap);
-    
-    Prob_mat := DMAT.Converted.FromPart2Elm (Prob);
-    Types.l_result tr(Mat.Types.Element le) := TRANSFORM
-      SELF.value := le.x;
-      SELF.id := le.y;
-      SELF.number := 1; //number of class
-      SELF.conf := le.value;
-    END;
-    
-    
-     
-    RETURN Prob;
-  END; // END ClassProbDistribC_mine Function  
-  
-  
+  END; // END Model  
   EXPORT ClassProbDistribC(DATASET(Types.NumericField) Indep,DATASET(Types.NumericField) mod) :=FUNCTION
     // take the same steps take in step function to calculate prob
     X := Indep;
@@ -1675,7 +1596,7 @@ EXPORT SoftMax_mine( REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100,
     classified := Sseq (Sseq.Sequence=0);
     RETURN PROJECT(classified,l_result);
   END; // END ClassifyC Function
-END; //END SoftMax_mine
+END; //END SoftMax_lbfgs
 /* From Wikipedia: 
 http://en.wikipedia.org/wiki/Decision_tree_learning#General
 "... Decision tree learning is a method commonly used in data mining.

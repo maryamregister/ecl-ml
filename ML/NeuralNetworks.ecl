@@ -22,7 +22,7 @@ EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net,UNSIGNED4 prows=0, UNSIG
     b1rows := net(id=(2))[1].value;
     b1cols := 1;
     b1size := b1rows*b1cols;
-    b1 := DATASET(b1size, RandGen(COUNTER, b1rows),DISTRIBUTED);
+    b1 := DATASET(b1size, RandGen(COUNTER, b1rows));
     b1no := Mat.MU.To(b1, 1);
     //step function for initialize the rest of the weight matrices
     Step(DATASET(Mat.Types.MUElement) InputBias, INTEGER coun) := FUNCTION
@@ -30,7 +30,7 @@ EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net,UNSIGNED4 prows=0, UNSIG
       brows := net(id=(L+1))[1].value;
       bcols := 1;
       bsize := brows*bcols;
-      b := DATASET(bsize, RandGen(COUNTER, brows),DISTRIBUTED);
+      b := DATASET(bsize, RandGen(COUNTER, brows));
       bno := Mat.MU.To(b, L);
       RETURN InputBias+bno;
     END;
@@ -61,7 +61,7 @@ EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net,UNSIGNED4 prows=0, UNSIG
     w1rows := net(id=2)[1].value;
     w1cols := net(id=1)[1].value;
     w1size := w1rows*w1cols;
-    w1 := DATASET(w1size, RandGen(COUNTER, w1rows),DISTRIBUTED);
+    w1 := DATASET(w1size, RandGen(COUNTER, w1rows));
     w1no := Mat.MU.To(w1, 1);
     //step function for initialize the rest of the weight matrices
     Step(DATASET(Mat.Types.MUElement) InputWeight, INTEGER coun) := FUNCTION
@@ -69,7 +69,7 @@ EXPORT NeuralNetworks (DATASET(Types.DiscreteField) net,UNSIGNED4 prows=0, UNSIG
       wrows := net(id=(L+1))[1].value;
       wcols := net(id=L)[1].value;
       wsize := wrows*wcols;
-      w := DATASET(wsize, RandGen(COUNTER, wrows),DISTRIBUTED);
+      w := DATASET(wsize, RandGen(COUNTER, wrows));
       wno := Mat.MU.To(w, L);
       RETURN InputWeight+wno;
     END;

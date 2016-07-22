@@ -10,12 +10,33 @@ SHARED emptyMUelm := DATASET([], Mat.Types.MUElement);
 
 EXPORT DeepLearning := MODULE
 EXPORT Sparse_Autoencoder_IntWeights (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLayerNodes) := FUNCTION
-  net := DATASET([
-  {1, 1, NumberofFeatures},
-  {2,1,NumberofHiddenLayerNodes},
-  {3,1,NumberofFeatures}],
-  Types.DiscreteField);
-  RETURN NeuralNetworks(net).IntWeights;
+    r := SQRT(6) / SQRT (NumberofFeatures + NumberofHiddenLayerNodes + 1);
+    //Generate a random number
+    Produce_Random () := FUNCTION
+      G := 1000000;
+      Rnd_ := (RANDOM()%G) / (REAL8)G;
+      Rnd := Rnd_ * 2 * r - r;
+      RETURN Rnd;
+    END;
+    //New Randome Matrix Generator
+    Mat.Types.Element RandGen(UNSIGNED4 c, UNSIGNED4 NumRows) := TRANSFORM
+      SELF.x := ((c-1) % NumRows) + 1;
+      SELF.y := ((c-1) DIV NumRows) + 1;
+      SELF.value := Produce_Random();
+    END;
+    //Creat the first weight matrix with no=1 (weight matrix between layer 1 and layer 2)
+    w1rows := NumberofHiddenLayerNodes;
+    w1cols := NumberofFeatures;
+    w1size := w1rows*w1cols;
+    w1 := DATASET(w1size, RandGen(COUNTER, w1rows));
+    w1no := Mat.MU.To(w1, 1);
+    
+    w2rows := NumberofFeatures;
+    w2cols := NumberofHiddenLayerNodes;
+    w2size := w1rows*w1cols;
+    w2 := DATASET(w2size, RandGen(COUNTER, w2rows));
+    w2no := Mat.MU.To(w2, 2);
+  RETURN w1no + w2no;
 END;
 EXPORT Sparse_Autoencoder_IntBias (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLayerNodes) := FUNCTION
   net := DATASET([
@@ -121,7 +142,7 @@ EXPORT Sparse_Autoencoder (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLay
       SELF.v := 1;
     END;
     //Create Ones Vector for the calculations in the step fucntion
-    Ones_Vec := DATASET(m, gen(COUNTER, m),DISTRIBUTED);
+    Ones_Vec := DATASET(m, gen(COUNTER, m));
     Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
     //FF2 returns a2
     FF2(DATASET(Layout_Part) w1, DATASET(Layout_Part) b1v):= FUNCTION
@@ -253,327 +274,10 @@ EXPORT Sparse_Autoencoder (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLay
     SAprm_MUE := SAprm1_mat_no + SAprm2_mat_no + SAprm3_mat_no + SAprm4_mat_no;
     AppendID(SAprm_MUE, id, SAprm_MUE_id);
     ToField (SAprm_MUE_id, SAprm_MUE_out, id, 'x,y,value,no');
-    
-    //This function returns the cost and gradient of the Sparse Autoencoder parameters
-    //the output is in numericfield format where w1, w2, b1, b2 are listed columnwise and the cost value comes at the end and the ids are assigned in this order:
-    //first column of w1, second column of w1,..., first column of w2, second colun of w2, ..., b1,b2,cost
-    SparseParam_CostGradients :=  FUNCTION
-      w1m := w1dist;
-      w2m := w2dist;
-      b1v := b1vecdist;
-      b2v := b2vecdist;
-      a2 := FF2 (w1m, b1v);
-      a3 := FF3 (w2m, b2v, a2);
-      d3 := DELTA3 (a3);
-      rohat_a2 := rohat(a2);
-      d2 := DELTA2 (w2m, a2, d3,rohat_a2);
-      wg1 := WeightGrad1 (w1m, d2);
-      wg2 := WeightGrad2 (w2m, d3, a2);
-      bg1 := BiasGrad1 (d2);
-      bg2 := BiasGrad2 (d3);
-      wg1_mat := DMat.Converted.FromPart2Elm (wg1);
-      wg2_mat := DMat.Converted.FromPart2Elm (wg2);
-      bg1_mat := DMat.Converted.FromPart2Elm (bg1);
-      bg2_mat := DMat.Converted.FromPart2Elm (bg2);
-      wg1_mat_no := Mat.MU.TO(wg1_mat,1);
-      wg2_mat_no := Mat.MU.TO(wg2_mat,2);
-      bg1_mat_no := Mat.MU.TO(bg1_mat,3);
-      bg2_mat_no := Mat.MU.TO(bg2_mat,4);
-      prm_MUE := wg1_mat_no + wg2_mat_no + bg1_mat_no + bg2_mat_no;
-      //calculate cost
-      //PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1, dmap, ddist, b1map, b1m, 1.0);
-      // squared_error_cost= 0.5*sum(sum((x-a3).^2));
-      // cost=(1/m)*squared_error_cost+(lambda/2)*(sum(W2(:).^2)+sum(W1(:).^2))+beta*sum(KL(sparsityParam,rhohat));
-      squared_error_cost := 0.5*PBblas.SumElements(PBblas.Apply2Elements(dmap, PBblas.PB_daxpy(-1.0, a3, ddist), pow2));
-      cost_term1 := (1/m)*squared_error_cost;
-      cost_term2 := (lambda/2)* PBblas.SumElements(PBblas.Apply2Elements(dmap, w2m, pow2));
-      cost_term3 := (lambda/2)* PBblas.SumElements(PBblas.Apply2Elements(dmap, w1m, pow2));
-      PBblas.Types.value_t klterm(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := sparsityParam * LN(sparsityParam/v) + (1-sparsityParam) * LN ((1-sparsityParam)/(1-v));
-      KL := PBblas.Apply2Elements (Hiddmap,rohat_a2,klterm);
-      cost_term4 := beta * PBblas.SumElements(KL);
-      cost := cost_term1 + cost_term2 + cost_term3 +cost_term4;    
-      //costfield := DATASET ([{1,1,cost,5}],ML.Mat.Types.MUElement);
-      //first sort the retunring values, this makes sure that they are going to be retrived correctly later in SparseAutoencoderCost
-      // sorted_prm_MUE := SORT (prm_MUE+costfield,no, y, x);
-      // AppendID(sorted_prm_MUE, id, prm_MUE_id);
-      // ToField (prm_MUE_id, costgrad_out, id, 'x,y,value,no');
-      // toberetun :=costgrad_out(number=3);//return only value fields
-
-      nf := NumberofFeatures;
-      nh := NumberofHiddenLayerNodes;
-      nfh := nf*nh;
-      nfh_2 := 2*nfh;
-      Types.NumericField Wshape (Mat.Types.MUElement l) := TRANSFORM
-        SELF.id := IF (l.no=1,(l.y-1)*nh+l.x,nfh+(l.y-1)*nf+l.x);
-        SELF.number := 1;
-        SELF.value := l.value;
-      END;
-      W_field := PROJECT (wg1_mat_no + wg2_mat_no,Wshape(LEFT));
-      
-      Types.NumericField Bshape (Mat.Types.MUElement l) := TRANSFORM
-        SELF.id := IF (l.no=3,nfh_2+l.x,nfh_2+l.x+nh);
-        SELF.number := 1;
-        SELF.value := l.value;
-      END;
-      B_field := PROJECT (bg1_mat_no + bg2_mat_no,Bshape(LEFT));
-      cost_field := DATASET ([{nfh_2+nf+nh+1,1,cost}],Types.NumericField);
-      RETURN W_field+B_field+cost_field;
-      //w// RETURN IF (lambda=10 ,cost_field ,W_field+B_field+cost_field);
-      //w//RETURN IF (lambda=10 ,W_field ,W_field+B_field+cost_field);
-      //w// RETURN IF (lambda=10 ,B_field ,W_field+B_field+cost_field);
-     //w// RETURN IF (lambda=10 ,B_field+cost_field ,W_field+B_field+cost_field);
-    //w// RETURN IF (lambda=10 ,W_field+B_field+cost_field ,W_field+B_field+cost_field);
-  //w//  RETURN IF (FALSE ,W_field+B_field+cost_field ,W_field+B_field+cost_field);
-  //w//RETURN W_field+B_field+cost_field;
-    END;//END SparseParam_CostGradients
-    //this is actually the first implementation of SparseParam_CostGradients where it would simply convert MUE format to filed which was not consistent to what lbfgs expect the costfunc to do
-    //no=2 belongs to w2
-    //no=3 belongs to b1
-    //no=4 belongas to b2
-    //no=5 belongs to cost
-    SparseParam_CostGradients2 :=  FUNCTION
-      w1m := w1dist;
-      w2m := w2dist;
-      b1v := b1vecdist;
-      b2v := b2vecdist;
-      a2 := FF2 (w1m, b1v);
-      a3 := FF3 (w2m, b2v, a2);
-      d3 := DELTA3 (a3);
-      rohat_a2 := rohat(a2);
-      d2 := DELTA2 (w2m, a2, d3,rohat_a2);
-      wg1 := WeightGrad1 (w1m, d2);
-      wg2 := WeightGrad2 (w2m, d3, a2);
-      bg1 := BiasGrad1 (d2);
-      bg2 := BiasGrad2 (d3);
-      wg1_mat := DMat.Converted.FromPart2Elm (wg1);
-      wg2_mat := DMat.Converted.FromPart2Elm (wg2);
-      bg1_mat := DMat.Converted.FromPart2Elm (bg1);
-      bg2_mat := DMat.Converted.FromPart2Elm (bg2);
-      wg1_mat_no := Mat.MU.TO(wg1_mat,1);
-      wg2_mat_no := Mat.MU.TO(wg2_mat,2);
-      bg1_mat_no := Mat.MU.TO(bg1_mat,3);
-      bg2_mat_no := Mat.MU.TO(bg2_mat,4);
-      prm_MUE := wg1_mat_no + wg2_mat_no + bg1_mat_no + bg2_mat_no;
-      AppendID(prm_MUE, id, prm_MUE_id);
-      
-      
-      //calculate cost
-      //PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1, dmap, ddist, b1map, b1m, 1.0);
-      // squared_error_cost= 0.5*sum(sum((x-a3).^2));
-      // cost=(1/m)*squared_error_cost+(lambda/2)*(sum(W2(:).^2)+sum(W1(:).^2))+beta*sum(KL(sparsityParam,rhohat));
-      squared_error_cost := 0.5*PBblas.SumElements(PBblas.Apply2Elements(dmap, PBblas.PB_daxpy(-1.0, a3, ddist), pow2));
-      cost_term1 := (1/m)*squared_error_cost;
-      cost_term2 := (lambda/2)* PBblas.SumElements(PBblas.Apply2Elements(dmap, w2m, pow2));
-      cost_term3 := (lambda/2)* PBblas.SumElements(PBblas.Apply2Elements(dmap, w1m, pow2));
-      PBblas.Types.value_t klterm(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := sparsityParam * LN(sparsityParam/v) + (1-sparsityParam) * LN ((1-sparsityParam)/(1-v));
-      KL := PBblas.Apply2Elements (Hiddmap,rohat_a2,klterm);
-      cost_term4 := beta * PBblas.SumElements(KL);
-      cost := cost_term1 + cost_term2 + cost_term3 +cost_term4;    
-      costidfield := DATASET ([{18,1,1,cost,5}],{ML.Types.t_RecordID id:=0;ML.Mat.Types.MUElement;});
-      
-      ToField (costidfield+prm_MUE_id, costgrad_out, id, 'x,y,value,no');
-      RETURN costgrad_out;
-    END;//END SparseParam_CostGradients2
-    
-    
-    
-    //if learning_param=simple then mod = SAprm_MUE_out, if learning_param = lbfgs then mod = SparseParam_CostGradients
-    //EXPORT Mod := SAprm_MUE_out; orig , also make sure where "mod" is used and change them accordingly (mod is used in SparseAutoencoderCost)
-    EXPORT mod := SAprm_MUE_out; // orig
+    EXPORT Mod := SAprm_MUE_out; 
   END;//END SA
-  
-  
-  
+  EXPORT LearnC (DATASET(Types.NumericField) Indep,DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 BETA=3, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100) := SA(Indep,IntW,Intb, BETA,sparsityParam,LAMBDA, ALPHA,  MaxIter).mod;
 
-  //theta includes the weight and bias matrices for the SparseAutoencoder in a numericfield dataset,below it is explained how this dataset is aquired
-  //1- there is a Mat.Types.MUElement  dataset where that no=1 is w1, no=2 is w2, no =3 is b1 and no = 4 is b4
-  //2-this dataset gets sorted based on (no->y->x)
-  //3-the dataset is then converted to numeric field format
-  //4-only the recordsets where number =3 (the corresponding "value" field in the Mat.Types.MUElement record) are returned 
-  //CostFunc_params includes the parameters that the sparse autoencoder algortihm need : REAL8 BETA, REAL8 sparsityParam, , REAL8 LAMBDA,
-  // CostFunc_params = DATASET([{1, 1, BETA},{2,1,sparsityParam},{3,1,LAMBDA}], Types.NumericField);
-  SparseAutoencoderCost (DATASET(Types.NumericField) theta, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel=emptyC):= FUNCTION
-    //Extract weights and bias matrices from theta by using the numebr of hidden and visible nodes
-    nf := NumberofFeatures;
-    nh := NumberofHiddenLayerNodes;
-    nfh := nf*nh;
-    nfh_2 := 2*nfh;
-    //this transfrom converts the weight part of the theta (id>=1 and id <=2*nfh) to a MUE dataset where W1 has no=1 and W2 has no =2
-    Mat.Types.MUElement Wreshape (Types.NumericField l) := TRANSFORM
-      no_temp := (l.id DIV (nfh+1))+1;
-      SELF.no := no_temp;
-      SELF.x := IF (no_temp=1, 1+((l.id-1)%nh) , 1+((l.id-1-nfh)%nf));
-      SELF.y := IF (no_temp=1, ((l.id-1) DIV nh)+1, ((l.id-1-nfh) DIV nf)+1);
-      SELF.value := l.value;
-    END;
-    SA_W := PROJECT (theta(id<=2*nfh),Wreshape(LEFT));
-    //this transfrom converts the bias part of the theta (id>=2*nfh+1) to a MUE dataset where b1 has no=1 and b2 has no =2
-    Mat.Types.MUElement Breshape (Types.NumericField l) := TRANSFORM
-      no_temp := IF (l.id-nfh_2<=nh,1,2);
-      SELF.no := no_temp;
-      SELF.x := IF (no_temp =1 ,l.id-nfh_2, l.id-nfh_2-nh);
-      SELF.y := 1;
-      SELF.value := l.value;
-    END;
-    SA_B := PROJECT (theta(id>nfh_2),Breshape(LEFT));
-
-    
-    // thetalD_Map :=	DATASET([{'id','ID'},{'x','1'},{'y','2'},{'value','3'},{'no','4'}], {STRING orig_name; STRING assigned_name;});
-    // FromField(theta,Mat.Types.MUElement,params,thetalD_Map);
-    // SA_weights := params (no<3);
-    // B := params (no>2 AND no<5);
-    // Mat.Types.MUElement Bno (Mat.Types.MUElement l) := TRANSFORM
-      // SELF.no := l.no-2;
-      // SELF := l;
-    // END;
-    // SA_bias := PROJECT (B,Bno(LEFT));
-    //extract the sparseautoencoder parameters from CostFunc_params
-    SA_BETA := CostFunc_params(id=1)[1].value;
-    SA_sparsityparam := CostFunc_params(id=2)[1].value;
-    SA_LAMBDA := CostFunc_params(id=3)[1].value;
-    
-    //orig    
-    //my test starts
-    mytest := CostFunc_params(id=1)[1].number;
-    
-    
-    Cost_Grad := SA(TrainData,SA_W,SA_B, SA_BETA,SA_sparsityparam,SA_LAMBDA).mod;//orig , if you change the output of mod, don't forget to change it here as well
-    Cost_Grad2 := SA(TrainData,SA_W,SA_B, SA_BETA,SA_sparsityparam,0.1).mod;
-   //w// RETURN IF (mytest=11, DATASET([{100,200,300}],Types.NumericField), Cost_Grad);
-   //w// RETURN IF (mytest=11, theta, Cost_Grad);
-   //w//RETURN IF (mytest=180, Cost_Grad2, Cost_Grad);
-   //NW// RETURN IF (FALSE, Cost_Grad2, Cost_Grad);
-   RETURN IF (mytest=180, Cost_Grad2, Cost_Grad);
-   //RETURN IF (FALSE, Cost_Grad2, Cost_Grad);
-    //RETURN Cost_Grad; orig
-  END; //end SparseAutoencoderCost
-  EXPORT LearnC_lbfgs(DATASET(Types.NumericField) Indep,DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 BETA=0.1, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, UNSIGNED2 MaxIter=100) := FUNCTION
-
-    
-    //prepare the parameters to be passed to MinFUNC
-    //theta
-    //convert IntW and Intb to NumericField format
-    nf := NumberofFeatures;
-    nh := NumberofHiddenLayerNodes;
-    nfh := nf*nh;
-    nfh_2 := 2*nfh;
-    Types.NumericField Wshape (Mat.Types.MUElement l) := TRANSFORM
-      SELF.id := IF (l.no=1,(l.y-1)*nh+l.x,nfh+(l.y-1)*nf+l.x);
-      SELF.number := 1;
-      SELF.value := l.value;
-    END;
-    W_field := PROJECT (IntW,Wshape(LEFT));
-    
-    Types.NumericField Bshape (Mat.Types.MUElement l) := TRANSFORM
-      SELF.id := IF (l.no=1,nfh_2+l.x,nfh_2+l.x+nh);
-      SELF.number := 1;
-      SELF.value := l.value;
-    END;
-    B_field := PROJECT (Intb,Bshape(LEFT));    
-    
-    //CostFunc_params
-    CostFunc_params_input := DATASET([{1, 1, BETA},{2,1,sparsityParam},{3,1,LAMBDA}], Types.NumericField);
-    //MinFUNC( x0,CostFunc ,  CostFunc_params, TrainData ,  TrainLabel,  MaxIter = 500,  tolFun = 0.00001, TolX = 0.000000001,  maxFunEvals = 1000,  corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
-    LearntMod:=  Optimization (0, 0, 0, 0).MinFUNC (W_field+B_field, SparseAutoencoderCost, CostFunc_params_input, Indep , emptyC, MaxIter, 0.00001, 0.000000001,100, 3,0, 0, 0,0);
-  RETURN LearntMod;
-  
-  
-  
- /* 
-   CostFunc_params_input := DATASET([{1, 1, BETA},{2,1,sparsityParam},{3,1,LAMBDA}], Types.NumericField);
-  
-x:= DATASET([
-    {1,	1,	0.006044495885799916},
- {2	,1,	0.009318789063606572},
- {3	,1,	0.01018669626556341},
- {4	,1,	0.006171506619406089},
- {5	,1,	0.006128289843967584},
- {6	,1,	0.007025748362465625},
- {7,	1,	-0.004510862649502231},
- {8,	1,	-0.006469218178418376},
- {9,	1,	-0.006271200900827688},
- {10,	1,	-0.004941312737885555},
- {11,	1,	-0.004016700701096238},
- {12,	1,	-0.006086972665563899},
- {13,	1,	-2.215334899314491},
- {14	,1	,-2.222115123936652},
- {15,	1	,0.139947050029807},
- {16	,1	,0.07317247799046184},
- {17	,1,	-0.1951463119408574}
-
-   ],Types.NumericField);
-d:= DATASET ([
-    {9	,1	,0.01310459857389977},
-{10,	1	,0.0102596486212567},
-{11,	1	,0.008379149719670206},
-{12,	1,	0.01259729863630003},
-{13,	1,	0.0277168106806592},
-{14	,1,	0.02799687919365262},
-{15	,1,	-0.003591687736872379},
-{16	,1,	-0.00341460806949099},
-{17,	1,	-0.001927009374861092},
-{1	,1,	0.00791149140385727},
-{2	,1,	-0.001359049696644065},
-{3	,1,	-0.001355452314727256},
-{4	,1,	0.004057234572179064},
-{5	,1,	0.004584583276707946},
-{6	,1	,0.0003721016522158791},
-{7	,1	,0.008886026646056226},
-{8	,1,	0.01366528895001707}
-
-   ],Types.NumericField);
-t:=1;
-
-p_um := MAX (x,id);
-
-
-
-g := DATASET([
-   {13,	1,	-0.001845976252393845},
-{14,	1	,-0.003641821060653878},
-{15,	1	,0.0003392085641840357},
-{16,	1	,0.0003392222731448309},
-{17,	1	,0.0002635766539010679},
-{1	,1	,-0.0003665246484459359},
-{7,	1	,-0.0004390755921208298},
-{2,	1	,-0.0009998691231218456},
-{8,	1,	-0.0006480423312669389},
-{3,	1	,8.728925193812395e-05},
-{4,	1	,-0.001249349130128777},
-{9	,1	,-0.0006171297638230355},
-{5	,1	,-0.0002054446299479931},
-{10,	1	,-0.0004867139520042107},
-{11	,1	,-0.0003965699748878922},
-{6	,1	,-0.0009270386230434895},
-{12	,1,	-0.000595955057843322}
-
-],Types.NumericField);
-
-f := 0.1397830237894385;
-
-
-
-//gtd = d'*d;
-gtdT := ML.Mat.Mul (ML.Mat.Trans(ML.Types.ToMatrix(g)),ML.Types.ToMatrix(d));
-gtd := -0.0002006921080210102;
-
-
-//WolfeLineSearch(x, t,d, f,g,  gtd,  c1=0.0001,  c2=0.9,  maxLS=25,  tolX=0.000000001, CostFunc_params,  TrainData ,  TrainLabel,  CostFunc, prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
-WResult := Optimization (0, 0, 0, 0).WolfeLineSearch(x,1,d,f,g,gtd,0.0001,0.9,25,0.000000001, CostFunc_params_input, Indep , emptyC,SparseAutoencoderCost,0,0,0,0);
-WWWresult := Optimization (0, 0, 0, 0).WolfeOut_FromField(WResult);
-  
-  RETURN WWWresult;
-  */
-  END;//END LearnC_lbfgs
-
-  EXPORT LearnC (DATASET(Types.NumericField) Indep,DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 BETA=3, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100) := SA(Indep,IntW,Intb, BETA,sparsityParam,LAMBDA, ALPHA,  MaxIter).mod;//orig
-//SA(Indep,IntW,Intb, BETA,sparsityParam,LAMBDA, ALPHA,  MaxIter).mod;
-
-  // EXPORT GradientCost(DATASET(Types.NumericField) Indep,DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 BETA=0.1, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100) := FUNCTION
-    // result := SA(Indep,IntW,Intb, BETA,sparsityParam,LAMBDA, ALPHA,  MaxIter).mod;
-    // RETURN result;
-  // END;//END Model
-  
   //convert the output to the more understandable format
   //no = 1 is the w1 matrix
   //no = 2 is the w2 matrix
@@ -653,7 +357,7 @@ WWWresult := Optimization (0, 0, 0, 0).WolfeOut_FromField(WResult);
       SELF.v := 1;
     END;
     //Create Ones Vector for the calculations in the step fucntion
-    Ones_Vec := DATASET(m, gen(COUNTER, m),DISTRIBUTED);
+    Ones_Vec := DATASET(m, gen(COUNTER, m));
     Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
     //b1m = repmat(b1v,1,m)
     b1m := PBblas.PB_dgemm(FALSE, TRUE, 1.0,b1vecmap, b1vecdist, Ones_VecMap, Ones_Vecdist, b1map);
@@ -814,65 +518,74 @@ EXPORT StackedSA (UNSIGNED4 NumSAs, DATASET(Types.DiscreteField) numHiddenNodes,
   END;
 END;//StackedSA
 
-
-EXPORT Sparse_Autoencoder_mine (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLayerNodes, UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
-  //this is a un-supervised learning algorithm, no need for the labled data
-  
-  SHARED SA(DATASET(Types.NumericField) X, DATASET(Mat.Types.Element) IntW1, DATASET(Mat.Types.Element) IntW2, DATASET(Mat.Types.Element) Intb1,  DATASET(Mat.Types.Element) Intb2, REAL8 BETA=0.1, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100) := MODULE
-    dt := Types.ToMatrix (X);
-    dTmp := dt;
-    SHARED d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
-    SHARED m := MAX (d, d.y); //number of samples
-    SHARED m_1 := 1/m;
-    SHARED sparsityParam_ := -1*sparsityParam;
-    SHARED sparsityParam_1 := 1-sparsityParam;
-    SHARED sizeRec := RECORD
+// This is Sparse Autoencoder function which is compatible with the function format the MinFunc (lbfgs algorithm) recives as input
+// this function is later used in Sparse_Autoencoder_mine when calling LBFGS algorithm
+// theta is the Sparse Autoencoder parameters (W1, W2, b1, b2) in Layout_Part format where different parameters are recognized by their partition_id
+// w1 : partion_id is from 1 to w1.partitions_used
+// w12 : parition_id is from w1.partitions_used+1 to w1.partitions_used+w2.partitions_used and so on
+// CostFunc_params is the controlled parameters for Sparse Autoencoder, such as sparsityparam, etc.
+EXPORT SA_lbfgs_Compatible ( DATASET(Layout_Part) theta, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel) := FUNCTION
+    //extract sparse autoencoder parameters
+    ddist := TrainData;
+    m := CostFunc_params(id=1)[1].value;
+    num_feat := CostFunc_params(id=2)[1].value;
+    num_hid := CostFunc_params(id=3)[1].value;
+    part_rows := CostFunc_params(id=4)[1].value;
+    part_cols := CostFunc_params(id=5)[1].value;
+    BETA := CostFunc_params(id=6)[1].value;
+    sparsityParam := CostFunc_params(id=7)[1].value;
+    LAMBDA := CostFunc_params(id=8)[1].value;
+    
+    m_1 := 1/m;
+    sparsityParam_ := -1*sparsityParam;
+    sparsityParam_1 := 1-sparsityParam;
+    
+     sizeRec := RECORD
       PBblas.Types.dimension_t m_rows;
       PBblas.Types.dimension_t m_cols;
       PBblas.Types.dimension_t f_b_rows;
       PBblas.Types.dimension_t f_b_cols;
     END;
-   //Map for Matrix d.
-    SHARED havemaxrow := maxrows > 0;
-    SHARED havemaxcol := maxcols > 0;
-    SHARED havemaxrowcol := havemaxrow and havemaxcol;
-    SHARED dstats := Mat.Has(d).Stats;
-    SHARED d_n := dstats.XMax;
-    SHARED d_m := dstats.YMax;
-    SHARED output_num := d_n;
-    derivemap := IF(havemaxrowcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows, maxcols),
-                   IF(havemaxrow, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows),
-                      IF(havemaxcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,,maxcols),
-                      PBblas.AutoBVMap(d_n, d_m,prows,pcols))));
-    SHARED sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derivemap.part_rows(1),derivemap.part_cols(1)}], sizeRec);
+    sizeTable := DATASET([{num_feat,m,part_rows,part_cols}], sizeRec);
+    
     //Create block matrix d
     dmap := PBblas.Matrix_Map(sizeTable[1].m_rows,sizeTable[1].m_cols,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
-    ddist := DMAT.Converted.FromElement(d,dmap);
+    
     //Create block matrix Ytmp
     Ymap := dmap;
     Ydist := ddist;
     //Creat block matrices for weights
-    w1_mat := IntW1;
-    w1_mat_x := Mat.Has(w1_mat).Stats.Xmax;
-    w1_mat_y := Mat.Has(w1_mat).Stats.Ymax;
-    w1map := PBblas.Matrix_Map(w1_mat_x, w1_mat_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
-    w1dist := DMAT.Converted.FromElement(w1_mat,w1map);
-    w2_mat := IntW2;
-    w2_mat_x := w1_mat_y;
-    w2_mat_y := w1_mat_x;
-    w2map := PBblas.Matrix_Map(w2_mat_x, w2_mat_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
-    w2dist := DMAT.Converted.FromElement(w2_mat,w2map);
-    //each bias vector is converted to block format
-    b1vec := Intb1;
-    b1vec_x := Mat.Has(b1vec).Stats.Xmax;
-    b1vecmap := PBblas.Matrix_Map(b1vec_x, 1, sizeTable[1].f_b_rows, 1);
-    b1vecdist := DMAT.Converted.FromElement(b1vec,b1vecmap);
-    b2vec := Intb2;
-    b2vec_x := Mat.Has(b2vec).Stats.Xmax;
-    b2vecmap := PBblas.Matrix_Map(b2vec_x, 1, sizeTable[1].f_b_rows, 1);
-    b2vecdist := DMAT.Converted.FromElement(b2vec,b2vecmap);
 
-    //functions used
+    w1map := PBblas.Matrix_Map(num_hid, num_feat, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
+    w2map := PBblas.Matrix_Map(num_feat, num_hid, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
+     //each bias vector is converted to block format
+    
+    b1vecmap := PBblas.Matrix_Map(num_hid, 1, sizeTable[1].f_b_rows, 1);
+    b2vecmap := PBblas.Matrix_Map(num_feat, 1, sizeTable[1].f_b_rows, 1);
+    
+    w1_partitions := w1map.partitions_used;
+    w2_partitions := w2map.partitions_used;
+    b1_partitions := b1vecmap.partitions_used;
+    b2_partitions := b2vecmap.partitions_used;
+    PBblas.Types.MUElement minuspart(Layout_Part l, UNSIGNED8 c ) := TRANSFORM
+      SELF.partition_id := l.partition_id - c;
+      SElF.no := 1;
+      SELF := l;
+    END;
+    //w1m := w1dist;
+    w1dist := theta (partition_id <= w1_partitions);
+    //w2m := w2dist;
+    w2m_ := theta (partition_id > w1_partitions AND partition_id <= w1_partitions + w2_partitions);
+    w2dist  := PROJECT (w2m_, minuspart(LEFT, w1_partitions ));
+    //b1v := b1vecdist;
+    b1v_ := theta (partition_id > w1_partitions + w2_partitions AND partition_id <= w1_partitions + w2_partitions + b1_partitions);
+    b1vecdist  := PROJECT (b1v_, minuspart (LEFT, w1_partitions + w2_partitions));
+    
+    //b2v := b2vecdist;
+    b2v_ := theta (partition_id > w1_partitions + w2_partitions + b1_partitions AND partition_id <= w1_partitions + w2_partitions + b1_partitions + b2_partitions);
+    b2vecdist  := PROJECT (b2v_, minuspart (LEFT, w1_partitions + w2_partitions + b1_partitions));
+    
+     //functions used
     PBblas.Types.value_t sp_reci(PBblas.Types.value_t v,PBblas.Types.dimension_t r,PBblas.Types.dimension_t c) := sparsityParam_/v;
     PBblas.Types.value_t sp_1_reci(PBblas.Types.value_t v,PBblas.Types.dimension_t r,PBblas.Types.dimension_t c) := sparsityParam_1/(1-v);
     //sparsity_delta=((-sparsityParam./rhohat)+((1-sparsityParam)./(1.-rhohat)));
@@ -881,11 +594,11 @@ EXPORT Sparse_Autoencoder_mine (INTEGER4 NumberofFeatures, INTEGER4 NumberofHidd
     PBblas.Types.value_t sigmoid(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := 1/(1+exp(-1*v));
     PBblas.Types.value_t pow2(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := v*v;
     //maps used
-    b1map := PBblas.Matrix_Map(b1vec_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
-    b2map := PBblas.Matrix_Map(b2vec_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+    b1map := PBblas.Matrix_Map(num_hid, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+    b2map := PBblas.Matrix_Map(num_feat, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
     a2map := b1map;
     a3map := b2map;
-    HL_nodes := w1_mat_x;//number of nodes in the hidden layer
+    HL_nodes := num_hid;//number of nodes in the hidden layer
     Hiddmap := b1vecmap;
     //onevec for calculating rhohat
     Ones_VecMap := PBblas.Matrix_Map(m, 1, sizeTable[1].f_b_cols, 1);
@@ -896,14 +609,16 @@ EXPORT Sparse_Autoencoder_mine (INTEGER4 NumberofFeatures, INTEGER4 NumberofHidd
       SELF.v := 1;
     END;
     //Create Ones Vector for the calculations in the step fucntion
-    Ones_Vec := DATASET(m, gen(COUNTER, m),DISTRIBUTED);
+    Ones_Vec := DATASET(m, gen(COUNTER, m));
     Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
     //FF2 returns a2
     FF2(DATASET(Layout_Part) w1, DATASET(Layout_Part) b1v):= FUNCTION
       //b1m = repmat(b1v,1,m)
       b1m := PBblas.PB_dgemm(FALSE, TRUE, 1.0,b1vecmap, b1v, Ones_VecMap, Ones_Vecdist, b1map);
       //z2 = w1*X+b1;
-      z2 := PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1, dmap, ddist, b1map, b1m, 1.0);
+      //z2 := PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1, dmap, ddist, b1map, b1m, 1.0); // gives MP closed error
+      z2_ := PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1, dmap, ddist, b1map);
+      z2 := PBblas.PB_daxpy(1.0, z2_, b1m);
       //a2 = sigmoid (z2);
       a2 := PBblas.Apply2Elements(b1map, z2, sigmoid);
       RETURN a2;
@@ -913,9 +628,9 @@ EXPORT Sparse_Autoencoder_mine (INTEGER4 NumberofFeatures, INTEGER4 NumberofHidd
       //b2m = repmat(b2v,1,m)
       b2m := PBblas.PB_dgemm(FALSE, TRUE, 1.0,b2vecmap, b2v, Ones_VecMap, Ones_Vecdist, b2map);
       //z3 = w2*a2+b2;
-      //z3 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2, a2map, a2, b2map,b2m, 1.0);
-      z3_tmp := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2, a2map, a2, b2map);
-      z3 := PBblas.PB_daxpy(1.0, z3_tmp, b2m);
+      //z3 := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2, a2map, a2, b2map,b2m, 1.0); //gives MP closed error
+      z3_ := PBblas.PB_dgemm(FALSE, FALSE,1.0,w2map, w2, a2map, a2, b2map);
+      z3 := PBblas.PB_daxpy(1.0, z3_, b2m);
       //a3 = sigmoid (z3)
       a3 := PBblas.Apply2Elements(b2map, z3, sigmoid);
       RETURN a3;
@@ -946,7 +661,9 @@ EXPORT Sparse_Autoencoder_mine (INTEGER4 NumberofFeatures, INTEGER4 NumberofHidd
       siggrad_a2 := PBblas.Apply2Elements(a2map, a2, siggrad);
       repmat_sparsity_delta := PBblas.PB_dgemm(FALSE, TRUE, 1.0,  Hiddmap, sparsity_delta, Ones_VecMap, Ones_Vecdist, a2map);
       //d2_firstterm = (W2'*d3)+beta*repmat(sparsity_delta,1,m);
-      d2_firstterm := PBblas.PB_dgemm(TRUE, FALSE, 1.0, w2map, w2, a3map, d3, a2map, repmat_sparsity_delta, BETA);
+      //d2_firstterm := PBblas.PB_dgemm(TRUE, FALSE, 1.0, w2map, w2, a3map, d3, a2map, repmat_sparsity_delta, BETA); // MP close error
+      d2_firstterm_ := PBblas.PB_dgemm(TRUE, FALSE, 1.0, w2map, w2, a3map, d3, a2map);
+      d2_firstterm := PBblas.PB_daxpy(BETA, repmat_sparsity_delta, d2_firstterm_);
       d2 := PBblas.HadamardProduct(a2map, d2_firstterm, siggrad_a2);
       RETURN d2 ;
     END;
@@ -970,53 +687,185 @@ EXPORT Sparse_Autoencoder_mine (INTEGER4 NumberofFeatures, INTEGER4 NumberofHidd
       b2_g := PBblas.PB_dgemm(FALSE, FALSE, m_1,  a3map, d3, Ones_VecMap, Ones_Vecdist, b2vecmap);
       RETURN b2_g;
     END;
-    GradDesUpdate (DATASET(Layout_Part) tobeUpdated, DATASET(Layout_Part) GradDesTerm):= FUNCTION
-      tmp_updated := PBblas.PB_daxpy(-1, PBblas.PB_dscal(ALPHA, GradDesTerm), tobeUpdated);
-      RETURN tmp_updated;
-    END;
-    //Simple gradient descent algorithm : new_param = old_param - alpha*grad_param
-    GradDesLoop (DATASET(Layout_Part) w1in, DATASET(Layout_Part) w2in, DATASET(Layout_Part) bvec1in, DATASET(Layout_Part) bvec2in):= FUNCTION
-      w1inno := PBblas.MU.TO(w1in, 1);
-      w2inno := PBblas.MU.TO(w2in, 2);
-      bvec1inno := PBblas.MU.TO(bvec1in, 3);
-      bvec2inno := PBblas.MU.TO(bvec2in, 4);
-      prm := w1inno + w2inno + bvec1inno + bvec2inno;
-      GradDesLoop_Step (DATASET(PBblas.Types.MUElement) Inputprm) := FUNCTION
-        w1m := PBblas.MU.FROM (Inputprm, 1);
-        w2m := PBblas.MU.FROM (Inputprm, 2);
-        b1v := PBblas.MU.FROM (Inputprm, 3);
-        b2v := PBblas.MU.FROM (Inputprm, 4);
-        a2 := FF2 (w1m, b1v);
-        a3 := FF3 (w2m, b2v, a2);
-        d3 := DELTA3 (a3);
-        rohat_pass := rohat(a2);
-        d2 := DELTA2 (w2m, a2, d3,rohat_pass);
-        wg1 := WeightGrad1 (w1m, d2);
-        wg2 := WeightGrad2 (w2m, d3, a2);
-        bg1 := BiasGrad1 (d2);
-        bg2 := BiasGrad2 (d3);
-        w1u := GradDesUpdate (w1m, wg1);
-        w2u := GradDesUpdate (w2m, wg2);
-        b1u := GradDesUpdate (b1v, bg1);
-        b2u := GradDesUpdate (b2v, bg2);
-        w1uno := PBblas.MU.TO (w1u, 1);
-        w2uno := PBblas.MU.TO (w2u, 2);
-        b1uno := PBblas.MU.TO (b1u, 3);
-        b2uno := PBblas.MU.TO (b2u, 4);
-        // prmu := IF (coun=1, w1uno + w2uno + b1uno + b2uno,PBblas.MU.TO (a2, 2)+PBblas.MU.TO (w2m, 1)+PBblas.MU.TO (d3, 3)+PBblas.MU.TO (d2, 4));
-        prmu := w1uno + w2uno + b1uno + b2uno;
-        RETURN prmu;
+    emptyL := DATASET([], Layout_Part);
+    //theta is the input weight and bias parameters for the sparseautoencoder
+    //parameters are the parameters for the sparseautoencoder function
+    //train_d is the train data to learn sparse autoencoder and calculate the gradient and the cost based on taht
+    // train_l is empty in the sparse autoencoder (because it is an unsupervised learning)
+    SparseParam_CostGradients4 :=  FUNCTION
+      PBblas.Types.MUElement minuspart(Layout_Part l, UNSIGNED8 c ) := TRANSFORM
+        SELF.partition_id := l.partition_id - c;
+        SElF.no := 1;
+        SELF := l;
       END;
-      //finalprm := GradDesLoop_Step (prm);
-      finalprm := LOOP(prm, COUNTER <= MaxIter, GradDesLoop_Step(ROWS(LEFT)));
-      RETURN finalprm;
-    END;//END GradDesLoop
-    SAprm := GradDesLoop (w1dist, w2dist, b1vecdist, b2vecdist);// SAprm is in PBblas.Types.MUElement format convert it to
-    //numericfield format
-    SAprm1 := PBblas.MU.From (SAprm,1);
-    SAprm2 := PBblas.MU.From (SAprm,2);
-    SAprm3 := PBblas.MU.From (SAprm,3);
-    SAprm4 := PBblas.MU.From (SAprm,4);
+      w1m := w1dist;
+      w2m := w2dist;
+      b1v := b1vecdist;
+      b2v := b2vecdist;
+      a2 := FF2 (w1m, b1v);
+      a3 := FF3 (w2m, b2v, a2);
+      d3 := DELTA3 (a3);
+      rohat_a2 := rohat(a2);
+      d2 := DELTA2 (w2m, a2, d3,rohat_a2);
+      wg1 := WeightGrad1 (w1m, d2);
+      wg2 := WeightGrad2 (w2m, d3, a2);
+      bg1 := BiasGrad1 (d2);
+      bg2 := BiasGrad2 (d3);
+      //calculate cost
+      //PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1, dmap, ddist, b1map, b1m, 1.0);
+      // squared_error_cost= 0.5*sum(sum((x-a3).^2));
+      // cost=(1/m)*squared_error_cost+(lambda/2)*(sum(W2(:).^2)+sum(W1(:).^2))+beta*sum(KL(sparsityParam,rhohat));
+      squared_error_cost := 0.5*PBblas.SumElements(PBblas.Apply2Elements(dmap, PBblas.PB_daxpy(-1.0, a3, ddist), pow2));
+      cost_term1 := (1/m)*squared_error_cost;
+      cost_term2 := (lambda/2)* PBblas.SumElements(PBblas.Apply2Elements(dmap, w2m, pow2));
+      cost_term3 := (lambda/2)* PBblas.SumElements(PBblas.Apply2Elements(dmap, w1m, pow2));
+      PBblas.Types.value_t klterm(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := sparsityParam * LN(sparsityParam/v) + (1-sparsityParam) * LN ((1-sparsityParam)/(1-v));
+      KL := PBblas.Apply2Elements (Hiddmap,rohat_a2,klterm);
+      cost_term4 := beta * PBblas.SumElements(KL);
+      cost := cost_term1 + cost_term2 + cost_term3 +cost_term4;    
+      costField := DATASET ([{1,1,cost}],ML.Types.NumericField);
+      one_map := PBblas.Matrix_Map(1,1,1,1);
+      Cost_part_no := PBblas.MU.TO(ML.DMat.Converted.FromNumericFieldDS(costField,one_map),2);
+      //convert w and b gradients to a datasets of layoutparts where partition_id differentiate them
+      //w1_grad has partition_id from 1 to w1_partitions
+      //w2_grad had partition_ds from w1_partitions+1 to w1_partitions + w2_partitions
+      //b1_grad has partition_ids from w1_partitions + w2_partitions+1 to w1_partitions + w2_partitions+b1_partitions
+      //b2_grad has partition_ids from w1_partitions + w2_partitions+b1_partitions+1 to w1_partitions + w2_partitions+b1_partitions+b2_partitions
+      PBblas.Types.MUElement addpart(Layout_Part l, UNSIGNED8 c ) := TRANSFORM
+        SELF.partition_id := l.partition_id + c;
+        SElF.no := 1;
+        SELF := l;
+      END;
+      wg1_reshape_no := Pbblas.MU.TO(wg1,1);
+      wg2_reshape_no := PROJECT (wg2, addpart(LEFT, w1_partitions ));
+      bg1_reshape_no := PROJECT (bg1, addpart (LEFT, w1_partitions + w2_partitions));
+      bg2_reshape_no := PROJECT (bg2, addpart (LEFT, w1_partitions + w2_partitions + b1_partitions));
+      theta_Part_no := wg1_reshape_no + wg2_reshape_no + bg1_reshape_no + bg2_reshape_no;
+      RETURN theta_Part_no + Cost_part_no; 
+      //RETURN theta_Part_no;
+    END;//END SparseParam_CostGradients4  
+    RETURN SparseParam_CostGradients4;
+   END;//END SA_lbfgs_Compatible
+
+EXPORT Sparse_Autoencoder_lbfgs (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLayerNodes, UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
+   //this is a un-supervised learning algorithm, no need for the labled data
+   //m : number of input samples
+   //NumberofFeatures : number of input features = number of input layer nodes in sparse autoencoder = number of output layer nodes in sparse autoencoder
+   //NumberofHiddenLayerNodes : number of hidden layer nodes in Sparse Autoencoder
+   
+   SHARED SA_4(DATASET(Types.NumericField) X, DATASET(Mat.Types.Element) IntW1, DATASET(Mat.Types.Element) IntW2, DATASET(Mat.Types.Element) Intb1,  DATASET(Mat.Types.Element) Intb2, REAL8 BETA=0.1, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, UNSIGNED2 MaxIter=100) := MODULE
+    dt := Types.ToMatrix (X);
+    dTmp := dt;
+    d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
+    m := MAX (d, d.y); //number of samples
+    sizeRec := RECORD
+      PBblas.Types.dimension_t m_rows;
+      PBblas.Types.dimension_t m_cols;
+      PBblas.Types.dimension_t f_b_rows;
+      PBblas.Types.dimension_t f_b_cols;
+    END;
+   //Map for Matrix d.
+    havemaxrow := maxrows > 0;
+    havemaxcol := maxcols > 0;
+    havemaxrowcol := havemaxrow and havemaxcol;
+    dstats := Mat.Has(d).Stats;
+    d_n := dstats.XMax;
+    d_m := dstats.YMax;
+    output_num := d_n;
+    derivemap := IF(havemaxrowcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows, maxcols),
+                   IF(havemaxrow, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows),
+                      IF(havemaxcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,,maxcols),
+                      PBblas.AutoBVMap(d_n, d_m,prows,pcols))));
+    sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derivemap.part_rows(1),derivemap.part_cols(1)}], sizeRec);
+    
+    //Create block matrix d
+    dmap := PBblas.Matrix_Map(sizeTable[1].m_rows,sizeTable[1].m_cols,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
+    ddist := DMAT.Converted.FromElement(d,dmap);
+    //Creat block matrices for weights
+    w1_mat := IntW1;
+    w1_mat_x := Mat.Has(w1_mat).Stats.Xmax;
+    w1_mat_y := Mat.Has(w1_mat).Stats.Ymax;
+    w1map := PBblas.Matrix_Map(w1_mat_x, w1_mat_y, MIN([sizeTable[1].f_b_rows,w1_mat_x ]), sizeTable[1].f_b_rows);
+    w1dist := DMAT.Converted.FromElement(w1_mat,w1map);
+    w2_mat := IntW2;
+    w2_mat_x := w1_mat_y;
+    w2_mat_y := w1_mat_x;
+    w2map := PBblas.Matrix_Map(w2_mat_x, w2_mat_y, sizeTable[1].f_b_rows, MIN([sizeTable[1].f_b_rows,w2_mat_y ]));
+    w2dist := DMAT.Converted.FromElement(w2_mat,w2map);
+    //each bias vector is converted to block format
+    b1vec := Intb1;
+    b1vec_x := Mat.Has(b1vec).Stats.Xmax;
+    b1vecmap := PBblas.Matrix_Map(b1vec_x, 1, MIN([sizeTable[1].f_b_rows,b1vec_x]), 1);
+    b1vecdist := DMAT.Converted.FromElement(b1vec,b1vecmap);
+    b2vec := Intb2;
+    b2vec_x := Mat.Has(b2vec).Stats.Xmax;
+    b2vecmap := PBblas.Matrix_Map(b2vec_x, 1, sizeTable[1].f_b_rows, 1);
+    b2vecdist := DMAT.Converted.FromElement(b2vec,b2vecmap);
+    
+    SA_param := DATASET([
+    {1,1,m},
+    {2,1,NumberofFeatures},
+    {3,1,NumberofHiddenLayerNodes},
+    {4,1,sizeTable[1].f_b_rows},
+    {5,1,sizeTable[1].f_b_cols},
+    {6,1,BETA},
+    {7,1,sparsityParam},
+    {8,1,LAMBDA}
+    ], Types.NumericField);
+
+    //Intialize Theta
+    Layout_Part addpart_(Layout_Part l, INTEGER8 c ) := TRANSFORM
+        SELF.partition_id := l.partition_id + c;
+        SELF := l;
+    END;
+    w1_partitions := w1map.partitions_used;
+    w2_partitions := w2map.partitions_used;
+    b1_partitions := b1vecmap.partitions_used;
+    b2_partitions := b2vecmap.partitions_used;
+    w1_reshape := w1dist;
+    w2_reshape := PROJECT (w2dist, addpart_(LEFT, w1_partitions ));
+    b1_reshape := PROJECT (b1vecdist, addpart_ (LEFT, w1_partitions + w2_partitions));
+    b2_reshape := PROJECT (b2vecdist, addpart_ (LEFT, w1_partitions + w2_partitions + b1_partitions));
+    Inttheta := w1_reshape + w2_reshape + b1_reshape + b2_reshape;
+    
+    emptyL := DATASET([], Layout_Part);
+    
+    CG := SA_lbfgs_Compatible ( Inttheta, SA_param, ddist , emptyL);
+    CG2 := SA_lbfgs_Compatible ( Pbblas.MU.FROM(CG,1), SA_param, ddist , emptyL);
+    
+    paramnumber := 2*NumberofFeatures*NumberofHiddenLayerNodes + NumberofFeatures + NumberofHiddenLayerNodes;
+    LBFGS_MAXitr := MaxIter;
+    LBFGS_corrections := 100;
+    lbfgs_results := Optimization (0, 0, 0, 0).MinFUNC(Inttheta,SA_param,ddist,emptyL,SA_lbfgs_Compatible, paramnumber,LBFGS_MAXitr, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0) ;
+    //convert lbfgs_results to numericfield
+    maxno := MAX(lbfgs_results, lbfgs_results.no);
+    optTHETA_ := lbfgs_results(no=maxno);
+   
+    optTHETA_part := PROJECT(optTHETA_, TRANSFORM(Layout_Part, SELF := LEFT));
+
+    Layout_Part minuspart(Layout_Part l, UNSIGNED8 c ) := TRANSFORM
+      SELF.partition_id := l.partition_id - c;
+      SELF := l;
+    END;
+    
+    optW1 := optTHETA_part (partition_id <= w1_partitions);
+    
+    optW2_ := optTHETA_part (partition_id > w1_partitions AND partition_id <= w1_partitions + w2_partitions);
+    optW2  := PROJECT (optW2_, minuspart(LEFT, w1_partitions ));
+    
+    optb1_ := optTHETA_part (partition_id > w1_partitions + w2_partitions AND partition_id <= w1_partitions + w2_partitions + b1_partitions);
+    optb1  := PROJECT (optb1_, minuspart (LEFT, w1_partitions + w2_partitions));
+    
+    
+    optb2_ := optTHETA_part (partition_id > w1_partitions + w2_partitions + b1_partitions AND partition_id <= w1_partitions + w2_partitions + b1_partitions + b2_partitions);
+    optb2  := PROJECT (optb2_, minuspart (LEFT, w1_partitions + w2_partitions + b1_partitions));
+    
+    
+    
+    SAprm1 := optW1;
+    SAprm2 := optW2;
+    SAprm3 := optb1;
+    SAprm4 := optb2;
     SAprm1_mat := DMat.Converted.FromPart2Elm (SAprm1);
     SAprm2_mat := DMat.Converted.FromPart2Elm (SAprm2);
     SAprm3_mat := DMat.Converted.FromPart2Elm (SAprm3);
@@ -1028,258 +877,10 @@ EXPORT Sparse_Autoencoder_mine (INTEGER4 NumberofFeatures, INTEGER4 NumberofHidd
     SAprm_MUE := SAprm1_mat_no + SAprm2_mat_no + SAprm3_mat_no + SAprm4_mat_no;
     AppendID(SAprm_MUE, id, SAprm_MUE_id);
     ToField (SAprm_MUE_id, SAprm_MUE_out, id, 'x,y,value,no');
-    
-    //This function returns the cost and gradient of the Sparse Autoencoder parameters
-    //the output is in numericfield format where w1, w2, b1, b2 are listed columnwise and the cost value comes at the end and the ids are assigned in this order:
-    //first column of w1, second column of w1,..., first column of w2, second colun of w2, ..., b1,b2,cost
-    SparseParam_CostGradients :=  FUNCTION
-      w1m := w1dist;
-      w2m := w2dist;
-      b1v := b1vecdist;
-      b2v := b2vecdist;
-      a2 := FF2 (w1m, b1v);
-      a3 := FF3 (w2m, b2v, a2);
-      d3 := DELTA3 (a3);
-      rohat_a2 := rohat(a2);
-      d2 := DELTA2 (w2m, a2, d3,rohat_a2);
-      wg1 := WeightGrad1 (w1m, d2);
-      wg2 := WeightGrad2 (w2m, d3, a2);
-      bg1 := BiasGrad1 (d2);
-      bg2 := BiasGrad2 (d3);
-      wg1_mat := DMat.Converted.FromPart2Elm (wg1);
-      wg2_mat := DMat.Converted.FromPart2Elm (wg2);
-      bg1_mat := DMat.Converted.FromPart2Elm (bg1);
-      bg2_mat := DMat.Converted.FromPart2Elm (bg2);
-      wg1_mat_no := Mat.MU.TO(wg1_mat,1);
-      wg2_mat_no := Mat.MU.TO(wg2_mat,2);
-      bg1_mat_no := Mat.MU.TO(bg1_mat,3);
-      bg2_mat_no := Mat.MU.TO(bg2_mat,4);
-      prm_MUE := wg1_mat_no + wg2_mat_no + bg1_mat_no + bg2_mat_no;
-      //calculate cost
-      //PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1, dmap, ddist, b1map, b1m, 1.0);
-      // squared_error_cost= 0.5*sum(sum((x-a3).^2));
-      // cost=(1/m)*squared_error_cost+(lambda/2)*(sum(W2(:).^2)+sum(W1(:).^2))+beta*sum(KL(sparsityParam,rhohat));
-      squared_error_cost := 0.5*PBblas.SumElements(PBblas.Apply2Elements(dmap, PBblas.PB_daxpy(-1.0, a3, ddist), pow2));
-      cost_term1 := (1/m)*squared_error_cost;
-      cost_term2 := (lambda/2)* PBblas.SumElements(PBblas.Apply2Elements(dmap, w2m, pow2));
-      cost_term3 := (lambda/2)* PBblas.SumElements(PBblas.Apply2Elements(dmap, w1m, pow2));
-      PBblas.Types.value_t klterm(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := sparsityParam * LN(sparsityParam/v) + (1-sparsityParam) * LN ((1-sparsityParam)/(1-v));
-      KL := PBblas.Apply2Elements (Hiddmap,rohat_a2,klterm);
-      cost_term4 := beta * PBblas.SumElements(KL);
-      cost := cost_term1 + cost_term2 + cost_term3 +cost_term4;    
-      //costfield := DATASET ([{1,1,cost,5}],ML.Mat.Types.MUElement);
-      //first sort the retunring values, this makes sure that they are going to be retrived correctly later in SparseAutoencoderCost
-      // sorted_prm_MUE := SORT (prm_MUE+costfield,no, y, x);
-      // AppendID(sorted_prm_MUE, id, prm_MUE_id);
-      // ToField (prm_MUE_id, costgrad_out, id, 'x,y,value,no');
-      // toberetun :=costgrad_out(number=3);//return only value fields
-
-      nf := NumberofFeatures;
-      nh := NumberofHiddenLayerNodes;
-      nfh := nf*nh;
-      nfh_2 := 2*nfh;
-      Types.NumericField Wshape (Mat.Types.MUElement l) := TRANSFORM
-        SELF.id := IF (l.no=1,(l.y-1)*nh+l.x,nfh+(l.y-1)*nf+l.x);
-        SELF.number := 1;
-        SELF.value := l.value;
-      END;
-      W_field := PROJECT (wg1_mat_no + wg2_mat_no,Wshape(LEFT));
-      
-      Types.NumericField Bshape (Mat.Types.MUElement l) := TRANSFORM
-        SELF.id := IF (l.no=3,nfh_2+l.x,nfh_2+l.x+nh);
-        SELF.number := 1;
-        SELF.value := l.value;
-      END;
-      B_field := PROJECT (bg1_mat_no + bg2_mat_no,Bshape(LEFT));
-      cost_field := DATASET ([{nfh_2+nf+nh+1,1,cost}],Types.NumericField);
-      RETURN W_field+B_field+cost_field;
-      //w// RETURN IF (lambda=10 ,cost_field ,W_field+B_field+cost_field);
-      //w//RETURN IF (lambda=10 ,W_field ,W_field+B_field+cost_field);
-      //w// RETURN IF (lambda=10 ,B_field ,W_field+B_field+cost_field);
-     //w// RETURN IF (lambda=10 ,B_field+cost_field ,W_field+B_field+cost_field);
-    //w// RETURN IF (lambda=10 ,W_field+B_field+cost_field ,W_field+B_field+cost_field);
-  //w//  RETURN IF (FALSE ,W_field+B_field+cost_field ,W_field+B_field+cost_field);
-  //w//RETURN W_field+B_field+cost_field;
-    END;//END SparseParam_CostGradients
-    //this is actually the first implementation of SparseParam_CostGradients where it would simply convert MUE format to filed which was not consistent to what lbfgs expect the costfunc to do
-    //no=2 belongs to w2
-    //no=3 belongs to b1
-    //no=4 belongas to b2
-    //no=5 belongs to cost
-    SparseParam_CostGradients2 :=  FUNCTION
-      w1m := w1dist;
-      w2m := w2dist;
-      b1v := b1vecdist;
-      b2v := b2vecdist;
-      a2 := FF2 (w1m, b1v);
-      a3 := FF3 (w2m, b2v, a2);
-      d3 := DELTA3 (a3);
-      rohat_a2 := rohat(a2);
-      d2 := DELTA2 (w2m, a2, d3,rohat_a2);
-      wg1 := WeightGrad1 (w1m, d2);
-      wg2 := WeightGrad2 (w2m, d3, a2);
-      bg1 := BiasGrad1 (d2);
-      bg2 := BiasGrad2 (d3);
-      wg1_mat := DMat.Converted.FromPart2Elm (wg1);
-      wg2_mat := DMat.Converted.FromPart2Elm (wg2);
-      bg1_mat := DMat.Converted.FromPart2Elm (bg1);
-      bg2_mat := DMat.Converted.FromPart2Elm (bg2);
-      wg1_mat_no := Mat.MU.TO(wg1_mat,1);
-      wg2_mat_no := Mat.MU.TO(wg2_mat,2);
-      bg1_mat_no := Mat.MU.TO(bg1_mat,3);
-      bg2_mat_no := Mat.MU.TO(bg2_mat,4);
-      prm_MUE := wg1_mat_no + wg2_mat_no + bg1_mat_no + bg2_mat_no;
-      AppendID(prm_MUE, id, prm_MUE_id);
-      
-      
-      //calculate cost
-      //PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1, dmap, ddist, b1map, b1m, 1.0);
-      // squared_error_cost= 0.5*sum(sum((x-a3).^2));
-      // cost=(1/m)*squared_error_cost+(lambda/2)*(sum(W2(:).^2)+sum(W1(:).^2))+beta*sum(KL(sparsityParam,rhohat));
-      squared_error_cost := 0.5*PBblas.SumElements(PBblas.Apply2Elements(dmap, PBblas.PB_daxpy(-1.0, a3, ddist), pow2));
-      cost_term1 := (1/m)*squared_error_cost;
-      cost_term2 := (lambda/2)* PBblas.SumElements(PBblas.Apply2Elements(dmap, w2m, pow2));
-      cost_term3 := (lambda/2)* PBblas.SumElements(PBblas.Apply2Elements(dmap, w1m, pow2));
-      PBblas.Types.value_t klterm(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := sparsityParam * LN(sparsityParam/v) + (1-sparsityParam) * LN ((1-sparsityParam)/(1-v));
-      KL := PBblas.Apply2Elements (Hiddmap,rohat_a2,klterm);
-      cost_term4 := beta * PBblas.SumElements(KL);
-      cost := cost_term1 + cost_term2 + cost_term3 +cost_term4;    
-      costidfield := DATASET ([{18,1,1,cost,5}],{ML.Types.t_RecordID id:=0;ML.Mat.Types.MUElement;});
-      
-      ToField (costidfield+prm_MUE_id, costgrad_out, id, 'x,y,value,no');
-      RETURN costgrad_out;
-    END;//END SparseParam_CostGradients2
-    
-    
-    
-    //if learning_param=simple then mod = SAprm_MUE_out, if learning_param = lbfgs then mod = SparseParam_CostGradients
-    //EXPORT Mod := SAprm_MUE_out; orig , also make sure where "mod" is used and change them accordingly (mod is used in SparseAutoencoderCost)
-    EXPORT mod := SparseParam_CostGradients;
-  END;//END SA
-  
-  
-  
-
-  //theta includes the weight and bias matrices for the SparseAutoencoder in a numericfield dataset,below it is explained how this dataset is aquired
-  //1- there is a Mat.Types.MUElement  dataset where that no=1 is w1, no=2 is w2, no =3 is b1 and no = 4 is b4
-  //2-this dataset gets sorted based on (no->y->x)
-  //3-the dataset is then converted to numeric field format
-  //4-only the recordsets where number =3 (the corresponding "value" field in the Mat.Types.MUElement record) are returned 
-  //CostFunc_params includes the parameters that the sparse autoencoder algortihm need : REAL8 BETA, REAL8 sparsityParam, , REAL8 LAMBDA,
-  // CostFunc_params = DATASET([{1, 1, BETA},{2,1,sparsityParam},{3,1,LAMBDA}], Types.NumericField);
-  SHARED SparseAutoencoderCost (DATASET(Types.NumericField) theta, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel=emptyC):= FUNCTION
-    //Extract weights and bias matrices from theta by using the numebr of hidden and visible nodes
-    nf := NumberofFeatures;
-    nh := NumberofHiddenLayerNodes;
-    nfh := nf*nh;
-    nfh_2 := 2*nfh;
-    //this transfrom converts the weight part of the theta to two matrices SA_W1 and SA_W2
-    Mat.Types.Element Wreshape1 (Types.NumericField l) := TRANSFORM
-      
-      SELF.x :=  1+((l.id-1)%nh) ;
-      SELF.y := ((l.id-1) DIV nh)+1;
-      SELF.value := l.value;
-    END;
-    SA_W1 := PROJECT (theta(id<=nfh),Wreshape1(LEFT));
-    
-    Mat.Types.Element Wreshape2 (Types.NumericField l) := TRANSFORM
-      SELF.x :=  1+((l.id-1-nfh)%nf);
-      SELF.y :=  ((l.id-1-nfh) DIV nf)+1;
-      SELF.value := l.value;
-    END;
-    SA_W2 := PROJECT (theta(nfh<id and id<=2*nfh),Wreshape2(LEFT));
-    //this transfrom converts the bias part of the theta (id>=2*nfh+1) to two matrices SA_B1 and SA_B2
-    Mat.Types.Element Breshape1 (Types.NumericField l) := TRANSFORM
-      SELF.x := l.id-nfh_2;
-      SELF.y := 1;
-      SELF.value := l.value;
-    END;
-    SA_B1 := PROJECT (theta(id>nfh_2 and id<=nfh_2+nh ),Breshape1(LEFT));
-    
-    Mat.Types.Element Breshape2 (Types.NumericField l) := TRANSFORM
-      SELF.x :=  l.id-nfh_2-nh;
-      SELF.y := 1;
-      SELF.value := l.value;
-    END;
-    SA_B2 := PROJECT (theta(id>nfh_2+nh),Breshape2(LEFT));
-
-    SA_BETA := CostFunc_params(id=1)[1].value;
-    SA_sparsityparam := CostFunc_params(id=2)[1].value;
-    SA_LAMBDA := CostFunc_params(id=3)[1].value;
-    
-
-    
-    Cost_Grad := SA(TrainData,SA_W1,SA_W2,SA_B1,SA_B2, SA_BETA,SA_sparsityparam,SA_LAMBDA).mod;//orig , if you change the output of mod, don't forget to change it here as well
-
-    RETURN Cost_Grad;
-  END; //end SparseAutoencoderCost
-  
-  
- 
-  
-
-
-
-
-
-EXPORT LearnC_lbfgs(DATASET(Types.NumericField) Indep,DATASET(Mat.Types.Element) IntW1, DATASET(Mat.Types.Element) IntW2, DATASET(Mat.Types.Element) Intb1,DATASET(Mat.Types.Element) Intb2, REAL8 BETA=0.1, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, UNSIGNED2 MaxIter=100) := FUNCTION
-
-    
-    //prepare the parameters to be passed to MinFUNC
-    //theta
-    //convert IntW and Intb to NumericField format
-    nf := NumberofFeatures;
-    nh := NumberofHiddenLayerNodes;
-    nfh := nf*nh;
-    nfh_2 := 2*nfh;
-    Types.NumericField Wshape1 (Mat.Types.Element l) := TRANSFORM
-      SELF.id := (l.y-1)*nh+l.x;
-      SELF.number := 1;
-      SELF.value := l.value;
-    END;
-    W1_field := PROJECT (IntW1,Wshape1(LEFT));
-    
-    
-    
-    Types.NumericField Wshape2 (Mat.Types.Element l) := TRANSFORM
-      SELF.id := nfh+(l.y-1)*nf+l.x;
-      SELF.number := 1;
-      SELF.value := l.value;
-    END;
-    W2_field := PROJECT (IntW2,Wshape2(LEFT));    
-    
-    
-    Types.NumericField Bshape1 (Mat.Types.Element l) := TRANSFORM
-      SELF.id := nfh_2+l.x;
-      SELF.number := 1;
-      SELF.value := l.value;
-    END;
-    B1_field := PROJECT (Intb1,Bshape1(LEFT));
-    
-    Types.NumericField Bshape2 (Mat.Types.Element l) := TRANSFORM
-      SELF.id := nfh_2+l.x+nh;
-      SELF.number := 1;
-      SELF.value := l.value;
-    END;
-    B2_field := PROJECT (Intb2,Bshape2(LEFT));  
-    
-    //CostFunc_params
-    CostFunc_params_input := DATASET([{1, 1, BETA},{2,1,sparsityParam},{3,1,LAMBDA}], Types.NumericField);
-    //MinFUNC( x0,CostFunc ,  CostFunc_params, TrainData ,  TrainLabel,  MaxIter = 500,  tolFun = 0.00001, TolX = 0.000000001,  maxFunEvals = 1000,  corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
-    LearntMod:=  Optimization2 (0, 0, 0, 0).MinFUNC3 (W1_field+W2_field+B1_field+B2_field, SparseAutoencoderCost, CostFunc_params_input, Indep , emptyC, MaxIter, 0.00001, 0.000000001,1000, 10,0, 0, 0,0); //orig correction is 100
-  RETURN LearntMod;
-  
- 
-  END;//END LearnC_lbfgs
-
-  //EXPORT LearnC (DATASET(Types.NumericField) Indep,DATASET(Mat.Types.Element) IntW1, DATASET(Mat.Types.Element) IntW2, DATASET(Mat.Types.Element) Intb1, DATASET(Mat.Types.Element) Intb2, REAL8 BETA=3, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100) := SA(Indep,IntW1,IntW2,Intb1,Intb2, BETA,sparsityParam,LAMBDA, ALPHA,  MaxIter).mod;//orig
-//SA(Indep,IntW,Intb, BETA,sparsityParam,LAMBDA, ALPHA,  MaxIter).mod;
-
-  // EXPORT GradientCost(DATASET(Types.NumericField) Indep,DATASET(Mat.Types.MUElement) IntW, DATASET(Mat.Types.MUElement) Intb, REAL8 BETA=0.1, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100) := FUNCTION
-    // result := SA(Indep,IntW,Intb, BETA,sparsityParam,LAMBDA, ALPHA,  MaxIter).mod;
-    // RETURN result;
-  // END;//END Model
-  
+    EXPORT mod := SAprm_MUE_out;
+   END;//END SA_4
+   
+  EXPORT LearnC (DATASET(Types.NumericField) indep, DATASET(Mat.Types.Element) IntW1, DATASET(Mat.Types.Element) IntW2, DATASET(Mat.Types.Element) Intb1,  DATASET(Mat.Types.Element) Intb2, REAL8 BETA=0.1, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, UNSIGNED2 MaxIter=100) := SA_4(Indep,IntW1,IntW2,Intb1,Intb2, BETA,sparsityParam,LAMBDA, MaxIter).mod;
   //convert the output to the more understandable format
   //no = 1 is the w1 matrix
   //no = 2 is the w2 matrix
@@ -1317,6 +918,7 @@ EXPORT LearnC_lbfgs(DATASET(Types.NumericField) Indep,DATASET(Mat.Types.Element)
                    IF(havemaxrow, PBblas.AutoBVMap(d_n, d_m,prows,pcols,maxrows),
                       IF(havemaxcol, PBblas.AutoBVMap(d_n, d_m,prows,pcols,,maxcols),
                       PBblas.AutoBVMap(d_n, d_m,prows,pcols))));
+                          //derivemap :=  PBblas.AutoBVMap(d_n, d_m,d_n,d_m);
     sizeTable := DATASET([{derivemap.matrix_rows,derivemap.matrix_cols,derivemap.part_rows(1),derivemap.part_cols(1)}], sizeRec);
     //Create block matrix d
     dmap := PBblas.Matrix_Map(sizeTable[1].m_rows,sizeTable[1].m_cols,sizeTable[1].f_b_rows,sizeTable[1].f_b_cols);
@@ -1325,29 +927,18 @@ EXPORT LearnC_lbfgs(DATASET(Types.NumericField) Indep,DATASET(Mat.Types.Element)
     w1_mat := Mat.MU.From(Inputmod,1);
     w1_mat_x := Mat.Has(w1_mat).Stats.Xmax;
     w1_mat_y := Mat.Has(w1_mat).Stats.Ymax;
-    w1map := PBblas.Matrix_Map(w1_mat_x, w1_mat_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
+    w1map := PBblas.Matrix_Map(w1_mat_x, w1_mat_y, MIN([sizeTable[1].f_b_rows, w1_mat_x]) , sizeTable[1].f_b_rows);
     w1dist := DMAT.Converted.FromElement(w1_mat,w1map);
-    w2_mat := Mat.MU.From(Inputmod,2);
-    w2_mat_x := w1_mat_y;
-    w2_mat_y := w1_mat_x;
-    w2map := PBblas.Matrix_Map(w2_mat_x, w2_mat_y, sizeTable[1].f_b_rows, sizeTable[1].f_b_rows);
-    w2dist := DMAT.Converted.FromElement(w2_mat,w2map);
     //each bias vector is converted to block format
     b1vec := Mat.MU.From(Inputmod,3);
     b1vec_x := Mat.Has(b1vec).Stats.Xmax;
-    b1vecmap := PBblas.Matrix_Map(b1vec_x, 1, sizeTable[1].f_b_rows, 1);
+    b1vecmap := PBblas.Matrix_Map(b1vec_x, 1, MIN([b1vec_x,sizeTable[1].f_b_rows]) , 1);
     b1vecdist := DMAT.Converted.FromElement(b1vec,b1vecmap);
-    b2vec := Mat.MU.From(Inputmod,4);
-    b2vec_x := Mat.Has(b2vec).Stats.Xmax;
-    b2vecmap := PBblas.Matrix_Map(b2vec_x, 1, sizeTable[1].f_b_rows, 1);
-    b2vecdist := DMAT.Converted.FromElement(b2vec,b2vecmap);
     //functions used
     PBblas.Types.value_t sigmoid(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := 1/(1+exp(-1*v));
     //maps used
-    b1map := PBblas.Matrix_Map(b1vec_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
-    b2map := PBblas.Matrix_Map(b2vec_x, m, sizeTable[1].f_b_rows, sizeTable[1].f_b_cols);
+    b1map := PBblas.Matrix_Map(b1vec_x, m, MIN([b1vec_x,sizeTable[1].f_b_rows]), sizeTable[1].f_b_cols);
     a2map := b1map;
-    a3map := b2map;
     HL_nodes := w1_mat_x;//number of nodes in the hidden layer
     Hiddmap := b1vecmap;
     //onevec for calculating rhohat
@@ -1359,16 +950,17 @@ EXPORT LearnC_lbfgs(DATASET(Types.NumericField) Indep,DATASET(Mat.Types.Element)
       SELF.v := 1;
     END;
     //Create Ones Vector for the calculations in the step fucntion
-    Ones_Vec := DATASET(m, gen(COUNTER, m),DISTRIBUTED);
+    Ones_Vec := DATASET(m, gen(COUNTER, m));
     Ones_Vecdist := DMAT.Converted.FromCells(Ones_VecMap, Ones_Vec);
     //b1m = repmat(b1v,1,m)
     b1m := PBblas.PB_dgemm(FALSE, TRUE, 1.0,b1vecmap, b1vecdist, Ones_VecMap, Ones_Vecdist, b1map);
     //z2 = w1*X+b1;
-    z2 := PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1dist, dmap, ddist, b1map, b1m, 1.0);
+    //z2 := PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1dist, dmap, ddist, b1map, b1m, 1.0); // MP closed error
+    z2_ := PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1dist, dmap, ddist, b1map);
+    z2 := PBblas.PB_daxpy(1.0, b1m, z2_);
     //a2 = sigmoid (z2);
     a2 := PBblas.Apply2Elements(b1map, z2, sigmoid);
     a2_mat := DMat.Converted.FromPart2Elm(a2);
-
     NumericField tr (Mat.Types.Element le) := TRANSFORM
       SELF.id := le.y;
       SELF.number := le.x;
@@ -1425,12 +1017,5 @@ EXPORT LearnC_lbfgs(DATASET(Types.NumericField) Indep,DATASET(Mat.Types.Element)
     b2r := JOIN (mod,b2modid,LEFT.id=RIGHT.id,TRANSFORM(LEFT) );
     RETURN b2r;
   END;
-  
-  
-  EXPORT CostGrad_cal (DATASET(Types.NumericField) Indep,DATASET(Mat.Types.Element) IntW1, DATASET(Mat.Types.Element) IntW2, DATASET(Mat.Types.Element) Intb1,DATASET(Mat.Types.Element) Intb2, REAL8 BETA=0.1, REAL8 sparsityParam=0.1 , REAL8 LAMBDA=0.001, UNSIGNED2 MaxIter=100) := SA (Indep,IntW1, IntW2,Intb1,Intb2, BETA, sparsityParam , LAMBDA,  MaxIter).mod;
-END;//END Sparse_Autoencoder_mine
-
-
-
-
+END;//END Sparse_Autoencoder_lbfgs
 END;//END DeepLearning
