@@ -3,7 +3,7 @@ IMPORT * FROM $;
 IMPORT $.Mat;
 IMPORT * FROM ML.Types;
 //return the roots of the polynomiala a*x^2+b*x+c
-//the retunr structure is a numericfield dataset
+//the returned structure is in numericfield fomat
 // id =1 : whether the roots are imaginary or real values (-1/1)
 //id = {1,2} : the actual root values 
 EXPORT roots (REAL8 a, REAL8 b, REAL8 c) := FUNCTION

@@ -2,7 +2,9 @@
 IMPORT * FROM $;
 IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
-// The very first version of this test file was called SparseAutoencoder_MNIST_5digits which will work in the previous submit: LBFGS 400 iterations on ~maryam::mytest::mnist_5digits_traindata :  W20160602-132158
+// test SoftMax_lbfgs classifier on MNIST data
+//training data are the features extracted throug a previously learnt sparse autoencoder on MNIST data where the data includes digits {0,1,2,3,4}
+//test data are the features extracted throug a previously learnt sparse autoencoder on MNIST data where the data includes digits {5,6,7,8,9}
 INTEGER4 hl := 25;//number of nodes in the hiddenlayer
 INTEGER4 f := 28*28;//number of input features
 
@@ -802,96 +804,31 @@ ML.AppendID(input_data_tmp_test, id, input_data_test);
 sample_table := input_data;
 ML.ToField(sample_table, indepDataC);
 ML.ToField(input_data_test, indepDataC_test);
-//define the parameters for the Sparse Autoencoder
-//ALPHA is learning rate
-//LAMBDA is weight decay rate
-REAL8 sparsityParam  := 0.1;
-REAL8 BETA := 3;
-REAL8 ALPHA := 0.1;
-REAL8 LAMBDA :=0.003;
-UNSIGNED2 MaxIter :=2;
-UNSIGNED4 prows:=0;
-UNSIGNED4 pcols:=0;
-UNSIGNED4 Maxrows:=0;
-UNSIGNED4 Maxcols:=0;
-//initialize weight and bias values for the Back Propagation algorithm
-IntW := DeepLearning.Sparse_Autoencoder_IntWeights(f,hl);
-Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
-SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f, hl, 0,0,0,0);
-IntW1 := Mat.MU.From(IntW,1);
-IntW2 := Mat.MU.From(IntW,2);
-Intb1 := Mat.MU.From(Intb,1);
-Intb2 := Mat.MU.From(Intb,2);
-// OUTPUT(IntW1,ALL, named ('IntW1'));
-// OUTPUT(IntW2,ALL, named ('IntW2'));
-// OUTPUT(IntB1,ALL, named ('IntB1'));
-// OUTPUT(IntB2,ALL, named ('IntB2'));
-// train the sparse autoencoer with train data
-
-lbfgs_model_mine4_1 := SA_mine4_1.LearnC(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, MaxIter);//the output includes the learnt parameters for the sparse autoencoder (W1,W2,b1,b2) in numericfield format
-//OUTPUT(lbfgs_model_mine4_1);
-MatrixModel := SA_mine4_1.Model (lbfgs_model_mine4_1);//convert the model to matrix format where no=1 is W1, no=2 is W2, no=3 is b1 and no=4 is b2
-//OUTPUT(MatrixModel, named ('MatrixModel'));
-
-//Out := SA_mine4_1.SAOutput (indepDataC, lbfgs_model_mine4_1);
-//OUTPUT(Out, named ('Out'));
-
-Extractedweights := SA_mine4_1.ExtractWeights (lbfgs_model_mine4_1);
-//OUTPUT(Extractedweights, named ('Extractedweights'));
-
-ExtractedBias := SA_mine4_1.ExtractBias (lbfgs_model_mine4_1);
-//OUTPUT(ExtractedBias, named ('ExtractedBias'));
-
-
-W1_matrix := ML.Mat.MU.FROM(Extractedweights,1) ;
-//OUTPUT(W1_matrix, NAMED('W1_matrix'));
-
-W2_matrix := ML.Mat.MU.FROM(Extractedweights,2) ;
-//OUTPUT(W2_matrix, NAMED('W2_matrix'));
-
-b1_matrix := ML.Mat.MU.FROM(ExtractedBias,1) ;
-//OUTPUT(b1_matrix, NAMED('b1_matrix'));
-
-b2_matrix := ML.Mat.MU.FROM(ExtractedBias,2) ;
-//OUTPUT(b2_matrix, NAMED('b2_matrix'));
-
-
-// OUTPUT(W1_matrix,,'~thor::maryam::mytest::W1_matrix_MNIST_5digits1.csv',CSV(HEADING(SINGLE)));
-// OUTPUT(W2_matrix,,'~thor::maryam::mytest::W2_matrix_MNIST_5digits1.csv',CSV(HEADING(SINGLE)));
-// OUTPUT(b1_matrix,,'~thor::maryam::mytest::b1_matrix_MNIST_5digits1.csv',CSV(HEADING(SINGLE)));
-// OUTPUT(b2_matrix,,'~thor::maryam::mytest::b2_matrix_MNIST_5digits1.csv',CSV(HEADING(SINGLE)));
-
-//after SA model is learnt use it to extract features from train and test dataset
+//Extract features from train and test dataset by using a pre-learnt sparse autoencoder parameters
 //extract features by using the model in W20160602-132158
 optW1 := DATASET('~thor::maryam::mytest::W1_matrix_MNIST_5digits1.csv', ML.mat.Types.element, CSV(HEADING(1)));
 //OUTPUT(optW1, NAMED('optW1'));
-
 optW2 := DATASET('~thor::maryam::mytest::W2_matrix_MNIST_5digits1.csv', ML.mat.Types.element, CSV(HEADING(1)));
 //OUTPUT(optW2, NAMED('optW2'));
-
 optb1 := DATASET('~thor::maryam::mytest::b1_matrix_MNIST_5digits1.csv', ML.mat.Types.element, CSV(HEADING(1)));
 //OUTPUT(optb1, NAMED('optb1'));
-
 optb2 := DATASET('~thor::maryam::mytest::b2_matrix_MNIST_5digits1.csv', ML.mat.Types.element, CSV(HEADING(1)));
-//OUTPUT(optb2, NAMED('optb2'));
-
-//convert this to a model that can be feed to sparsequtoencoder
-
-    SAprm1_mat := optW1;
-    SAprm2_mat := optW2;
-    SAprm3_mat := optb1;
-    SAprm4_mat := optb2;
-    SAprm1_mat_no := Mat.MU.TO(SAprm1_mat,1);
-    SAprm2_mat_no := Mat.MU.TO(SAprm2_mat,2);
-    SAprm3_mat_no := Mat.MU.TO(SAprm3_mat,3);
-    SAprm4_mat_no := Mat.MU.TO(SAprm4_mat,4);
-    SAprm_MUE := SAprm1_mat_no + SAprm2_mat_no + SAprm3_mat_no + SAprm4_mat_no;
-    AppendID(SAprm_MUE, id, SAprm_MUE_id);
-    ToField (SAprm_MUE_id, SAprm_model_out, id, 'x,y,value,no');
+OUTPUT(optb2, NAMED('optb2'));
+//convert these parameters to numericfield so they can be feed to sparsequtoencoder to extract features
+SAprm1_mat := optW1;
+SAprm2_mat := optW2;
+SAprm3_mat := optb1;
+SAprm4_mat := optb2;
+SAprm1_mat_no := Mat.MU.TO(SAprm1_mat,1);
+SAprm2_mat_no := Mat.MU.TO(SAprm2_mat,2);
+SAprm3_mat_no := Mat.MU.TO(SAprm3_mat,3);
+SAprm4_mat_no := Mat.MU.TO(SAprm4_mat,4);
+SAprm_MUE := SAprm1_mat_no + SAprm2_mat_no + SAprm3_mat_no + SAprm4_mat_no;
+AppendID(SAprm_MUE, id, SAprm_MUE_id);
+ToField (SAprm_MUE_id, SAprm_model_out, id, 'x,y,value,no');
 //extract the features for training data
+SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f, hl, 0,0,0,0);
 extractedfeatures_out := SA_mine4_1.SAOutput (indepDataC, SAprm_model_out);
-
-//OUTPUT(extractedfeatures_out(partition_id=1)[1].mat_part);
 extractedfeatures_out_test := SA_mine4_1.SAOutput (indepDataC_test, SAprm_model_out);
 //read label for training data, this will be used to train softmax classifier
 label := DATASET('~maryam::mytest::mnist_5digits_trainlabel',Types.DiscreteField, CSV); // label correspondance to the training data
@@ -899,13 +836,9 @@ label := DATASET('~maryam::mytest::mnist_5digits_trainlabel',Types.DiscreteField
 // read test labels in order to evaluate the clasifier
 label_test := DATASET('~maryam::mytest::mnist_5digits_testlabel',Types.DiscreteField, CSV); // label correspondance to the training data
 //OUTPUT(label_test, NAMED('label_test'));
-// based on new traning data which is extracted features SA extracted from traning data and label train a softmax
+//train the softmax model
 LoopNum := 100; // Number of iterations in softmax algortihm
 softLAMBDA := 0.0001; // weight decay parameter in  claculation of SoftMax Cost fucntion
-
-//input data
-
-
 //initialize THETA
 Numclass := MAX (label, label.value);
 //OUTPUT  (Numclass, ALL, NAMED ('Numclass'));
@@ -915,17 +848,14 @@ T1 := Mat.RandMat (Numclass,InputSize+1);
 //OUTPUT  (T1, ALL, NAMED ('T1'));
 IntTHETA := Mat.Scale (T1,0.005);
 //OUTPUT  (IntTHETA, ALL, NAMED ('IntTHETA'));
-//SoftMax_Sparse Classfier
-
+REAL8 ALPHA := 0.1;
 softtrainer:= ML.Classify.SoftMax_lbfgs( softLAMBDA, ALPHA, LoopNum, 0, 0, 0,  0);
-
 //Learning Phase
-//softMod := softtrainer.LearnC_lbfgs(IntTHETA,extractedfeatures_out, label);
- //output(softMod);
- 
- //OUTPUT(softMod,,'~thor::maryam::mytest::softmax_model_MNIST_5digits1.csv',CSV(HEADING(SINGLE)));
- softMod := DATASET('~thor::maryam::mytest::softmax_model_MNIST_5digits1.csv', ML.Types.NumericField, CSV(HEADING(1)));
-OUTPUT  (softMod,  NAMED ('softMod'));
+softMod := softtrainer.LearnC_lbfgs(IntTHETA,extractedfeatures_out, label);
+output(softMod);
+//OUTPUT(softMod,,'~thor::maryam::mytest::softmax_model_MNIST_5digits1_2',CSV(HEADING(SINGLE)));
+//softMod := DATASET('~thor::maryam::mytest::softmax_model_MNIST_5digits1.csv', ML.Types.NumericField, CSV(HEADING(1)));
+OUTPUT(softMod,  NAMED ('softMod'));
 dist := softtrainer.ClassProbDistribC(extractedfeatures_out_test,softMod );
 classified := softtrainer.ClassifyC(extractedfeatures_out_test,softMod);
 OUTPUT  (dist,  NAMED ('dist'));
@@ -937,14 +867,12 @@ acc_rec := RECORD
   ML.Types.t_Discrete predicted_class;
   INTEGER match; // if actual_class= predicted_class then match=1 else match=0
 END;
-
 acc_rec build_acc (label_test l, classified r) := TRANSFORM
   SELF.id := l.id;
   SELF.actual_class := l.value;
   SELF.predicted_class := r.value;
   SELF.match := IF (l.value=r.value, 1, 0);
 END;
-
 acc_data := JOIN(label_test, classified, LEFT.id=RIGHT.id,build_acc(LEFT,RIGHT));
 OUTPUT(acc_data);
 OUTPUT(sum(acc_data, acc_data.match));

@@ -1406,9 +1406,6 @@ EXPORT SoftMax_lbfgs( REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100
   UNSIGNED4 prows=0, UNSIGNED4 pcols=0,UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE(DEFAULT)
   
    Soft(DATASET (MAT.Types.Element) IntTHETA, DATASET(Types.NumericField) X,DATASET(Types.NumericField) Y) := MODULE
-
-
-      
   //Convert the input data to matrix
   //the reason matrix transform is done after ocnverting the input data to the matrix is that
   //in this implementation it is assumed that the  input matrix shows the samples in column-wise format
@@ -1480,18 +1477,10 @@ EXPORT SoftMax_lbfgs( REAL8 LAMBDA=0.001, REAL8 ALPHA=0.1, UNSIGNED2 MaxIter=100
     paramnumber := NumClass * d_n;
     LBFGS_MAXitr := MaxIter;
     LBFGS_corrections := 100;
-  
-    
- 
     lbfgs_results := Optimization (0, 0, 0, 0).MinFUNC(IntTHETAdist,soft_params,ddist,groundTruthdist,Soft_compatible_lbfgs, paramnumber,LBFGS_MAXitr, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0) ;
-    
-    
     maxno := MAX(lbfgs_results, lbfgs_results.no);
     optTHETA_ := lbfgs_results(no=maxno);
-   
     optTHETA_part := PROJECT(optTHETA_, TRANSFORM(Layout_Part, SELF := LEFT));
-
-    
     EXPORT mod := ML.DMat.Converted.FromPart2DS(optTHETA_part);
     
     //EXPORT Mod := lbfgs_results;
