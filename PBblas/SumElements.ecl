@@ -18,6 +18,6 @@ EXPORT SumElements( DATASET(Part) X) := FUNCTION
     s:= SUM(lr.mat_part);
     SELF.v := s;
   END;
-  sumdataset := PROJECT(X, dosum(LEFT));
+  sumdataset := PROJECT(X, dosum(LEFT),LOCAL);
   RETURN SUM(sumdataset,sumdataset.v);
 END;

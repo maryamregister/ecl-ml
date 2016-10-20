@@ -1,4 +1,4 @@
-IMPORT PBblas;
+﻿IMPORT PBblas;
 IMPORT PBblas.IMatrix_Map;
 IMPORT PBblas.Types;
 IMPORT PBblas.Constants;
@@ -13,5 +13,5 @@ EXPORT PB_dscal(value_t alpha, DATASET(Part) X) := FUNCTION
     SELF.mat_part := BLAS.dscal(cells, alpha, lr.mat_part, 1);
     SELF := lr;
   END;
-  RETURN PROJECT(x, sm(LEFT));
+  RETURN PROJECT(x, sm(LEFT),LOCAL);
 END;

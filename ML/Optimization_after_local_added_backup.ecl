@@ -5,8 +5,6 @@ IMPORT * FROM $;
 IMPORT $.Mat;
 IMPORT * FROM ML.Types;
 IMPORT PBblas;
-IMPORT STD;
-SHARED nodes_available := STD.system.Thorlib.nodes();
 Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
 matrix_t     := SET OF REAL8;
@@ -141,93 +139,6 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
      RETURN d; 
     END; // END lbfgs_4
     
-		
-		 EXPORT lbfgs_4_ (DATASET(Layout_Part) g, DATASET(PBblas.Types.MUElement) s, DATASET(PBblas.Types.MUElement) y, REAL8 Hdiag) := FUNCTION
-      dot_tmp_rec := RECORD
-        UNSIGNED2 id;
-        REAL8 ro;
-      END;
-      one_map := PBblas.Matrix_Map(1,1,1,1);
-      k := MAX(s,no); // k is the number of previous step vectors included in the s strcuture
-      Product(REAL8 val1, REAL8 val2) := val1 * val2;
-      Elem := {REAL8 v};  //short-cut record def
-      //I am implementing this myself instead of using PBblas library because this can be done in paralel for all the vectors in s and y recordsest (the vector with corresponding ids can dot product simultaniously)
-      dot_tmp_rec hadPart(PBblas.Types.MUElement xrec, PBblas.Types.MUElement yrec) := TRANSFORM //hadamard product
-        elemsX := DATASET(xrec.mat_part, Elem);
-        elemsY := DATASET(yrec.mat_part, Elem);
-        new_elems := COMBINE(elemsX, elemsY, TRANSFORM(Elem, SELF.v := Product(LEFT.v,RIGHT.v)));
-        SELF.ro :=  SUM(new_elems,new_elems.v);
-        SELF.id := xrec.no;
-      END;
-      //calculate ro values,  ro(i) = 1/(y(i)'*s(i)); 
-      ro_tmp := JOIN(s, y, LEFT.partition_id=RIGHT.partition_id AND LEFT.no=RIGHT.no-k, hadPart(LEFT,RIGHT), FULL OUTER, LOCAL);
-      ro_rec := RECORD
-        ro_tmp.id;
-        REAL ro_val := 1/SUM(GROUP,ro_tmp.ro) ;
-      END; 
-      ro := TABLE(ro_tmp,ro_rec,id,FEW);
-      
-      //calculate q and al
-      //inp has the previous q value with no=1 and the al values start from no+1 to no+k+1 which correponds to al[1] to al[k], each al[i] is calculated in one iteration from i=k to i=1
-      q_step (DATASET(PBblas.Types.MUElement) inp, unsigned4 coun) := FUNCTION
-        inp_ := PBblas.MU.From(inp,1); // this is actually old_q, its has no=1
-        ind := k-coun+1;
-        s_ := PBblas.Mu.From(s,ind);
-        y_ := PBblas.MU.From(y,ind+k);
-        ro_ := ro(id=ind)[1].ro_val;
-        //calculate al_ 
-        //al_ = ro(i)*s(:,i)'*q(:,i+1);
-        //al_tmp := Pbblas.PB_dgemm(TRUE, FALSE, ro_, param_map, s_, param_map, inp_, one_map); orig
-        al_ := ro_ * SumProduct (s_ ,inp_ );
-        //al_ := al_tmp[1].mat_part[1]; orig
-        al_tmp := ML.DMat.Converted.FromElement(DATASET ([{1,1,al_}],MAT.Types.Element),one_map);
-        al_no := Pbblas.MU.TO(al_tmp,ind+1); //+1 is added to make sure that the last al[1] gets no=1 so it does not gets mixed up with q that has no=1
-        //calculate q
-        //q(:,i) = q(:,i+1)-al(i)*y(:,i); // new_q = old_q - al_ * y_
-        new_q := PBblas.PB_daxpy(-1*al_, y_, inp_);
-        new_q_no := Pbblas.MU.TO(new_q,1); // this goanna be old_q (no=1) for the next loop iteration
-        RETURN al_no+new_q_no+inp(no!=1);
-      END; //END q_step
-      g_ind := 2*k+1;
-      topass_q := PBblas.MU.TO(g,1);
-			
-      q_tmp := LOOP(topass_q, COUNTER <= k, q_step(ROWS(LEFT),COUNTER));
-      //q_tmp : no=1 has the q vector, n=2 to n=k+1 have al values corespondant ro al[1] tp al[k]
-      q := Pbblas.MU.FROM(q_tmp,1);
-      al_tmp := q_tmp (no>1);
-      al_rec := RECORD
-        INTEGER8 id;
-        REAL al_val;
-      END; 
-      al := PROJECT(al_tmp, TRANSFORM(al_rec, SELF.id:=LEFT.no-1, SELF.al_val := LEFT.mat_part[1])); //al contains al values with id starting from 1 to k
-      
-      //calculate r
-      //inp(no=1) includes r calculate in teh previous step
-      //inp(n=2) to inp(n=k+1) includes be values, which each one is calculated in one step
-      r_step (DATASET(Layout_Part) inp, unsigned4 coun) := FUNCTION
-        inp_ := inp; // this is actually old_r, it has no=1
-        y_ := PBblas.MU.From(y,coun+k);
-        s_ := PBblas.MU.From(s,coun);
-        ro_ := ro(id=coun)[1].ro_val;
-        al_ := al (id=coun)[1].al_val;
-        // be(i) = ro(i)*y(:,i)'*r(:,i);
-        //be_tmp := Pbblas.PB_dgemm(TRUE, FALSE, ro_, param_map, y_, param_map, inp_, one_map); orig
-        be_tmp := ro_ * SumProduct (y_ ,inp_ );
-        be_ := be_tmp;//this covers r(:,1) = Hdiag*q(:,1);
-        //r(:,i+1) = r(:,i) + s(:,i)*(al(i)-be(i));
-        al_be := al_ - be_;
-        new_r := PBblas.PB_daxpy(al_be, s_, inp_);
-        RETURN new_r ;
-      END;
-      //Functions needed in calculations
-      PBblas.Types.value_t h_mul(PBblas.Types.value_t v, PBblas.Types.dimension_t r, PBblas.Types.dimension_t c) := v * Hdiag;
-      topass_r := PBblas.PB_dscal(Hdiag,q); //r(:,1) = Hdiag*q(:,1);
-      d := LOOP(topass_r, COUNTER <= k, r_step(ROWS(LEFT),COUNTER));
-      
-     //RETURN PBblas.PB_dscal (al (id=1)[1].al_val,q);
-     //RETURN PBblas.PB_dscal(Hdiag,g);
-     RETURN d; 
-    END; // END lbfgs_4_
     //olsy include old s and y values, where s vectors have no=1 to no =k and y values have no=k+1 to k+k (k is the number of vector  we are storing by now (k<= corrections)
     //s is the new vector s which we need to add to the oldsy dataset
     //y is the new vector y which we need to add to the oldsy dataset
@@ -262,48 +173,7 @@ EXPORT Optimization (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, 
       RETURN R; 
     END; // END lbfgsUpdate 
     
-    
-		
-		MU_nID_REC := RECORD (PBblas.Types.MUElement)
-		UNSIGNED2 nID := 0;
-		END;
-EXPORT lbfgsUpdate_ ( DATASET(PBblas.Types.MUElement) oldsy, DATASET(Layout_Part) y,DATASET(Layout_Part) s , INTEGER8 corrections, REAL8 ys, UNSIGNED nodes_used_vector, UNSIGNED itr_num ) := FUNCTION
-			old_sy := PROJECT (oldsy, TRANSFORM(MU_nID_REC, SELF:= LEFT));
-      k := IF (itr_num < corrections, itr_num, corrections);// The number of vectors (either s or y) stored by now
-      K_corr := k<corrections;
-      s_new_ind := IF (K_corr, k+1, k);
-      y_new_ind := IF (K_corr, 2*(k+1), 2*k);
-      s_new_no := PBblas.MU.TO(s,s_new_ind);
-      y_new_no := PBBlas.MU.TO(y, y_new_ind);
-			//IF the dataset is not still full (k<corrections)
-      MU_nID_REC snew_trans (Layout_Part old) := TRANSFORM
-        SELF.no  := s_new_ind;
-				SELF.nID := (old.node_id + (s_new_ind-1)*nodes_used_vector) % nodes_available;
-        SELF     := old;
-      END;
-      //IF the dataset is not still full (k<corrections)
-      PBblas.Types.MUElement no_update_notfull (PBblas.Types.MUElement old) := TRANSFORM
-        SELF.no := IF (old.no <=k, old.no, old.no+1);
-        SELF := old;
-      END;
-      //IF the dataset is full (k<corrections)
-      PBblas.Types.MUElement no_update_full (PBblas.Types.MUElement old) := TRANSFORM
-        SELF.no := old.no-1;
-        SELF := old;
-      END;
-      oldsy_reduced := oldsy(no != 1 AND no != (k+1));
-      old_notfull_updated := PROJECT(oldsy, no_update_notfull(LEFT),LOCAL);
-      old_full_updated := PROJECT(oldsy_reduced, no_update_full(LEFT),LOCAL);
-      old_updated := IF (K_corr, old_notfull_updated, old_full_updated);
-      //calculate ys
-      //ys = y'*s;
-      // ys_ := PBblas.PB_dgemm (TRUE, FALSE, 1.0, param_map, y, param_map, s, one_map);
-      // ys := ys_[1].mat_part[1];
-      R := IF (ys<10^(-10), oldsy, old_updated + s_new_no + y_new_no);
-      RETURN R; 
-    END; // END lbfgsUpdate_ 		
-		
-		//update HDiag value
+    //update HDiag value
     EXPORT lbfgsUpdate_Hdiag ( DATASET(Layout_Part) y , PBblas.IMatrix_Map param_map, REAL8 ys, REAL8 hdiag) := FUNCTION
       one_map := PBblas.Matrix_Map(1,1,1,1);
       yy_ := PBblas.PB_dgemm (TRUE, FALSE, 1.0, param_map, y, param_map, y, one_map);
@@ -1241,7 +1111,7 @@ END;
       // Select Initial Guess If coun =1 then t = min(1,1/sum(abs(g)));
       t_init := MIN ([1, 1/(sum_abs(g0))]);
       // Find Point satisfying Wolfe
-      w := WolfeLineSearch4(1, x0,CostFunc_params,TrainData, TrainLabel,CostFunc, param_num, t_init, d, f0, g0,gtd, 0.0001, 0.9, 3, 0.000000001);//it was 25 originaly
+      w := WolfeLineSearch4(1, x0,CostFunc_params,TrainData, TrainLabel,CostFunc, param_num, t_init, d, f0, g0,gtd, 0.0001, 0.9, 25, 0.000000001);
       w_feval := wolfe_funEvals (w);
       w_t := wolfe_t (w);
       w_f := wolfe_f (w);
@@ -1338,7 +1208,7 @@ END;
       //t_init := IF (coun = 1,MIN ([1, 1/(sum_abs(g_pre))]),1);
       t_init := 1;
       // Find Point satisfying Wolfe
-      w := WolfeLineSearch4(1, x_pre,CostFunc_params,TrainData, TrainLabel,CostFunc, param_num, t_init, d, f_pre, g_pre,gtd, 0.0001, 0.9, 3, 0.000000001);// orig it was 25 originaly
+      w := WolfeLineSearch4(1, x_pre,CostFunc_params,TrainData, TrainLabel,CostFunc, param_num, t_init, d, f_pre, g_pre,gtd, 0.0001, 0.9, 25, 0.000000001);
       w_feval := wolfe_funEvals (w);
       w_t := wolfe_t (w);
       w_f := wolfe_f (w);
@@ -1392,8 +1262,8 @@ END;
       dnot_legal_return := PROJECT(inp, TRANSFORM(minfrec, SELF.break_cond := 1, SELF:= LEFT ),LOCAL);
       Noprogalong_return := PROJECT(inp, TRANSFORM(minfrec, SELF.break_cond := 2, SELF:= LEFT ),LOCAL);
       FinalResult := IF (IsLegald, IF (Isprog1, Noprogalong_return, IF (break_code!=-1, to_return_break, to_return)), dnot_legal_return);
-      RETURN IF (EXISTS(inp),FinalResult,inp);
-     // RETURN FinalResult;
+      //RETURN IF (EXISTS(inp),FinalResult,inp); orig
+      RETURN FinalResult;
      //RETURN d;
      //RETURN PROJECT(inp, TRANSFORM(minfrec, SELF.h := w[1].t_, SELF:= LEFT ));
      // RETURN w;
@@ -1408,8 +1278,6 @@ END;
     min_result_nextitr := LOOP(min_result_firstitr, MaxIter ,LEFT.break_cond=-1, min_step(ROWS(LEFT),COUNTER));      
     min_result := IF(first_itr_break!=-1, min_result_firstitr, min_result_nextitr);
     RETURN min_result;
-		//RETURN min_result_firstitr;
-		//RETURN LOOP(min_result_firstitr, 2 ,LEFT.break_cond=-1, min_step(ROWS(LEFT),COUNTER));
     //RETURN  LOOP(min_result_firstitr, 400 ,LEFT.break_cond=-1, min_step(ROWS(LEFT),COUNTER));   
   END;// END MinFUNC
 

@@ -3,7 +3,7 @@ IMPORT * FROM $;
 IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
 // W20160722-150442
-// test Sparse_Autoencoder_lbfgs on an image dataset, the dataset includes patches of randome imagae of size 8 by 8
+// test Sparse_Autoencoder_lbfgs on an image dataset, the dataset includes patches of randome images of size 8 by 8
 
 INTEGER4 hl := 25;//number of nodes in the hiddenlayer
 INTEGER4 f := 8*8;//number of input features

@@ -24,5 +24,6 @@ EXPORT DATASET(Part)
     SELF.mat_part := SET(new_elems, v);
     SELF := lr;
   END;
-  RETURN PROJECT(X, apply_func(LEFT));
+  //RETURN PROJECT(X, apply_func(LEFT));
+	RETURN PROJECT(X, apply_func(LEFT),LOCAL);
 END;

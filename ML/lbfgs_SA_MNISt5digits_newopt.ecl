@@ -816,7 +816,8 @@ IntW := DeepLearning.Sparse_Autoencoder_IntWeights(f,hl);
 Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
 //SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f,hl,40,7649,40,7649);
 //SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f,hl,16,15298,16,15298);
-SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f,hl,f,306,f,306);
+//SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f,hl,f,306,f,306);
+SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs_part (f,hl,98,306);
 IntW1 := Mat.MU.From(IntW,1);
 IntW2 := Mat.MU.From(IntW,2);
 Intb1 := Mat.MU.From(Intb,1);
@@ -827,9 +828,12 @@ Intb2 := Mat.MU.From(Intb,2);
 // OUTPUT(IntB2,ALL, named ('IntB2'));
 // train the sparse autoencoer with train data
 lbfgs_model_mine4_1 := SA_mine4_1.LearnC(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, MaxIter);//the output includes the learnt parameters for the sparse autoencoder (W1,W2,b1,b2) in numericfield format
-OUTPUT(lbfgs_model_mine4_1);
-// mymy2 := DISTRIBUTE (lbfgs_model_mine4_1, first_row);
-// myformat2 := RECORD
+
+//OUTPUT (MAX(input_data, input_data.id));
+// OUTPUT(lbfgs_model_mine4_1);
+ OUTPUT(lbfgs_model_mine4_1,,'~thor::maryam::mytest::5digist_newopt2',CSV(HEADING(SINGLE)), OVERWRITE);
+ // mymy2 := lbfgs_model_mine4_1;
+ // myformat2 := RECORD
     // mymy2.node_id;
     // mymy2.partition_id;
     // mymy2.block_row;
@@ -838,10 +842,12 @@ OUTPUT(lbfgs_model_mine4_1);
     // mymy2.part_rows;
     // mymy2.first_col;
     // mymy2.part_cols;
-		// mymy2.mat_part;
+		// mymy2.cost_value;
+	//	mymy2.mat_part;
 		// INTEGER real_node := STD.System.Thorlib.Node();
 // END;
 	// rslt := TABLE(mymy2,myformat2,LOCAL); 
+	// OUTPUT(rslt);
 
 // OUTPUT(rslt);
 // OUTPUT(mymy2);
@@ -855,21 +861,21 @@ OUTPUT(lbfgs_model_mine4_1);
 // OUTPUT(lbfgs_model_mine4_1[8]);
 //OUTPUT(MAX(input_data, input_data.id));
 
-MatrixModel := SA_mine4_1.Model (lbfgs_model_mine4_1);//convert the model to matrix format where no=1 is W1, no=2 is W2, no=3 is b1 and no=4 is b2
-OUTPUT(MatrixModel, named ('MatrixModel'));
-Extractedweights := SA_mine4_1.ExtractWeights (lbfgs_model_mine4_1);
-OUTPUT(Extractedweights, named ('Extractedweights'));
-ExtractedBias := SA_mine4_1.ExtractBias (lbfgs_model_mine4_1);
-OUTPUT(ExtractedBias, named ('ExtractedBias'));
+ MatrixModel := SA_mine4_1.Model (lbfgs_model_mine4_1);//convert the model to matrix format where no=1 is W1, no=2 is W2, no=3 is b1 and no=4 is b2
+// OUTPUT(MatrixModel, named ('MatrixModel'));
+ Extractedweights := SA_mine4_1.ExtractWeights (lbfgs_model_mine4_1);
+// OUTPUT(Extractedweights, named ('Extractedweights'));
+ ExtractedBias := SA_mine4_1.ExtractBias (lbfgs_model_mine4_1);
+// OUTPUT(ExtractedBias, named ('ExtractedBias'));
 W1_matrix := ML.Mat.MU.FROM(Extractedweights,1);
-OUTPUT(W1_matrix, NAMED('W1_matrix'));
+//OUTPUT(W1_matrix, NAMED('W1_matrix'));
 W2_matrix := ML.Mat.MU.FROM(Extractedweights,2);
-OUTPUT(W2_matrix, NAMED('W2_matrix'));
+//OUTPUT(W2_matrix, NAMED('W2_matrix'));
 b1_matrix := ML.Mat.MU.FROM(ExtractedBias,1);
-OUTPUT(b1_matrix, NAMED('b1_matrix'));
+//OUTPUT(b1_matrix, NAMED('b1_matrix'));
 b2_matrix := ML.Mat.MU.FROM(ExtractedBias,2);
-OUTPUT(b2_matrix, NAMED('b2_matrix'));
-// OUTPUT(W1_matrix,,'~thor::maryam::mytest::W1_matrix_MNIST_5digits_4',CSV(HEADING(SINGLE)));//3_bbs means after implementing big_big_smal and all others to calculate sparseautoencoder
-// OUTPUT(W2_matrix,,'~thor::maryam::mytest::W2_matrix_MNIST_5digits_4',CSV(HEADING(SINGLE)));
-// OUTPUT(b1_matrix,,'~thor::maryam::mytest::b1_matrix_MNIST_5digits_4',CSV(HEADING(SINGLE)));
-// OUTPUT(b2_matrix,,'~thor::maryam::mytest::b2_matrix_MNIST_5digits_4',CSV(HEADING(SINGLE)));
+//OUTPUT(b2_matrix, NAMED('b2_matrix'));
+OUTPUT(W1_matrix,,'~thor::maryam::mytest::W1_matrix_MNIST_5digits_newopt',CSV(HEADING(SINGLE)));//3_bbs means after implementing big_big_smal and all others to calculate sparseautoencoder
+OUTPUT(W2_matrix,,'~thor::maryam::mytest::W2_matrix_MNIST_5digits_newopt',CSV(HEADING(SINGLE)));
+OUTPUT(b1_matrix,,'~thor::maryam::mytest::b1_matrix_MNIST_5digits_newopt',CSV(HEADING(SINGLE)));
+OUTPUT(b2_matrix,,'~thor::maryam::mytest::b2_matrix_MNIST_5digits_newopt',CSV(HEADING(SINGLE)));
