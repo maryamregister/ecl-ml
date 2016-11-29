@@ -3,8 +3,9 @@ IMPORT * FROM $;
 IMPORT PBblas;
 IMPORT STD;
 Layout_Cell := PBblas.Types.Layout_Cell;
+Layout_part := PBblas.Types.Layout_part;
 // most recent  W20160915-232308
-// test Sparse_Autoencoder_lbfgs on an MNIST dataset which contains only five digits {0,1,2,3,4} : workunit W20160724-100930
+// the last version of this test basaed on the most current implementation on 11/07/2016
 INTEGER4 hl := 25;//number of nodes in the hiddenlayer
 INTEGER4 f := 28*28;//number of input features
 
@@ -797,7 +798,11 @@ real8	f783	;
 real8	f784	;
 END;
 
-input_data_tmp := DATASET('~maryam::mytest::mnist_5digits_traindata', value_record, CSV); // This dataset is a subset of MNIST dtaset that includes 5 digits (0 to 4), it is used for traibn
+// input_data_tmp := DATASET('~maryam::mytest::mnist_5digits_traindata', value_record, CSV); // This dataset is a subset of MNIST dtaset that includes 5 digits (0 to 4), it is used for traibn
+input_data_tmp := DATASET('~maryam::mytest::mnist_60000', value_record, CSV); // This dataset includes all MNIST data, 60000 samples
+
+// max(id) = 15298
+
 ML.AppendID(input_data_tmp, id, input_data);
 sample_table := input_data;
 ML.ToField(sample_table, indepDataC);
@@ -811,13 +816,15 @@ UNSIGNED4 prows:=0;
 UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
 UNSIGNED4 Maxcols:=0;
+UNSIGNED4 CORR:=100;
 //initialize weight and bias values for the Back Propagation algorithm
 IntW := DeepLearning.Sparse_Autoencoder_IntWeights(f,hl);
 Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
 //SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f,hl,40,7649,40,7649);
 //SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f,hl,16,15298,16,15298);
 //SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f,hl,f,306,f,306);
-SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs_part (f,hl,98,306);
+// SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs_part_onebias_paramdist (f,hl,49,306);
+SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs_part_onebias_paramdist (f,hl,49,1200);
 IntW1 := Mat.MU.From(IntW,1);
 IntW2 := Mat.MU.From(IntW,2);
 Intb1 := Mat.MU.From(Intb,1);
@@ -827,9 +834,9 @@ Intb2 := Mat.MU.From(Intb,2);
 // OUTPUT(IntB1,ALL, named ('IntB1'));
 // OUTPUT(IntB2,ALL, named ('IntB2'));
 // train the sparse autoencoer with train data
-lbfgs_model_mine4_1 := SA_mine4_1.LearnC(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, MaxIter);//the output includes the learnt parameters for the sparse autoencoder (W1,W2,b1,b2) in numericfield format
+lbfgs_model_mine4_1 := SA_mine4_1.LearnC(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, MaxIter, CORR);//the output includes the learnt parameters for the sparse autoencoder (W1,W2,b1,b2) in numericfield format
 
-//OUTPUT (MAX(input_data, input_data.id));
+OUTPUT (MAX(input_data, input_data.id));
 // OUTPUT(lbfgs_model_mine4_1);
  //OUTPUT(lbfgs_model_mine4_1,,'~thor::maryam::mytest::5digist_newopt2',CSV(HEADING(SINGLE)), OVERWRITE);
  // mymy2 := lbfgs_model_mine4_1;
@@ -860,9 +867,25 @@ lbfgs_model_mine4_1 := SA_mine4_1.LearnC(indepDataC,IntW1, IntW2, Intb1, Intb2, 
 // OUTPUT(lbfgs_model_mine4_1[7]);
 // OUTPUT(lbfgs_model_mine4_1[8]);
 //OUTPUT(MAX(input_data, input_data.id));
+mymy2 := lbfgs_model_mine4_1;
+myrecord := RECORD
+    mymy2.node_id;
+    mymy2.partition_id;
+    mymy2.block_row;
+    mymy2.block_col;
+    mymy2.first_row;
+    mymy2.part_rows;
+    mymy2.first_col;
+    mymy2.part_cols;
 
- // MatrixModel := SA_mine4_1.Model (lbfgs_model_mine4_1);//convert the model to matrix format where no=1 is W1, no=2 is W2, no=3 is b1 and no=4 is b2
-// OUTPUT(MatrixModel, named ('MatrixModel'));
+		//mymy2.mat_part;
+		INTEGER real_node := STD.System.Thorlib.Node();
+END;
+	rsltttt := TABLE(mymy2,myrecord,LOCAL);
+	 // OUTPUT(lbfgs_model_mine4_1,,'~thor::maryam::mytest::MNIST5digits_alaki',CSV(HEADING(SINGLE)), OVERWRITE);
+	OUTPUT(rsltttt, ALL);
+
+
  Extractedweights := SA_mine4_1.ExtractWeights (lbfgs_model_mine4_1);
 // OUTPUT(Extractedweights, named ('Extractedweights'));
  ExtractedBias := SA_mine4_1.ExtractBias (lbfgs_model_mine4_1);
@@ -872,11 +895,11 @@ OUTPUT(W1_matrix, NAMED('W1_matrix'));
 W2_matrix := ML.Mat.MU.FROM(Extractedweights,2);
 OUTPUT(W2_matrix, NAMED('W2_matrix'));
 b1_matrix := ML.Mat.MU.FROM(ExtractedBias,1);
-OUTPUT(b1_matrix, NAMED('b1_matrix'));
+OUTPUT(b1_matrix, NAMED('b1_matrix'), ALL);
 b2_matrix := ML.Mat.MU.FROM(ExtractedBias,2);
-OUTPUT(b2_matrix, NAMED('b2_matrix'));
-OUTPUT(SA_mine4_1.extractcost_funeval(lbfgs_model_mine4_1));
-// OUTPUT(W1_matrix,,'~thor::maryam::mytest::W1_matrix_MNIST_5digits_newopt',CSV(HEADING(SINGLE)));//3_bbs means after implementing big_big_smal and all others to calculate sparseautoencoder
-// OUTPUT(W2_matrix,,'~thor::maryam::mytest::W2_matrix_MNIST_5digits_newopt',CSV(HEADING(SINGLE)));
-// OUTPUT(b1_matrix,,'~thor::maryam::mytest::b1_matrix_MNIST_5digits_newopt',CSV(HEADING(SINGLE)));
-// OUTPUT(b2_matrix,,'~thor::maryam::mytest::b2_matrix_MNIST_5digits_newopt',CSV(HEADING(SINGLE)));
+OUTPUT(b2_matrix, NAMED('b2_matrix'), ALL);
+OUTPUT(SA_mine4_1.extractcost_funeval(lbfgs_model_mine4_1),NAMED('f_value'));
+OUTPUT(W1_matrix,,'~thor::maryam::mytest::W1_matrix_MNIST_5digits_newopt2',CSV(HEADING(SINGLE)), OVERWRITE);
+OUTPUT(W2_matrix,,'~thor::maryam::mytest::W2_matrix_MNIST_5digits_newopt2',CSV(HEADING(SINGLE)), OVERWRITE);
+OUTPUT(b1_matrix,,'~thor::maryam::mytest::b1_matrix_MNIST_5digits_newopt2',CSV(HEADING(SINGLE)), OVERWRITE);
+OUTPUT(b2_matrix,,'~thor::maryam::mytest::b2_matrix_MNIST_5digits_newopt2',CSV(HEADING(SINGLE)), OVERWRITE);

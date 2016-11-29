@@ -1,14 +1,12 @@
 ﻿IMPORT * FROM ML;
+IMPORT STD;
 IMPORT * FROM $;
 IMPORT PBblas;
 IMPORT STD;
 Layout_Cell := PBblas.Types.Layout_Cell;
-// most recent  W20160915-232308
-// test Sparse_Autoencoder_lbfgs on an MNIST dataset which contains only five digits {0,1,2,3,4} : workunit W20160724-100930
-INTEGER4 hl := 25;//number of nodes in the hiddenlayer
-INTEGER4 f := 28*28;//number of input features
+Layout_part := PBblas.Types.Layout_part;
 
-//input data
+
 
 value_record := RECORD
 real8	f1	;
@@ -797,86 +795,133 @@ real8	f783	;
 real8	f784	;
 END;
 
-input_data_tmp := DATASET('~maryam::mytest::mnist_5digits_traindata', value_record, CSV); // This dataset is a subset of MNIST dtaset that includes 5 digits (0 to 4), it is used for traibn
+// input_data_tmp := DATASET('~maryam::mytest::mnist_5digits_traindata', value_record, CSV); // This dataset is a subset of MNIST dtaset that includes 5 digits (0 to 4), it is used for traibn
+//// max(id) = 15298
+input_data_tmp := DATASET('~maryam::mytest::mnist_60000', value_record, CSV); // This dataset includes all MNIST data, 60000 samples
+
+
+
+
 ML.AppendID(input_data_tmp, id, input_data);
 sample_table := input_data;
 ML.ToField(sample_table, indepDataC);
-//define the parameters for the Sparse Autoencoder
-REAL8 sparsityParam  := 0.1;
-REAL8 BETA := 3;
-REAL8 ALPHA := 0.1;
-REAL8 LAMBDA :=0.003;
-UNSIGNED2 MaxIter :=1;
-UNSIGNED4 prows:=0;
-UNSIGNED4 pcols:=0;
-UNSIGNED4 Maxrows:=0;
-UNSIGNED4 Maxcols:=0;
-//initialize weight and bias values for the Back Propagation algorithm
-IntW := DeepLearning.Sparse_Autoencoder_IntWeights(f,hl);
-Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
-//SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f,hl,40,7649,40,7649);
-//SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f,hl,16,15298,16,15298);
-//SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f,hl,f,306,f,306);
-SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs_part (f,hl,98,306);
-IntW1 := Mat.MU.From(IntW,1);
-IntW2 := Mat.MU.From(IntW,2);
-Intb1 := Mat.MU.From(Intb,1);
-Intb2 := Mat.MU.From(Intb,2);
-// OUTPUT(IntW1,ALL, named ('IntW1'));
-// OUTPUT(IntW2,ALL, named ('IntW2'));
-// OUTPUT(IntB1,ALL, named ('IntB1'));
-// OUTPUT(IntB2,ALL, named ('IntB2'));
-// train the sparse autoencoer with train data
-lbfgs_model_mine4_1 := SA_mine4_1.LearnC(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, MaxIter);//the output includes the learnt parameters for the sparse autoencoder (W1,W2,b1,b2) in numericfield format
 
-//OUTPUT (MAX(input_data, input_data.id));
-// OUTPUT(lbfgs_model_mine4_1);
- //OUTPUT(lbfgs_model_mine4_1,,'~thor::maryam::mytest::5digist_newopt2',CSV(HEADING(SINGLE)), OVERWRITE);
- // mymy2 := lbfgs_model_mine4_1;
- // myformat2 := RECORD
-    // mymy2.node_id;
-    // mymy2.partition_id;
-    // mymy2.block_row;
-    // mymy2.block_col;
-    // mymy2.first_row;
-    // mymy2.part_rows;
-    // mymy2.first_col;
-    // mymy2.part_cols;
-		// mymy2.cost_value;
-	//	mymy2.mat_part;
-		// INTEGER real_node := STD.System.Thorlib.Node();
-// END;
-	// rslt := TABLE(mymy2,myformat2,LOCAL); 
-	// OUTPUT(rslt);
 
-// OUTPUT(rslt);
-// OUTPUT(mymy2);
-// OUTPUT(lbfgs_model_mine4_1[1]);
-// OUTPUT(lbfgs_model_mine4_1[2]);
-// OUTPUT(lbfgs_model_mine4_1[3]);
-// OUTPUT(lbfgs_model_mine4_1[4]);
-// OUTPUT(lbfgs_model_mine4_1[5]);
-// OUTPUT(lbfgs_model_mine4_1[6]);
-// OUTPUT(lbfgs_model_mine4_1[7]);
-// OUTPUT(lbfgs_model_mine4_1[8]);
-//OUTPUT(MAX(input_data, input_data.id));
+labeldata_Format := RECORD
+  UNSIGNED id;
+  INTEGER label;
+END;
 
- // MatrixModel := SA_mine4_1.Model (lbfgs_model_mine4_1);//convert the model to matrix format where no=1 is W1, no=2 is W2, no=3 is b1 and no=4 is b2
-// OUTPUT(MatrixModel, named ('MatrixModel'));
- Extractedweights := SA_mine4_1.ExtractWeights (lbfgs_model_mine4_1);
-// OUTPUT(Extractedweights, named ('Extractedweights'));
- ExtractedBias := SA_mine4_1.ExtractBias (lbfgs_model_mine4_1);
-// OUTPUT(ExtractedBias, named ('ExtractedBias'));
-W1_matrix := ML.Mat.MU.FROM(Extractedweights,1);
-OUTPUT(W1_matrix, NAMED('W1_matrix'));
-W2_matrix := ML.Mat.MU.FROM(Extractedweights,2);
-OUTPUT(W2_matrix, NAMED('W2_matrix'));
-b1_matrix := ML.Mat.MU.FROM(ExtractedBias,1);
-OUTPUT(b1_matrix, NAMED('b1_matrix'));
-b2_matrix := ML.Mat.MU.FROM(ExtractedBias,2);
-OUTPUT(b2_matrix, NAMED('b2_matrix'));
-OUTPUT(SA_mine4_1.extractcost_funeval(lbfgs_model_mine4_1));
-// OUTPUT(W1_matrix,,'~thor::maryam::mytest::W1_matrix_MNIST_5digits_newopt',CSV(HEADING(SINGLE)));//3_bbs means after implementing big_big_smal and all others to calculate sparseautoencoder
-// OUTPUT(W2_matrix,,'~thor::maryam::mytest::W2_matrix_MNIST_5digits_newopt',CSV(HEADING(SINGLE)));
-// OUTPUT(b1_matrix,,'~thor::maryam::mytest::b1_matrix_MNIST_5digits_newopt',CSV(HEADING(SINGLE)));
-// OUTPUT(b2_matrix,,'~thor::maryam::mytest::b2_matrix_MNIST_5digits_newopt',CSV(HEADING(SINGLE)));
+label_table := DATASET('~maryam::mytest::mnist_labels_60000', labeldata_Format, CSV); 
+OUTPUT  (label_table,  NAMED ('label_table'));
+
+
+
+ML.ToField(label_table, depDataC);
+OUTPUT  (depDataC,  NAMED ('depDataC'));
+label := PROJECT(depDataC,Types.DiscreteField);
+OUTPUT  (label,  NAMED ('label'));
+
+//initialize THETA
+Numclass := MAX (label, label.value);
+OUTPUT  (Numclass, NAMED ('Numclass'));
+InputSize := 28*28;
+
+T1 := Mat.RandMat (Numclass,InputSize);
+
+OUTPUT  (T1,  NAMED ('T1'));
+IntTHETA := Mat.Scale (T1,0.005);
+OUTPUT  (IntTHETA,  NAMED ('IntTHETA'));
+//SoftMax_Sparse Classfier
+
+//Set Parameters
+LoopNum := 100; // Number of iterations in softmax algortihm
+LAMBDA := 0.0001; // weight decay parameter in  claculation of SoftMax Cost fucntion
+
+UNSIGNED4 prows:=49;
+ UNSIGNED4 pcols:=1200;
+
+ UNSIGNED corr := 100;
+
+trainer := DeepLearning.softmax_lbfgs (InputSize, Numclass, 49,  1200); 
+
+softresult := trainer.LearnC (indepDataC, depDataC,IntTHETA, LAMBDA, LoopNum, corr);
+
+// OUTPUT (softresult, named('softresult'));
+
+thsirec := RECORD (Layout_Part)
+UNSIGNED real_node;
+END;
+
+OUTPUT (PROJECT(softresult, TRANSFORM (thsirec,  SELF.real_node := STD.System.Thorlib.Node(); SELF := LEFT), LOCAL), ALL);
+
+OUTPUT(softresult,,'~thor::maryam::mytest::mnist',CSV(HEADING(SINGLE)), OVERWRITE);
+
+ lbfgs_rec := RECORD 
+Pbblas.types.node_t          node_id;
+    Pbblas.types.partition_t     partition_id;
+    Pbblas.types.dimension_t     block_row;
+    Pbblas.types.dimension_t     block_col;
+    Pbblas.types.dimension_t     first_row;
+    Pbblas.types.dimension_t     part_rows;
+    Pbblas.types.dimension_t     first_col;
+    Pbblas.types.dimension_t     part_cols;
+			REAL8 cost_value;
+      REAL8 h ;//hdiag value
+      INTEGER8 min_funEval;
+      INTEGER break_cond ;
+			REAL8 sty  ;
+			PBblas.Types.t_mu_no no;
+			INTEGER8 update_itr ; //This value is increased whenever a update is done and s and y vectors are added to the corrections. If no update is done due to the condition ys > 1e-10 then this value is not increased
+		
+			INTEGER8 itr_counter;
+			UNSIGNED real_node;
+			// Pbblas.Types.matrix_t        mat_part;
+    END;
+		
+		OUTPUT (PROJECT(softresult, TRANSFORM (lbfgs_rec,  SELF.real_node := STD.System.Thorlib.Node(); SELF := LEFT), LOCAL),named ('realnodes_lbfgs'),ALL);
+
+// testdata := DATASET([{1,1,9},{1,3,8},{3,3,3.3},{4,6,10}], ML.Types.NumericField);  
+testdata_ := DATASET('~maryam::mytest::news20_test_data_sparse', ML.Types.NumericField, CSV); //  11269 samples, 53975 features, sparse matrix in numeric field format
+// testdata := testdata_ (number <= 53975);
+testdata := indepDataC;
+// testmap := PBblas.Matrix_Map(4,6,2,2);
+// h := ML.DMat.Converted.FromNumericFieldDS (testdata, testmap);
+// OUTPUT (h);
+OUTPUT (MAX (testdata, id),named ('number_of_test_samples'));
+OUTPUT (MAX (testdata, number),named ('number_of_test_features'));
+ SAmod := trainer.model(softresult);
+
+// OUTPUT(SAmod, named('SAmod'));
+
+prob := trainer.ClassProbDistribC(testdata,softresult);
+
+OUTPUT(prob, named('prob'));
+
+classprob := trainer.ClassifyC(testdata,softresult);
+
+OUTPUT(classprob, named('classprob'));
+
+//calculate accuracy
+acc_rec := RECORD
+  ML.Types.t_RecordID id;
+  ML.Types.t_Discrete actual_class;
+  ML.Types.t_Discrete predicted_class;
+  INTEGER match; // if actual_class= predicted_class then match=1 else match=0
+END;
+// label_test := DATASET('~maryam::mytest::news20_test_label', ML.Types.NumericField, CSV);
+label_test := depDataC;
+classified := classprob;
+acc_rec build_acc (label_test l, classified r) := TRANSFORM
+  SELF.id := l.id;
+  SELF.actual_class := l.value;
+  SELF.predicted_class := r.value;
+  SELF.match := IF (l.value=r.value, 1, 0);
+END;
+
+acc_data := JOIN(label_test, classified, LEFT.id=RIGHT.id,build_acc(LEFT,RIGHT));
+OUTPUT(acc_data, named ('acc_data'));
+OUTPUT(sum(acc_data, acc_data.match));
+OUTPUT(MAX(label_test, label_test.id));
+OUTPUT(sum(acc_data, acc_data.match)/MAX(label_test, label_test.id), NAMED('accuracy'));
+

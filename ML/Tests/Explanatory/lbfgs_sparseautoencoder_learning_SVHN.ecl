@@ -3085,7 +3085,7 @@ REAL	f3072	;
 
 END;
 
-input_data_tmp := DATASET('~maryam::mytest::svhn_train_32x32', value_record, CSV); // This dataset is a subset of MNIST dtaset that includes 5 digits (0 to 4), it is used for traibn
+input_data_tmp := DATASET('~maryam::mytest::svhn_train_32x32', value_record, CSV); // SVHN dataset
 // number if input samples is 73261
 //OUTPUT(input_data_tmp);
 ML.AppendID(input_data_tmp, id, input_data);
@@ -3103,10 +3103,16 @@ UNSIGNED4 prows:=0;
 UNSIGNED4 pcols:=0;
 UNSIGNED4 Maxrows:=0;
 UNSIGNED4 Maxcols:=0;
+UNSIGNED4 CORR:=100;
 //initialize weight and bias values for the Back Propagation algorithm
 IntW := DeepLearning.Sparse_Autoencoder_IntWeights(f,hl);
 Intb := DeepLearning.Sparse_Autoencoder_IntBias(f,hl);
-SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs_part (f,hl,1024,1466);
+// SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs_part (f,hl,256,1466); orig
+//73261
+
+SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs_part_onebias_paramdist (f,hl,128,(1466));
+// SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs_part_onebias_paramdist (f,hl,128,73261);
+
 //SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f,hl,62,73261,62,73261);
 // SA_mine4_1 :=DeepLearning.Sparse_Autoencoder_lbfgs (f,hl,0,0,0,0);
 IntW1 := Mat.MU.From(IntW,1);
@@ -3122,7 +3128,7 @@ Intb2 := Mat.MU.From(Intb,2);
 // OUTPUT(IntB1,ALL, named ('IntB1'));
 // OUTPUT(IntB2,ALL, named ('IntB2'));
 // train the sparse autoencoer with train data
-lbfgs_model_mine4_1 := SA_mine4_1.LearnC(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, MaxIter);//the output includes the learnt parameters for the sparse autoencoder (W1,W2,b1,b2) in numericfield format
+lbfgs_model_mine4_1 := SA_mine4_1.LearnC(indepDataC,IntW1, IntW2, Intb1, Intb2, BETA,sparsityParam ,LAMBDA, MaxIter,CORR);//the output includes the learnt parameters for the sparse autoencoder (W1,W2,b1,b2) in numericfield format
 //OUTPUT(MAX(lbfgs_model_mine4_1,lbfgs_model_mine4_1.node_id));
 //OUTPUT(MAX(lbfgs_model_mine4_1, lbfgs_model_mine4_1.node_id));
 myrec := RECORD (PBblas.Types.MUElement)
@@ -3131,43 +3137,7 @@ END;
 myrec2 := RECORD (PBblas.Types.Layout_part)
 UNSIGNED real_node;
 END;
-// OUTPUT(lbfgs_model_mine4_1);
 
-//OUTPUT(PROJECT(lbfgs_model_mine4_1, TRANSFORM(myrec2, SELF.real_node := STD.System.Thorlib.Node();SELF:=LEFT)));
-// MatrixModel := SA_mine4_1.Model (lbfgs_model_mine4_1);//convert the model to matrix format where no=1 is W1, no=2 is W2, no=3 is b1 and no=4 is b2
-//OUTPUT(MatrixModel, named ('MatrixModel'));
-// Extractedweights := SA_mine4_1.ExtractWeights (lbfgs_model_mine4_1);
-//OUTPUT(Extractedweights, named ('Extractedweights'));
-// ExtractedBias := SA_mine4_1.ExtractBias (lbfgs_model_mine4_1);
-//OUTPUT(ExtractedBias, named ('ExtractedBias'));
-// W1_matrix := ML.Mat.MU.FROM(Extractedweights,1);
-// OUTPUT(W1_matrix, NAMED('W1_matrix'));
-// W2_matrix := ML.Mat.MU.FROM(Extractedweights,2);
-// OUTPUT(W2_matrix, NAMED('W2_matrix'));
-// b1_matrix := ML.Mat.MU.FROM(ExtractedBias,1);
-// OUTPUT(b1_matrix, NAMED('b1_matrix'));
-// b2_matrix := ML.Mat.MU.FROM(ExtractedBias,2);
-// OUTPUT(b2_matrix, NAMED('b2_matrix'));
-// OUTPUT(W1_matrix,,'~thor::maryam::mytest::W1_matrix_MNIST_5digits_2',CSV(HEADING(SINGLE)));
-// OUTPUT(W2_matrix,,'~thor::maryam::mytest::W2_matrix_MNIST_5digits_2',CSV(HEADING(SINGLE)));
-// OUTPUT(b1_matrix,,'~thor::maryam::mytest::b1_matrix_MNIST_5digits_2',CSV(HEADING(SINGLE)));
-// OUTPUT(b2_matrix,,'~thor::maryam::mytest::b2_matrix_MNIST_5digits_2',CSV(HEADING(SINGLE)));
-// X := indepDataC;
-// w1_mat := IntW1;
-// dt := Types.ToMatrix (X);
-    // dTmp := dt;
-    // d := Mat.Trans(dTmp); //in the entire of the calculations we work with the d matrix that each sample is presented in one column
-    // m := MAX (d, d.y); 
- // dmap := PBblas.Matrix_Map(f,73261,f,1466);
- // dmap := PBblas.Matrix_Map(f,73261,62,1466);
-  // ddist := DMAT.Converted.FromElement(d,dmap);
-	//w1map := PBblas.Matrix_Map(100, 3072,100, 3072);
-	// w1map := PBblas.Matrix_Map(100, 3072,2, 62);
-	// w1dist := DMAT.Converted.FromElement(w1_mat,w1map);
-	//b1map  := PBblas.Matrix_Map(100, 73261,100, 1466);
-	// b1map  := PBblas.Matrix_Map(100, 73261,2, 1466);
-	// multi := PBblas.PB_dgemm(FALSE, FALSE, 1.0,w1map, w1dist, dmap, ddist, b1map);
-//OUTPUT(MAX(multi,multi.node_id));
 mymy2 := lbfgs_model_mine4_1;
 myrecord := RECORD
     mymy2.node_id;
@@ -3186,7 +3156,21 @@ END;
 	 OUTPUT(lbfgs_model_mine4_1,,'~thor::maryam::mytest::SVHN_alaki',CSV(HEADING(SINGLE)), OVERWRITE);
 	OUTPUT(rsltttt, ALL);
 	
-	
-	
 
-	//http://www.netlib.org/lapack/explore-html/d7/d2b/dgemm_8f_source.html
+ Extractedweights := SA_mine4_1.ExtractWeights (lbfgs_model_mine4_1);
+// OUTPUT(Extractedweights, named ('Extractedweights'));
+ ExtractedBias := SA_mine4_1.ExtractBias (lbfgs_model_mine4_1);
+// OUTPUT(ExtractedBias, named ('ExtractedBias'));
+W1_matrix := ML.Mat.MU.FROM(Extractedweights,1);
+OUTPUT(W1_matrix, NAMED('W1_matrix'));
+W2_matrix := ML.Mat.MU.FROM(Extractedweights,2);
+OUTPUT(W2_matrix, NAMED('W2_matrix'));
+b1_matrix := ML.Mat.MU.FROM(ExtractedBias,1);
+OUTPUT(b1_matrix, NAMED('b1_matrix'), ALL);
+b2_matrix := ML.Mat.MU.FROM(ExtractedBias,2);
+OUTPUT(b2_matrix, NAMED('b2_matrix'), ALL);
+OUTPUT(SA_mine4_1.extractcost_funeval(lbfgs_model_mine4_1),NAMED('f_value'));
+OUTPUT(W1_matrix,,'~thor::maryam::mytest::W1_matrix_SVHN_newopt2',CSV(HEADING(SINGLE)), OVERWRITE);
+OUTPUT(W2_matrix,,'~thor::maryam::mytest::W2_matrix_SVHN_newopt2',CSV(HEADING(SINGLE)), OVERWRITE);
+OUTPUT(b1_matrix,,'~thor::maryam::mytest::b1_matrix_SVHN_newopt2',CSV(HEADING(SINGLE)), OVERWRITE);
+OUTPUT(b2_matrix,,'~thor::maryam::mytest::b2_SVHN_5digits_newopt2',CSV(HEADING(SINGLE)), OVERWRITE);

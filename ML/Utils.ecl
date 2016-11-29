@@ -456,6 +456,12 @@ RETURN Result;
 
 END; // END ToGroundTruth
 
-	
-	
+//Take a dataset of cells for a partition and pack into a dense matrix.  Specify Row or Column major
+//First row and first column are one based.
+//Insert is used insert columns with a spacific value.  Typical use is building a matrix for a solver
+//where the first column is an inserted column of 1 values for the intercept.
+IMPORT PBblas.Types;
+dimension_t := Types.dimension_t;
+value_t := Types.value_t;
+Layout_Cell := Types.Layout_Cell;
 END;

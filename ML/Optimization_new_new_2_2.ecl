@@ -45,7 +45,7 @@ EXPORT Optimization_new_new_2_2 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4
 			REAL8 cost_value;
 	  END;
 		
-		SHARED minfRec := RECORD (costgrad_record)
+		EXPORT minfRec := RECORD (costgrad_record)
       REAL8 h ;//hdiag value
       INTEGER8 min_funEval;
       INTEGER break_cond ;
@@ -53,7 +53,13 @@ EXPORT Optimization_new_new_2_2 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4
 			PBblas.Types.t_mu_no no;
 			INTEGER8 update_itr ; //This value is increased whenever a update is done and s and y vectors are added to the corrections. If no update is done due to the condition ys > 1e-10 then this value is not increased
 			// we use this value to update the corrections vectors as well as in the lbfgs algorithm
+			INTEGER8 itr_counter;
     END;
+		//BoundProvided = 1 -> xminBound and xmaxBound values are provided
+		//BoundProvided = 0 -> xminBound and xmaxBound values are not provided
+		//set  f or g related values to 2 if f or g are not known ( f values are _2 values and g values are _3 values)
+    // the order of the polynomial is the number of known f and g values minus 1. for example if first f (p1_2) does not exist the value of f1_2 will be equal to 0, otherwise it would be 1
+		
     SHARED SumProduct (DATASET(Layout_Part) inp1, DATASET(Layout_Part) inp2) := FUNCTION
 		  REAL8 sumpro(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M, PBblas.Types.matrix_t V) := BEGINC++
 
@@ -461,8 +467,126 @@ EXPORT lbfgsUpdate_ ( DATASET(PBblas.Types.MUElement) oldsy, DATASET(Layout_Part
     polResult := out;
     RETURN polResult;
   END;//end polyinterp_both
-  //polyinterp when no boundry values are provided
- 
+  
+	
+	EXPORT  polyinterp_noboundry_3points_imag2_3 (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 t_3, REAL8 f_3) := FUNCTION
+		order := 4-1;
+		xminBound := MIN ([t_1, t_2, t_3]);
+		xmaxBound := MAX ([t_1, t_2, t_3]);
+		// A= [t_1^3 t_1^2 t_1 1
+		//    t_2^3 t_2^2 t_2 1
+		//    3*t_1^2 2*t_1 t_1 0
+		//    3*t_2^2 2*t_2 t_2 0]
+		//b = [f_1 f_2 dtg_1 gtd_2]'
+		Aset := [POWER(t_1,3),POWER(t_2,3), POWER(t_3,3),3*POWER(t_1,2),
+		POWER(t_1,2),POWER(t_2,2), POWER(t_3,2),2*t_1,
+		POWER(t_1,1),POWER(t_2,1), POWER(t_3,1), 1,
+		1, 1, 1, 0]; // A 4*4 Matrix      
+		Bset := [f_1, f_2, f_3, gtd_1]; // A 4*1 Matrix
+		// Find interpolating polynomial
+      //params = A\b;
+      params_partset := PBblas.BLAS.solvelinear (Aset, Bset, 4,1,4,4);
+      //params_partset := [1,2,3,4];
+      params1 := params_partset[1];
+      params2 := params_partset[2];
+      params3 := params_partset[3];
+      params4 := params_partset[4];
+      dParams1 := 3*params_partset[1];
+      dparams2 := 2*params_partset[2];
+      dparams3 := params_partset[3];
+      Rvalues := roots (dParams1, dparams2, dparams3);
+      // Compute Critical Points
+      INANYINF := FALSE; //????for now
+      cp1 := xminBound;
+      cp2 := xmaxBound;
+      cp3 := t_1;
+      cp4 := t_2;
+      cp5 := Rvalues (id=2)[1].value;
+      cp6 := Rvalues (id=3)[1].value;
+      ISrootsreal := (BOOLEAN) Rvalues (id=1)[1].value;
+      cp_real := DATASET([
+      {1,1,cp1},
+      {2,1,cp2},
+      {3,1,cp3},
+      {4,1,cp4},
+      {5,1,cp5},
+      {6,1,cp6}],
+      Types.NumericField);
+      cp_imag := DATASET([
+      {1,1,cp1},
+      {2,1,cp2},
+      {3,1,cp3},
+      {4,1,cp4}],
+      Types.NumericField);
+      cp := IF (ISrootsreal, cp_real, cp_imag);
+      itr := IF (ISrootsreal, 6, 4);
+      
+      // I was using LOOP before to implement this part and it make some LOOP related errors in the wolfesearch function later, so I changed the code in a way that it does not use LOOP
+      out := FUNCTION
+			fmin1 := 100000000;
+			minpos1 := (xminBound+xmaxBound)/2;
+			xCP1 := cp1;
+			cond1_1 := xCP1 >= xminBound AND xCP1 <= xmaxBound; //???
+			// fCP = polyval(params,xCP);
+			fCP1 := params1*POWER(xCP1,3)+params2*POWER(xCP1,2)+params3*xCP1+params4;
+			//if imag(fCP)==0 && fCP < fmin
+			cond1_2 := ISrootsreal; // If the roots are imaginary so is FCP
+			minpos2 := IF (cond1_1,IF (cond1_2, xCP1, minpos1),minpos1);
+			fmin2 := IF (cond1_1,IF (cond1_2, fCP1, fmin1),fmin1);
+			
+			xCP2 := cp2;
+			cond2_1 := xCP2 >= xminBound AND xCP2 <= xmaxBound; //???
+			// fCP = polyval(params,xCP);
+			fCP2:= params1*POWER(xCP2,3)+params2*POWER(xCP2,2)+params3*xCP2+params4;
+			//if imag(fCP)==0 && fCP < fmin
+			cond2_2 := (fCP2<fmin2) AND ISrootsreal; // If the roots are imaginary so is FCP
+			minpos3 := IF (cond2_1,IF (cond2_2, xCP2, minpos2),minpos2);
+			fmin3 := IF (cond2_1,IF (cond2_2, fCP2, fmin2),fmin2);
+			xCP3 := cp3;
+			cond3_1 := xCP3 >= xminBound AND xCP3 <= xmaxBound; //???
+			// fCP = polyval(params,xCP);
+			fCP3:= params1*POWER(xCP3,3)+params2*POWER(xCP3,2)+params3*xCP3+params4;
+			//if imag(fCP)==0 && fCP < fmin
+			cond3_2 := (fCP3<fmin3) AND ISrootsreal; // If the roots are imaginary so is FCP
+			minpos4 := IF (cond3_1,IF (cond3_2, xCP3, minpos3),minpos3);
+			fmin4 := IF (cond3_1,IF (cond3_2, fCP3, fmin3),fmin3);
+			xCP4 := cp4;
+			cond4_1 := xCP4 >= xminBound AND xCP4 <= xmaxBound; //???
+			// fCP = polyval(params,xCP);
+			fCP4:= params1*POWER(xCP4,3)+params2*POWER(xCP4,2)+params3*xCP4+params4;
+			//if imag(fCP)==0 && fCP < fmin
+			cond4_2 := (fCP4<fmin4) AND ISrootsreal; // If the roots are imaginary so is FCP
+			minpos5 := IF (cond4_1,IF (cond4_2, xCP4, minpos4),minpos4);
+			fmin5 := IF (cond4_1,IF (cond4_2, fCP4, fmin4),fmin4);
+			xCP5 := cp5;
+			cond5_1 := xCP5 >= xminBound AND xCP5 <= xmaxBound; //???
+			// fCP = polyval(params,xCP);
+			fCP5:= params1*POWER(xCP5,3)+params2*POWER(xCP5,2)+params3*xCP5+params4;
+			//if imag(fCP)==0 && fCP < fmin
+			cond5_2 := (fCP5<fmin5) AND ISrootsreal; // If the roots are imaginary so is FCP
+			minpos6 := IF (cond5_1,IF (cond5_2, xCP5, minpos5),minpos5);
+			fmin6 := IF (cond5_1,IF (cond5_2, fCP5, fmin5),fmin5);
+			
+			xCP6 := cp6;
+			cond6_1 := xCP6 >= xminBound AND xCP6 <= xmaxBound; //???
+			// fCP = polyval(params,xCP);
+			fCP6:= params1*POWER(xCP6,3)+params2*POWER(xCP6,2)+params3*xCP6+params4;
+			//if imag(fCP)==0 && fCP < fmin
+			cond6_2 := (fCP6<fmin6) AND ISrootsreal; // If the roots are imaginary so is FCP
+			minpos7 := IF (cond6_1,IF (cond6_2, xCP6, minpos6),minpos6);
+			fmin7 := IF (cond6_1,IF (cond6_2, fCP6, fmin6),fmin6);
+			
+			RETURN IF (ISrootsreal, minpos7, minpos5);
+        
+      END;
+
+    polResult := out;
+    RETURN polResult;
+	END;
+	
+	//polyinterp when no boundry values are provided
+ //polyinterp when 2 points are provided and gtd2 and gtd3 are imaginary
+
   EXPORT  polyinterp_noboundry (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
       tmin := IF (t_1<t_2,t_1 , t_2);
       tmax := IF (t_1<t_2,t_2 , t_1);
@@ -484,6 +608,149 @@ EXPORT lbfgsUpdate_ ( DATASET(PBblas.Types.MUElement) oldsy, DATASET(Layout_Part
     RETURN pol2Result;
     //RETURN d1;
   END;//end polyinterp_noboundry
+	// no boundry is provided and gtd2 is imaginary value.	it is used in armijo backtracking.
+	EXPORT  polyinterp_noboundry_img2 (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2) := FUNCTION
+		order := 3-1; // number of known f ang gtd values (3) minus 1
+		xmin := IF (t_1 < t_2, t_1, t_2);
+		xmax := IF (t_1 < t_2, t_2, t_1);
+		xminBound := xmin;
+		xmaxBound := xmax;
+		// build A and b Matrices based on available function values and gtd values
+		// here A will be a 3(number of available f and gtd values)*3(order+1) matrix and b will be a 3(number of available f and gtd values)*1 array
+		A := [POWER(t_1,2), POWER (t_2, 2), 2*t_1, t_1, t_2, 1, 1, 1, 0];
+		b := [f_1,f_2,gtd_1];
+		// Find interpolating polynomial
+    //params = A\b;
+    params_partset := PBblas.BLAS.solvelinear (A, B, 3,1,3,3);
+		params1 := params_partset[1];
+		params2 := params_partset[2];
+		params3 := params_partset[3];
+		
+		dParams1 := 2*params_partset[1];
+    dparams2 := params_partset[2];
+		// Compute Critical Points
+		root := (-1*dparams2)/dParams1;
+		cp1 := xminBound;
+		cp2 := xmaxBound;
+		cp3 := t_1;
+		cp4 := t_2;
+		cp5 := root;
+		ISrootsreal := TRUE;
+		//Test Critical Points
+		fmin1 := 100000000;
+    minpos1 := (xminBound+xmaxBound)/2;
+    xCP1 := cp1;
+    cond1_1 := xCP1 >= xminBound AND xCP1 <= xmaxBound; //???
+    // fCP = polyval(params,xCP);
+    fCP1 := params1*POWER(xCP1,2)+params2*xCP1+params3;
+		//if imag(fCP)==0 && fCP < fmin
+		cond1_2 := TRUE; // If the root is real real so is FCP
+		minpos2 := IF (cond1_1,IF (cond1_2, xCP1, minpos1),minpos1);
+    fmin2 := IF (cond1_1,IF (cond1_2, fCP1, fmin1),fmin1);
+        
+		xCP2 := cp2;
+		cond2_1 := xCP2 >= xminBound AND xCP2 <= xmaxBound; //???
+		// fCP = polyval(params,xCP);
+		fCP2:= params1*POWER(xCP2,2)+params2*xCP2+params3;
+		//if imag(fCP)==0 && fCP < fmin
+		cond2_2 := (fCP2<fmin2) AND ISrootsreal;
+		minpos3 := IF (cond2_1,IF (cond2_2, xCP2, minpos2),minpos2);
+		fmin3 := IF (cond2_1,IF (cond2_2, fCP2, fmin2),fmin2);
+		xCP3 := cp3;
+		cond3_1 := xCP3 >= xminBound AND xCP3 <= xmaxBound; //???
+		// fCP = polyval(params,xCP);
+		fCP3:= params1*POWER(xCP3,2)+params2*xCP3+params3;
+		//if imag(fCP)==0 && fCP < fmin
+		cond3_2 := (fCP3<fmin3) AND ISrootsreal; // If the roots are imaginary so is FCP
+		minpos4 := IF (cond3_1,IF (cond3_2, xCP3, minpos3),minpos3);
+		fmin4 := IF (cond3_1,IF (cond3_2, fCP3, fmin3),fmin3);
+		xCP4 := cp4;
+		cond4_1 := xCP4 >= xminBound AND xCP4 <= xmaxBound; //???
+		// fCP = polyval(params,xCP);
+		fCP4:= params1*POWER(xCP4,2)+params2*xCP4+params3;
+		//if imag(fCP)==0 && fCP < fmin
+		cond4_2 := (fCP4<fmin4) AND ISrootsreal; // If the roots are imaginary so is FCP
+		minpos5 := IF (cond4_1,IF (cond4_2, xCP4, minpos4),minpos4);
+		fmin5 := IF (cond4_1,IF (cond4_2, fCP4, fmin4),fmin4);
+		xCP5 := cp5;
+		cond5_1 := xCP5 >= xminBound AND xCP5 <= xmaxBound; //???
+		// fCP = polyval(params,xCP);
+		fCP5:= params1*POWER(xCP5,2)+params2*xCP5+params3;
+		//if imag(fCP)==0 && fCP < fmin
+		cond5_2 := (fCP5<fmin5) AND ISrootsreal; // If the roots are imaginary so is FCP
+		minpos6 := IF (cond5_1,IF (cond5_2, xCP5, minpos5),minpos5);
+		fmin6 := IF (cond5_1,IF (cond5_2, fCP5, fmin5),fmin5);
+
+		RETURN fmin6;  
+  END;//end polyinterp_noboundry_img2
+	
+
+
+
+	// no boundry is provided and gtd1 and gtd2 is imaginary value.
+	EXPORT  polyinterp_noboundry_img1_2 (REAL8 t_1, REAL8 f_1, REAL8 t_2, REAL8 f_2) := FUNCTION
+		order := 2-1; // number of known f ang gtd values (3) minus 1
+		xmin := IF (t_1 < t_2, t_1, t_2);
+		xmax := IF (t_1 < t_2, t_2, t_1);
+		xminBound := xmin;
+		xmaxBound := xmax;
+		// build A and b Matrices based on available function values and gtd values
+		// here A will be a 2(number of available f and gtd values)*2(order+1) matrix and b will be a 2(number of available f and gtd values)*1 array
+		A := [POWER(t_1,2), POWER (t_2, 2), t_1, t_2, 1, 1];
+		b := [f_1,f_2];
+		// Find interpolating polynomial
+    //params = A\b;
+    params_partset := PBblas.BLAS.solvelinear (A, B, 2,1,2,2);
+		params1 := params_partset[1];
+		params2 := params_partset[2];
+		
+		cp1 := xminBound;
+		cp2 := xmaxBound;
+		cp3 := t_1;
+		cp4 := t_2;
+		
+		ISrootsreal := TRUE;
+		//Test Critical Points
+		fmin1 := 100000000;
+    minpos1 := (xminBound+xmaxBound)/2;
+    xCP1 := cp1;
+    cond1_1 := xCP1 >= xminBound AND xCP1 <= xmaxBound; //???
+    // fCP = polyval(params,xCP);
+    fCP1 := params1*xCP1+params2;
+		//if imag(fCP)==0 && fCP < fmin
+		cond1_2 := TRUE; // If the root is real real so is FCP
+		minpos2 := IF (cond1_1,IF (cond1_2, xCP1, minpos1),minpos1);
+    fmin2 := IF (cond1_1,IF (cond1_2, fCP1, fmin1),fmin1);
+        
+		xCP2 := cp2;
+		cond2_1 := xCP2 >= xminBound AND xCP2 <= xmaxBound; //???
+		// fCP = polyval(params,xCP);
+		fCP2:= params1*xCP2+params2;
+		//if imag(fCP)==0 && fCP < fmin
+		cond2_2 := (fCP2<fmin2) AND ISrootsreal;
+		minpos3 := IF (cond2_1,IF (cond2_2, xCP2, minpos2),minpos2);
+		fmin3 := IF (cond2_1,IF (cond2_2, fCP2, fmin2),fmin2);
+		xCP3 := cp3;
+		cond3_1 := xCP3 >= xminBound AND xCP3 <= xmaxBound; //???
+		// fCP = polyval(params,xCP);
+		fCP3:= params1*xCP3+params2;
+		//if imag(fCP)==0 && fCP < fmin
+		cond3_2 := (fCP3<fmin3) AND ISrootsreal; // If the roots are imaginary so is FCP
+		minpos4 := IF (cond3_1,IF (cond3_2, xCP3, minpos3),minpos3);
+		fmin4 := IF (cond3_1,IF (cond3_2, fCP3, fmin3),fmin3);
+		xCP4 := cp4;
+		cond4_1 := xCP4 >= xminBound AND xCP4 <= xmaxBound; //???
+		// fCP = polyval(params,xCP);
+		fCP4:= params1*xCP4+params2;
+		//if imag(fCP)==0 && fCP < fmin
+		cond4_2 := (fCP4<fmin4) AND ISrootsreal; // If the roots are imaginary so is FCP
+		minpos5 := IF (cond4_1,IF (cond4_2, xCP4, minpos4),minpos4);
+		fmin5 := IF (cond4_1,IF (cond4_2, fCP4, fmin4),fmin4);
+
+
+		RETURN fmin5;  
+  END;//end polyinterp_noboundry_img1_2
+
   //polyinterp when no boundry values is provided  and gtd_2 is imaginary (used in Armijo Back Tracking)
   EXPORT  polyinterp_img (REAL8 t_1, REAL8 f_1, REAL8 gtd_1, REAL8 t_2, REAL8 f_2, REAL8 gtd_2) := FUNCTION
     poly1 := FUNCTION
@@ -619,7 +886,10 @@ EXPORT lbfgsUpdate_ ( DATASET(PBblas.Types.MUElement) oldsy, DATASET(Layout_Part
   //  WolfeOut includes t,f_new,g_new,funEvals (t the calculated step size
   //  f_new the cost value in the new point, g_new is the gradient value in the new point and funevals is the number of
   
-
+		SHARED arm_t_rec := RECORD
+			real8 init_arm_t;
+			Layout_part.partition_id;
+		END;
    // id =1 for g_prev and id=2 for g_next 
    SHARED  bracketing_record4 := RECORD(Layout_Part)
         INTEGER8 id; // id=1 means prev values, id=2 means new values
@@ -1349,7 +1619,193 @@ EXPORT WolfeLineSearch4_4_2_test(INTEGER cccc, DATASET(Layout_Part) x, DATASET(T
 	//RETURN LOOP(topass_zooming, (LEFT.zoomtermination = FALSE) AND (LEFT.c < (maxLS+1)) , ZoomingStep(ROWS(LEFT), COUNTER));//works
 	// At the end the final result returned from wolfe function contains the t value in prev_t field, the g vector in the Layout_part section and the f value in cost_value field and the gtd in the prev_gtd
 END;// END WolfeLineSearch4_4_2_test
+//this ArmijoBacktrack is called from wolfelinesearch function, the initial t is provided in arm_t_rec format arm_t_rec
+EXPORT ArmijoBacktrack_fromwolfe(DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), DATASET(arm_t_rec) t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, REAL8 tolX=0.000000001):=FUNCTION
+  // C++ functions
+	REAL8 sumabs(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M) := BEGINC++
 
+    #body
+    double result = 0;
+		double tmpp ;
+    double *cellm = (double*) m;
+    uint32_t i;
+		for (i=0; i<n; i++) {
+		tmpp = (cellm[i]>=0) ? (cellm[i]) : (-1 * cellm[i]);
+      result = result + tmpp;
+    }
+		return(result);
+
+   ENDC++;
+	REAL8 sump(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M, PBblas.Types.matrix_t V) := BEGINC++
+		#body
+		double result = 0;
+		double tmpp ;
+		double *cellm = (double*) m;
+		double *cellv = (double*) v;
+		uint32_t i;
+		for (i=0; i<n; i++) {
+			tmpp =(cellm[i] * cellv [i]);
+			result = result + tmpp;
+		}
+		return(result);
+
+	ENDC++;
+  // Evaluate the Objective and Gradient at the Initial Step
+	Elem := {REAL8 v};
+	//calculate x_new = x + td
+	//first calculate td
+	Layout_Part td_tran (t le, d ri) := TRANSFORM
+			cells := ri.part_rows * ri.part_cols;
+			SELF.mat_part := PBBlas.BLAS.dscal(cells, le.init_arm_t, ri.mat_part, 1);
+			SELF := ri;
+		END;
+		td := JOIN (t, d, LEFT.partition_id = RIGHT.partition_id, td_tran (LEFT, RIGHT), LOCAL);
+		//calculate x_new = x0 + td
+		Layout_Part x_new_tran (Layout_part le, Layout_part ri) := TRANSFORM
+			cells := ri.part_rows * ri.part_cols;
+			SELF.mat_part := PBblas.BLAS.daxpy(cells, 1.0, le.mat_part, 1, ri.mat_part, 1);
+			SELF := le;
+		END;
+		x_new := JOIN (x, td, LEFT.partition_id = RIGHT.partition_id, x_new_tran(LEFT, RIGHT), LOCAL);
+		// calculated new g and cost values at x_new
+	CostGrad_new := CostFunc(x_new,CostFunc_params,TrainData, TrainLabel);
+	Elem gtdnew_tran(CostGrad_new inrec, d drec) := TRANSFORM //hadamard product
+		cells := inrec.part_rows * inrec.part_cols;
+		SELF.v :=  sump(cells, inrec.mat_part, drec.mat_part);
+	END;
+	gtd_new_ := JOIN (CostGrad_new, d, LEFT.partition_id = RIGHT.partition_id, gtdnew_tran (LEFT, RIGHT), LOCAL);
+	gtd_new := SUM (gtd_new_, gtd_new_.v);
+	armfunEvals := 1;
+	// a copy of each of the following values should be on each node in order to calculate the new t:
+	// f_prev t_prev  f_new ->t_new
+	ArmijoRecord := RECORD (CostGrad_Record)
+		REAL8 fprev;
+		REAL8 tprev;// this is the actualy previous t calculated in the previous iteration
+		REAL8 prev_t;// this should actually be tnew, however in order for this record format to be consistent with the ourput of wolfe line search , the new t has to be named prev_t
+		UNSIGNED wolfe_funevals;
+		INTEGER armCond;
+		REAL8 glob_f;
+		REAL8 gtdnew;
+		BOOLEAN islegal_gnew := TRUE;
+		REAL8 local_sumd;
+	END; // ArmijoRec
+	ArmijoRecord_shorten := RECORD
+		REAL8 fprev;
+		REAL8 tprev;// this is the actualy previous t calculated in the previous iteration
+		REAL8 prev_t;// this should actually be tnew, however in order for this record format to be consistent with the ourput of wolfe line search , the new t has to be named prev_t
+		UNSIGNED wolfe_funevals;
+		INTEGER armCond;
+		REAL8 glob_f;
+		REAL8 gtdnew;
+		BOOLEAN islegal_gnew := TRUE;
+		Layout_Part.partition_id;
+		CostGrad_Record.cost_value;
+		REAL8 local_sumd;
+	END; // ArmijoRecord_shorten
+	f_table := TABLE (g, {g.cost_value, g.partition_id}, LOCAL);
+	topass_BackTracking_init := JOIN (CostGrad_new, t, LEFT.partition_id = RIGHT.partition_id , TRANSFORM(ArmijoRecord, SELF.fprev := -1; SELF.tprev := -1; SELF.prev_t := RIGHT.init_arm_t; SELF.wolfe_funevals:=0;SELF.armCond := -1; SELF.glob_f := -1 ; SELF.gtdnew := -1; SELF.local_sumd := -1; SELF:=LEFT), LOCAL);
+	topass_BackTracking_ := JOIN (topass_BackTracking_init, f_table , LEFT.partition_id = RIGHT.partition_id, TRANSFORM (ArmijoRecord, SELF.gtdnew := gtd_new; SELF.glob_f := RIGHT.cost_value; SELF.armCond := IF (( LEFT.cost_value > RIGHT.cost_value + c1*LEFT.prev_t*gtd) OR (NOT ISVALID (LEFT.cost_value)), -1, 2);
+	SELF.wolfe_funevals := armfunEvals; SELF.fprev := -1; SELF.tprev := -1; SELF.local_sumd := -1; SELF := LEFT), LOCAL);
+	topass_BackTracking := JOIN (topass_BackTracking_, d, LEFT.partition_id = RIGHT.partition_id, TRANSFORM (ArmijoRecord, SELF.local_sumd:=IF (LEFT.armCond=-1, sumabs(RIGHT.part_rows * RIGHT.part_cols, RIGHT.mat_part), -1) , SELF:=LEFT), LOCAL);// if we enter the loop (armCond==-1) then we will need sumabs(t*d) = abs(t) * sumabs(d) inside the loop in each iteration. so we calculate the local sumabs(d) values here and use them in the loop as t*sum(sumabs_local(d))
+	
+	BackTracking (DATASET (ArmijoRecord) armin, UNSIGNED armc) := FUNCTION
+		//calculate new t value
+		ArmijoRecord_shorten newt_tran (ArmijoRecord le) := TRANSFORM
+			temp := le.prev_t;
+			f_new := le.cost_value;
+			funEvals := le.wolfe_funevals;
+			f_prev := le.fprev;
+			//if LS == 0 || ~isLegal(f_Nnew), since in my implementation I assumed LS=4 we only need to check second condition
+			cond1 := NOT isvalid(f_new);
+			//LS == 2 && isLegal(g_new)
+			cond2 := le.islegal_gnew;
+			//funEvals < 2 || ~isLegal(f_prev)
+			cond3 := (funEvals<2) OR (NOT ISVALID (f_prev));
+			armt1 := temp*0.5;
+			// t = polyinterp([0 f gtd; t f_new g_new'*d],doPlot);
+			armt2 := polyinterp_noboundry (0, le.glob_f, gtd, temp, le.cost_value, le.gtdnew) ;
+			//t = polyinterp([0 f gtd; t f_new sqrt(-1)],doPlot);
+			armt3 := polyinterp_noboundry_img2 (0, le.glob_f, gtd, temp, le.cost_value);
+			// t = polyinterp([0 f gtd; t f_new sqrt(-1); t_prev f_prev sqrt(-1)],doPlot);
+			armtelse := polyinterp_noboundry_3points_imag2_3 (0, le.glob_f, gtd, temp, le.cost_value, le.tprev, f_prev) ;
+			armt_tmp := IF (cond1, armt1, IF (cond2, armt2, IF (cond3, armt3, armtelse)));
+			//Adjust if change in t is too small/large
+			armt := IF ( armt_tmp < temp*0.001 , temp*0.001, IF (armt_tmp >= temp*0.6, temp*0.6, armt_tmp));
+			SELF.prev_t := armt;// the new t value
+			SELF.tprev := temp;
+			SELF.fprev := le.cost_value;
+			SELF.wolfe_funevals := le.wolfe_funevals;
+			SELF := le;
+		END;
+		armin_t := PROJECT (armin, newt_tran(LEFT), LOCAL);
+
+		// calculate t*d
+		Elem := {REAL8 v};
+		Layout_Part td_tran (armin_t le, d ri) := TRANSFORM
+			cells := ri.part_rows * ri.part_cols;
+			SELF.mat_part := PBBlas.BLAS.dscal(cells, le.prev_t, ri.mat_part, 1);
+			SELF := ri;
+		END;
+		armtd := JOIN (armin_t, d, LEFT.partition_id = RIGHT.partition_id, td_tran (LEFT, RIGHT), LOCAL);
+		//calculate sum(abs(armtd))
+		
+		 Elem abs_td_tran (armin_t le) := TRANSFORM
+				SELF.v:= ABS (le.prev_t) * le.local_sumd;
+		 END;
+		 sum_abs_td_ := PROJECT (armin_t, abs_td_tran(LEFT), LOCAL);
+		 sum_abs_td := SUM (sum_abs_td_, sum_abs_td_.v);
+		 //evaluate new point
+		 // calculate x_new = x + td
+		 Layout_Part x_new_tran (Layout_part le, Layout_part ri) := TRANSFORM
+				cells := le.part_rows * le.part_cols;
+				SELF.mat_part := PBblas.BLAS.daxpy(cells, 1.0, le.mat_part, 1, ri.mat_part, 1);
+				SELF := le;
+			END;
+			armx_new := JOIN (x, armtd, LEFT.partition_id = RIGHT.partition_id, x_new_tran(LEFT, RIGHT), LOCAL);
+			armCostGrad_new := CostFunc(armx_new,CostFunc_params,TrainData, TrainLabel);
+			//calculate gtdnew
+			Elem armgtdnew_tran(armCostGrad_new inrec, d drec) := TRANSFORM //hadamard product
+			cells := inrec.part_rows * inrec.part_cols;
+				SELF.v :=  sump(cells, inrec.mat_part, drec.mat_part);
+			END;
+			armgtd_new_ := JOIN (armCostGrad_new, d, LEFT.partition_id = RIGHT.partition_id, gtdnew_tran (LEFT, RIGHT), LOCAL);
+			armgtd_new := SUM (armgtd_new_, armgtd_new_.v);
+			
+			ArmijoRecord armmain_tran (armCostGrad_new le, armin_t ri) := TRANSFORM
+			//while f_new > fr + c1*t*gtd || ~isLegal(f_new)
+			SELF.armCond := IF ( (le.cost_value > (ri.glob_f + (c1*ri.prev_t*gtd)) OR (NOT ISVALID(le.cost_value))) ,-1,2);
+			SELF.tprev := ri.tprev;
+			SELF.fprev := ri.fprev;
+			SELF.wolfe_funevals := ri.wolfe_funevals + 1;
+			SELF.prev_t := ri.prev_t;
+			SELF.glob_f := ri.glob_f;
+			//calculate islegalgnew ??
+			islegal_gnew := TRUE;
+			SELF.gtdnew := IF (ISVALID (le.cost_value) AND islegal_gnew, armgtd_new, -1);//gtd value is assigned/calculated only if it will be used in the next iteration. It will be used if the first arm cond is not satisfied and the second one is satisfied ??
+			SELF.local_sumd := ri.local_sumd;
+			SELF := le;
+		END;
+		arm_nextitr_out := JOIN (armCostGrad_new, armin_t, LEFT.partition_id = RIGHT.partition_id, armmain_tran(LEFT,RIGHT) , LOCAL);
+		armshort_format := RECORD
+			armin_t.wolfe_funevals;
+			armin_t.partition_id;
+		END;
+		armfunevals_table := TABLE (armin_t, armshort_format, LOCAL);
+		steptoosmall_out := JOIN (g, armfunevals_table, LEFT.partition_id = RIGHT.partition_id,TRANSFORM (ArmijoRecord, SELF.local_sumd := -1; SELF.gtdnew := -1; SELF.glob_f := LEFT.cost_value; SELF.armCond := 1; SELF.prev_t:=0; SELF.tprev := -1; SELF.fprev:= -1; SELF.wolfe_funevals := RIGHT.wolfe_funevals; SELF := LEFT), LOCAL);// in case we are returning this dataset, it means step size had been too small so the armCond should be 1
+		//Check whether step size has become too small
+    //if sum(abs(t*d)) <= tolX
+		toosmall_cond := sum_abs_td <= tolX;
+		// loop continues until f_new > fr + c1*t*gtd || ~isLegal(f_new) is TRUE, so the loop has to stop when NOT (f_new > fr + c1*t*gtd || ~isLegal(f_new)), in the other word when NOT (f_new > fr + c1*t*gtd ) AND isLegal(f_new)
+		
+		arm_out := IF (toosmall_cond, steptoosmall_out, arm_nextitr_out);
+
+		
+		RETURN arm_out; 
+	END;// END BackTracking
+	ar1 := BackTracking(topass_BackTracking,1);
+	// RETURN BackTracking(ar1,2);
+	RETURN LOOP (topass_BackTracking, LEFT.armCond = -1 , BackTracking(ROWS(LEFT),COUNTER));
+END;// END ArmijoBacktrack_fromwolfe
 EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
 	//C++ functions used
 	//sum (M.*V)
@@ -1403,6 +1859,35 @@ EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.
 		//based on which condition is satisfied and whether previous cost (the cost in inputp) is less than the newly calculated cost (CostGrad_new) the return result is decided
 		//we always return the braket side with smaller cost value, the values for the Hi sie of the bracket are in high_ fields. we don't return gradient vector for the high side
 		BrackLSiter := coun - 1;
+		//before we enter the main_tran we check whether f_new or g_new are not legal. In that case we switch to ArmijoBackTracking and return the results and end the wolfe line search
+		b_rec := {INTEGER check};
+		b_rec check_fnew_gnew_legal (CostGrad_new le) := TRANSFORM
+			// SELF.check:= ISVALID (le.cost_value) AND islegal_mat (le.part_rows*le.part_cols, le.mat_part);
+			SELF.check:= IF (ISVALID (le.cost_value), 0, 1) ;//if the values are legal then check will be zero so the summation of check values in f_g_new_legal will end up being zero which means or local values are legal. If only one local value is not legal, the summation will be more than zero and it means we had observed illegal value
+		END;
+		f_g_new_legal_ := PROJECT (CostGrad_new, check_fnew_gnew_legal(LEFT) , LOCAL);
+		f_g_new_legal := SUM (f_g_new_legal_, f_g_new_legal_.check);
+		IS_f_g_new_legal := IF (f_g_new_legal=0, TRUE, FALSE);
+		arm_t_rec arm_init_t_tran (inputp le) := TRANSFORM
+		  //t = (t + t_prev)/2;
+			SELF.init_arm_t := (le.next_t + le.prev_t)/2;
+			SELF := le;
+		END;
+		init_arm_t := PROJECT (inputp, arm_init_t_tran(LEFT), LOCAL);
+		Arm_Result := ArmijoBacktrack_fromwolfe( x,  CostFunc_params, TrainData , TrainLabel, CostFunc , init_arm_t, d,  g, gtd,  c1,  c2, tolX);
+		Arm_result_zoomingformat := PROJECT (Arm_Result, TRANSFORM (ZoomingRecord,
+			SELF.high_cost_value := -1;
+			SELF.prev_gtd := -1;
+			SELF.high_gtd := -1;
+			SELF.high_t := -1;
+			SELF.id := 1; 
+			SELF.bracketing_cond := 10;
+			SELF.c := coun;
+			SELF.next_t := -1;
+			SELF.zoomtermination := TRUE;
+			SELF.insufProgress := FALSE;
+		  SELF:=LEFT), LOCAL);// This transfomr is converting the output of the Armijo to wolfe record format which is "ZoomingRecord"
+		
 		ZoomingRecord main_tran (inputp le_prev, CostGrad_new ri_new) := TRANSFORM
 			// calculate t for the next iteration (this value only will be calculated if there is going to be a next iteration)
 			f := le_prev.glob_f; // the f value recived by wolfe function
@@ -1426,7 +1911,7 @@ EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.
 			//  I calculate new values at the begining of each loop itr, where the matlab code calculates it at end
 		  // so at the maxLS I calculate next iteration t and go to the next iteration, then I calculate the new value which corresponds to new value calculated at the end of maxLS iteration in the matlab code, then I make sure no condition is satified
 			// and I just return the new value at the (maxLS+1)  iteration which corresponds to new value at the end of maxLS iteration in matlab code
-			WhichCond := IF (coun = (MAXLS+1),4 , IF (cond1, 1, IF(cond2, 2, IF (cond3,3,-1)))); // if we reach the maximum number of iterations or if one of the conditions is satified then we loopfilter retunr empty set and we exit the loop
+			WhichCond := IF (coun = (MAXLS+1),4 , IF (cond1, 1, IF(cond2, 2, IF (cond3,3,-1)))); // if we reach the maximum number of iterations or if one of the conditions is satified then the loopfilter returns empty set and we exit the loop
 			//decide whether we should return prev or new values
 			prev_mat := le_prev.mat_part;
 			new_mat := ri_new.mat_part;
@@ -1449,24 +1934,26 @@ EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.
 			SELF := le_prev;
 		END;
 		Result := JOIN (inputp, CostGrad_new, LEFT.partition_id = RIGHT.partition_id, main_tran(LEFT, RIGHT), LOCAL);
-		RETURN Result;
+		final_result := IF (IS_f_g_new_legal, result, Arm_result_zoomingformat); // if either of f_new or g_new are not legal return the armijobacktracking instead of wolfelinesearch
+		RETURN final_result;
 	END; // END BracketingStep
+	//after the bracketing step check whether we have reached maxitr , however if we left bracketing step with which_cond==10 which means we used armijobacktracking then this is the final result and does not need to go for maxitr check
 	ZoomingRecord maxitr_tran (ZoomingRecord le_brack , CostGrad_record ri_g) := TRANSFORM
 		itr_num := le_brack.c;
-		maxitr_cond := (itr_num = (maxLS+1));
+		maxitr_cond := (itr_num = (maxLS+1)) AND le_brack.bracketing_cond !=10; // itr number should be equal to (maxLS+1) and also bracketing_cond should not be 10, if bracketing_cond is equal to 10 it means that in the bracketing step we entered ArmijoBackTrackign and soomterminaition is true and we will return
 		cost_cond_0 := ri_g.cost_value < le_brack.cost_value;
 		SELF.mat_part := IF (maxitr_cond , IF (cost_cond_0, ri_g.mat_part, le_brack.mat_part) , le_brack.mat_part);
 		SELF.cost_value := IF (maxitr_cond , IF (cost_cond_0, ri_g.cost_value, le_brack.cost_value) , le_brack.cost_value);
 		SELF.prev_t := IF (maxitr_cond , IF (cost_cond_0, 0 , le_brack.prev_t) , le_brack.prev_t);
 		SELF.prev_gtd := IF (maxitr_cond , IF (cost_cond_0, gtd, le_brack.prev_gtd) , le_brack.prev_gtd);
-		SELF.zoomtermination := maxitr_cond OR (le_brack.bracketing_cond=2); // if we reach maximum number of iterations in the bracketing loop, or if condition 2 is satisfied in the bracketing loop. it means we don't go to the zooming loop and the wolfe algorithms ends
+		SELF.zoomtermination := le_brack.zoomtermination OR maxitr_cond OR (le_brack.bracketing_cond=2); // if we already have the zoomtermination=TRUE (armijo) or if we reach maximum number of iterations in the bracketing loop, or if condition 2 is satisfied in the bracketing loop. it means we don't go to the zooming loop and the wolfe algorithms ends
 		SELF := le_brack;
 	END;
 	//bracketing_result_ := LOOP(topass_bracketing, LEFT.bracketing_cond = -1, EXISTS(ROWS(LEFT)) and COUNTER < (maxLS+1), BracketingStep(ROWS(LEFT), COUNTER)); orig, not work
 	//bracketing_result_ := LOOP(topass_bracketing, (maxLS+1), LEFT.bracketing_cond = -1, BracketingStep(ROWS(LEFT), COUNTER)); works but runs maxls+1 time
 	bracketing_result_ := LOOP(topass_bracketing, LEFT.bracketing_cond = -1, BracketingStep(ROWS(LEFT), COUNTER));
 	//check if MAXITR is reached and decide between bracketing result and f (t=0) to be returned
-	bracketing_result := JOIN (bracketing_result_ , g, LEFT.partition_id = RIGHT.partition_id, maxitr_tran (LEFT, RIGHT), LOCAL);//?? it should be the loop result not topassbracketing
+	bracketing_result := JOIN (bracketing_result_ , g, LEFT.partition_id = RIGHT.partition_id, maxitr_tran (LEFT, RIGHT), LOCAL);
 	topass_zooming := bracketing_result;
 	ZoomingStep (DATASET (ZoomingRecord) inputp, UNSIGNED coun) := FUNCTION
 		//similar to BracketingStep, first we calculate the new point (for that we need to calculate the new t using interpolation)
@@ -1588,7 +2075,6 @@ EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.
 	//RETURN LOOP(topass_bracketing, (maxLS+1), LEFT.bracketing_cond = -1, BracketingStep(ROWS(LEFT), COUNTER));
 	//RETURN bracketing_result;// works
 	//RETURN zooming_result;
-	//RETURN  zooming_result; orig
 	RETURN zooming_result;
 	//RETURN LOOP(topass_bracketing, LEFT.bracketing_cond = -1, BracketingStep(ROWS(LEFT), COUNTER)); // works correctly
 	//RETURN BracketingStep(topass_bracketing, 1); works correctly
@@ -1598,7 +2084,191 @@ EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.
 	//RETURN LOOP(topass_zooming, (LEFT.zoomtermination = FALSE) AND (LEFT.c < (maxLS+1)) , ZoomingStep(ROWS(LEFT), COUNTER));//works
 	// At the end the final result returned from wolfe function contains the t value in prev_t field, the g vector in the Layout_part section and the f value in cost_value field and the gtd in the prev_gtd
 END;// END WolfeLineSearch4_4_2
+//x : starting location
+// CostFunc_params : hyperparameters fo rthe cost function
+// fr is equal to f so we do not pass fr
 
+EXPORT ArmijoBacktrack(DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
+  // C++ functions
+	REAL8 sumabs(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M) := BEGINC++
+
+    #body
+    double result = 0;
+		double tmpp ;
+    double *cellm = (double*) m;
+    uint32_t i;
+		for (i=0; i<n; i++) {
+		tmpp = (cellm[i]>=0) ? (cellm[i]) : (-1 * cellm[i]);
+      result = result + tmpp;
+    }
+		return(result);
+
+   ENDC++;
+	REAL8 sump(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M, PBblas.Types.matrix_t V) := BEGINC++
+		#body
+		double result = 0;
+		double tmpp ;
+		double *cellm = (double*) m;
+		double *cellv = (double*) v;
+		uint32_t i;
+		for (i=0; i<n; i++) {
+			tmpp =(cellm[i] * cellv [i]);
+			result = result + tmpp;
+		}
+		return(result);
+
+	ENDC++;
+  // Evaluate the Objective and Gradient at the Initial Step
+	Elem := {REAL8 v};
+	//calculate x_new = x + td
+	Layout_Part x_new_tran (Layout_part le, Layout_part ri) := TRANSFORM
+		cells := ri.part_rows * ri.part_cols;
+		SELF.mat_part := PBblas.BLAS.daxpy(cells, t, ri.mat_part, 1, le.mat_part, 1);
+		SELF := le;
+	END;
+	x_new := JOIN (x, d, LEFT.partition_id = RIGHT.partition_id, x_new_tran(LEFT, RIGHT), LOCAL);
+	// calculated new g and cost values at x_new
+	CostGrad_new := CostFunc(x_new,CostFunc_params,TrainData, TrainLabel);
+	Elem gtdnew_tran(CostGrad_new inrec, d drec) := TRANSFORM //hadamard product
+		cells := inrec.part_rows * inrec.part_cols;
+		SELF.v :=  sump(cells, inrec.mat_part, drec.mat_part);
+	END;
+	gtd_new_ := JOIN (CostGrad_new, d, LEFT.partition_id = RIGHT.partition_id, gtdnew_tran (LEFT, RIGHT), LOCAL);
+	gtd_new := SUM (gtd_new_, gtd_new_.v);
+	armfunEvals := 1;
+	// a copy of each of the following values should be on each node in order to calculate the new t:
+	// f_prev t_prev  f_new ->t_new
+	ArmijoRecord := RECORD (CostGrad_Record)
+		REAL8 fprev;
+		REAL8 tprev;// this is the actualy previous t calculated in the previous iteration
+		REAL8 prev_t;// this should actually be tnew, however in order for this record format to be consistent with the ourput of wolfe line search , the new t has to be named prev_t
+		UNSIGNED wolfe_funevals;
+		INTEGER armCond;
+		REAL8 glob_f;
+		REAL8 gtdnew;
+		BOOLEAN islegal_gnew := TRUE;
+		REAL8 local_sumd;
+	END; // ArmijoRec
+	ArmijoRecord_shorten := RECORD
+		REAL8 fprev;
+		REAL8 tprev;// this is the actualy previous t calculated in the previous iteration
+		REAL8 prev_t;// this should actually be tnew, however in order for this record format to be consistent with the ourput of wolfe line search , the new t has to be named prev_t
+		UNSIGNED wolfe_funevals;
+		INTEGER armCond;
+		REAL8 glob_f;
+		REAL8 gtdnew;
+		BOOLEAN islegal_gnew := TRUE;
+		Layout_Part.partition_id;
+		CostGrad_Record.cost_value;
+		REAL8 local_sumd;
+	END; // ArmijoRecord_shorten
+	f_table := TABLE (g, {g.cost_value, g.partition_id}, LOCAL);
+
+	topass_BackTracking_ := JOIN (CostGrad_new , f_table , LEFT.partition_id = RIGHT.partition_id, TRANSFORM (ArmijoRecord, SELF.gtdnew := gtd_new; SELF.glob_f := RIGHT.cost_value; SELF.armCond := IF (( LEFT.cost_value > RIGHT.cost_value + c1*t*gtd) OR (NOT ISVALID (LEFT.cost_value)), -1, 2);
+	SELF.wolfe_funevals := armfunEvals; SELF.fprev := -1; SELF.tprev := -1; SELF.prev_t := t; SELF.local_sumd := -1; SELF := LEFT), LOCAL);
+	topass_BackTracking := JOIN (topass_BackTracking_, d, LEFT.partition_id = RIGHT.partition_id, TRANSFORM (ArmijoRecord, SELF.local_sumd:=IF (LEFT.armCond=-1, sumabs(RIGHT.part_rows * RIGHT.part_cols, RIGHT.mat_part), -1) , SELF:=LEFT), LOCAL);// if we enter the loop (armCond==-1) then we will need sumabs(t*d) = abs(t) * sumabs(d) inside the loop in each iteration. so we calculate the local sumabs(d) values here and use them in the loop as t*sum(sumabs_local(d))
+	BackTracking (DATASET (ArmijoRecord) armin, UNSIGNED armc) := FUNCTION
+		//calculate new t value
+		ArmijoRecord_shorten newt_tran (ArmijoRecord le) := TRANSFORM
+			temp := le.prev_t;
+			f_new := le.cost_value;
+			funEvals := le.wolfe_funevals;
+			f_prev := le.fprev;
+			//if LS == 0 || ~isLegal(f_Nnew), since in my implementation I assumed LS=4 we only need to check second condition
+			cond1 := NOT isvalid(f_new);
+			//LS == 2 && isLegal(g_new)
+			cond2 := le.islegal_gnew;
+			//funEvals < 2 || ~isLegal(f_prev)
+			cond3 := (funEvals<2) OR (NOT ISVALID (f_prev));
+			armt1 := temp*0.5;
+			// t = polyinterp([0 f gtd; t f_new g_new'*d],doPlot);
+			armt2 := polyinterp_noboundry (0, le.glob_f, gtd, temp, le.cost_value, le.gtdnew) ;
+			//t = polyinterp([0 f gtd; t f_new sqrt(-1)],doPlot);
+			armt3 := polyinterp_noboundry_img2 (0, le.glob_f, gtd, temp, le.cost_value);
+			// t = polyinterp([0 f gtd; t f_new sqrt(-1); t_prev f_prev sqrt(-1)],doPlot);
+			armtelse := polyinterp_noboundry_3points_imag2_3 (0, le.glob_f, gtd, temp, le.cost_value, le.tprev, f_prev) ;
+			armt_tmp := IF (cond1, armt1, IF (cond2, armt2, IF (cond3, armt3, armtelse)));
+			//Adjust if change in t is too small/large
+			armt := IF ( armt_tmp < temp*0.001 , temp*0.001, IF (armt_tmp >= temp*0.6, temp*0.6, armt_tmp));
+			SELF.prev_t := armt;// the new t value
+			SELF.tprev := temp;
+			SELF.fprev := le.cost_value;
+			SELF.wolfe_funevals := le.wolfe_funevals;
+			SELF := le;
+		END;
+		armin_t := PROJECT (armin, newt_tran(LEFT), LOCAL);
+
+		// calculate t*d
+		Elem := {REAL8 v};
+		Layout_Part td_tran (armin_t le, d ri) := TRANSFORM
+			cells := ri.part_rows * ri.part_cols;
+			SELF.mat_part := PBBlas.BLAS.dscal(cells, le.prev_t, ri.mat_part, 1);
+			SELF := ri;
+		END;
+		armtd := JOIN (armin_t, d, LEFT.partition_id = RIGHT.partition_id, td_tran (LEFT, RIGHT), LOCAL);
+		//calculate sum(abs(armtd))
+		
+		 Elem abs_td_tran (armin_t le) := TRANSFORM
+				SELF.v:= ABS (le.prev_t) * le.local_sumd;
+		 END;
+		 sum_abs_td_ := PROJECT (armin_t, abs_td_tran(LEFT), LOCAL);
+		 sum_abs_td := SUM (sum_abs_td_, sum_abs_td_.v);
+		 //evaluate new point
+		 // calculate x_new = x + td
+		 Layout_Part x_new_tran (Layout_part le, Layout_part ri) := TRANSFORM
+				cells := le.part_rows * le.part_cols;
+				SELF.mat_part := PBblas.BLAS.daxpy(cells, 1.0, le.mat_part, 1, ri.mat_part, 1);
+				SELF := le;
+			END;
+			armx_new := JOIN (x, armtd, LEFT.partition_id = RIGHT.partition_id, x_new_tran(LEFT, RIGHT), LOCAL);
+			armCostGrad_new := CostFunc(armx_new,CostFunc_params,TrainData, TrainLabel);
+			//calculate gtdnew
+			Elem armgtdnew_tran(armCostGrad_new inrec, d drec) := TRANSFORM //hadamard product
+			cells := inrec.part_rows * inrec.part_cols;
+				SELF.v :=  sump(cells, inrec.mat_part, drec.mat_part);
+			END;
+			armgtd_new_ := JOIN (armCostGrad_new, d, LEFT.partition_id = RIGHT.partition_id, gtdnew_tran (LEFT, RIGHT), LOCAL);
+			armgtd_new := SUM (armgtd_new_, armgtd_new_.v);
+			
+			ArmijoRecord armmain_tran (armCostGrad_new le, armin_t ri) := TRANSFORM
+			//while f_new > fr + c1*t*gtd || ~isLegal(f_new)
+			SELF.armCond := IF ( (le.cost_value > (ri.glob_f + (c1*ri.prev_t*gtd)) OR (NOT ISVALID(le.cost_value))) ,-1,2);
+			SELF.tprev := ri.tprev;
+			SELF.fprev := ri.fprev;
+			SELF.wolfe_funevals := ri.wolfe_funevals + 1;
+			SELF.prev_t := ri.prev_t;
+			SELF.glob_f := ri.glob_f;
+			//calculate islegalgnew ??
+			islegal_gnew := TRUE;
+			SELF.gtdnew := IF (ISVALID (le.cost_value) AND islegal_gnew, armgtd_new, -1);//gtd value is assigned/calculated only if it will be used in the next iteration. It will be used if the first arm cond is not satisfied and the second one is satisfied ??
+			SELF.local_sumd := ri.local_sumd;
+			SELF := le;
+		END;
+		arm_nextitr_out := JOIN (armCostGrad_new, armin_t, LEFT.partition_id = RIGHT.partition_id, armmain_tran(LEFT,RIGHT) , LOCAL);
+		armshort_format := RECORD
+			armin_t.wolfe_funevals;
+			armin_t.partition_id;
+		END;
+		armfunevals_table := TABLE (armin_t, armshort_format, LOCAL);
+		steptoosmall_out := JOIN (g, armfunevals_table, LEFT.partition_id = RIGHT.partition_id,TRANSFORM (ArmijoRecord, SELF.local_sumd := -1; SELF.gtdnew := -1; SELF.glob_f := LEFT.cost_value; SELF.armCond := 1; SELF.prev_t:=0; SELF.tprev := -1; SELF.fprev:= -1; SELF.wolfe_funevals := RIGHT.wolfe_funevals; SELF := LEFT), LOCAL);// in case we are returning this dataset, it means step size had been too small so the armCond should be 1
+		//Check whether step size has become too small
+    //if sum(abs(t*d)) <= tolX
+		toosmall_cond := sum_abs_td <= tolX;
+		// loop continues until f_new > fr + c1*t*gtd || ~isLegal(f_new) is TRUE, so the loop has to stop when NOT (f_new > fr + c1*t*gtd || ~isLegal(f_new)), in the other word when NOT (f_new > fr + c1*t*gtd ) AND isLegal(f_new)
+		
+		arm_out := IF (toosmall_cond, steptoosmall_out, arm_nextitr_out);
+
+		
+		RETURN arm_out; 
+	END;// END BackTracking
+	ar1 := BackTracking(topass_BackTracking,1);
+	// RETURN BackTracking(ar1,2);
+	RETURN LOOP (topass_BackTracking, LEFT.armCond = -1 , BackTracking(ROWS(LEFT),COUNTER));
+	// RETURN LOOP (topass_BackTracking, 6 , BackTracking(ROWS(LEFT),COUNTER));
+	// RETURN topass_BackTracking;
+	// RETURN ar1;
+	// RETURN topass_BackTracking;
+END;// END ArmijoBacktrack
  
 EXPORT WolfeLineSearch4_4_2_no(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
 	//C++ functions used
@@ -2879,7 +3549,7 @@ END;
   //   doPlot: do a graphical display of interpolation
   //   funObj: objective function
   //   varargin: parameters of objective function
-  EXPORT ArmijoBacktrack(DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, REAL8 fr, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
+  EXPORT ArmijoBacktrack2(DATASET(Types.NumericField)x, REAL8 t, DATASET(Types.NumericField)d, REAL8 f, REAL8 fr, DATASET(Types.NumericField) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 tolX=0.000000001,DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel, DATASET(Types.NumericField) CostFunc (DATASET(Types.NumericField) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Types.NumericField) TrainData , DATASET(Types.NumericField) TrainLabel), prows=0, pcols=0, Maxrows=0, Maxcols=0):=FUNCTION
     
      P_num := Max (x, id); //the length of the parameters vector (number of parameters)
       IsNotLegal (DATASET (Mat.Types.Element) Mat) := FUNCTION //???to be defined
@@ -2953,7 +3623,7 @@ END;
       Breakresult := DATASET([{1,1,0,4}], Mat.Types.MUElement) + DATASET([{1,1,f,1}], Mat.Types.MUElement) + Mat.MU.To (ML.Types.ToMatrix(g),2) + LoopResult (no=3);
       FinalResult := IF (BCond, Breakresult, RegularResult);
     RETURN FinalResult;
-  END; // END ArmijoBacktrack
+  END; // END ArmijoBacktrack2
 
 //LBFGS algorithm
   //Returns final updated parameter: numericField foramt
@@ -2991,6 +3661,7 @@ corrections := 3;
 			itr_n := MAX (min_in, min_in.update_itr);
       k := IF (itr_n >corrections, corrections, itr_n); // k is the number of previous step vectors which are already stored
 			// q LOOP
+			w_2part := MAX(min_in, min_in.partition_id)-2;
 			q_step (DATASET(minfRec) q_inp, unsigned4 q_c) := FUNCTION
 				q_itr := itr_n- q_c + 1;
 				q := q_inp(no=1);//this is the q vector
@@ -3020,6 +3691,9 @@ corrections := 3;
 				END;
 				al_norm_ := NORMALIZE(new_q(no=1), 1,norm_al(LEFT));
 				al_norm := ASSERT(al_norm_, node_id = Thorlib.node() and node_id=(partition_id-1), 'al is not well distributed in the lbfgs function', FAIL);
+				
+				// al_norm := ASSERT(al_norm_, (partition_id<=w_2part and node_id=Thorlib.node() and node_id=(partition_id-1)) or (partition_id>w_2part and node_id=Thorlib.node() and node_id = w_2part ), 'al is not well distributed in the lbfgs function', FAIL);
+				
         RETURN new_q + al_norm + q_inp (no != 1);
       END; //END q_step
 			minfRec steep_tran (minfRec le) := TRANSFORM
@@ -3399,6 +4073,95 @@ corrections := 3;
 			RETURN final_d;
     END; // END lbfgs2
 		
+		lbfgs4 (DATASET(minfRec) min_in, UNSIGNED rec_c) := FUNCTION
+			//itr_n := MAX (min_in, min_in.update_itr);
+			itr_n := rec_c;
+      k := IF (itr_n >corrections, corrections, itr_n); // k is the number of previous step vectors which are already stored
+			//k := itr_n;
+			// q LOOP
+			q_step (DATASET(minfRec) q_inp, unsigned4 q_c) := FUNCTION
+				q_itr := itr_n- q_c + 1;
+				q := q_inp;//this is the q vector
+				//calculate al : al(i) = ro(i)*s(:,i)'*q(:,i+1);
+				simple := {REAL8 v};
+				simple al_tran (minfRec q_in, minfRec s_in) := TRANSFORM
+				  cells := q_in.part_rows * q_in.part_cols;
+					SELF.v := (1/s_in.sty) * sump(cells, q_in.mat_part, s_in.mat_part);
+				END;
+				
+				al_ := JOIN (q, min_in, RIGHT.no = 3 AND (RIGHT.update_itr=LEFT.update_itr) AND (LEFT.partition_id = RIGHT.partition_id), al_tran (LEFT, RIGHT), LOCAL);
+				al := SUM (al_, al_.v);
+				// calculate new q vector : q(:,i) = q(:,i+1)-al(i)*y(:,i);
+				minfRec new_q_tran (minfRec le, minfRec ri):= TRANSFORM
+					cells := le.part_rows * le.part_cols;
+			    SELF.mat_part := PBblas.BLAS.daxpy(cells, -1 * al, le.mat_part, 1, ri.mat_part, 1);
+					SELF.update_itr :=  IF (q_c =1 , IF (ri.update_itr < corrections , corrections - ri.update_itr +1 , 1) , ri.update_itr + 1 ) ;
+					SELF := ri;//by assigning q part (right hand side) to SELF we make sure we are keeping funevals and other information
+				END;
+				new_q := JOIN (min_in, q, RIGHT.no = 4 AND (LEFT.update_itr=RIGHT.update_itr) AND (LEFT.partition_id = RIGHT.partition_id), new_q_tran (LEFT, RIGHT), LOCAL);
+				//normalize al to new_q and return the result
+				minfRec norm_al (minfRec le) := TRANSFORM
+					SELF.mat_part := [al];
+					SELF.no := le.update_itr+ 1;// 1 is added because the final q_itr will be 1 and we have already reserved no=1 for the q vector itself
+					SELF := le;
+				END;
+				al_norm_ := NORMALIZE(new_q(no=1), 1,norm_al(LEFT));
+				al_norm := ASSERT(al_norm_, node_id = Thorlib.node() and node_id=(partition_id-1), 'al is not well distributed in the lbfgs function', FAIL);
+        RETURN new_q + al_norm;
+      END; //END q_step
+			minfRec steep_tran (minfRec le) := TRANSFORM
+				cells := le.part_rows * le.part_cols;
+				SELF.mat_part := PBBlas.BLAS.dscal(cells, -1, le.mat_part, 1);//multiply by -1
+				SELF := le;
+			END;
+			topass_q := PROJECT (min_in(no=1), steep_tran(LEFT),LOCAL);//contains funevals and cost_value, h information from the previous iteration in minfunc function. So basically the h field (hdiag) belongs to what has been calculated in the previous iteratio and can be used here in topass_r
+			//q_result := LOOP(topass_q, COUNTER <= k, q_step(ROWS(LEFT),COUNTER)); orig
+			q_result := LOOP(topass_q, (LEFT.no =1) AND (LEFT.update_itr - corrections + 1 > 0) , q_step(ROWS(LEFT),COUNTER));
+			// r loop
+			r_step (DATASET(minfRec) r_inp, unsigned4 r_c) := FUNCTION
+				r_itr := r_c + (itr_n - k);
+				s_tmp := min_in (no = 3 AND update_itr = r_itr);
+				y_tmp := min_in (no = 4 AND update_itr = r_itr);
+				//calculate be be(i) = ro(i)*y(:,i)'*r(:,i);
+				simple := {REAL8 v};
+				simple be_tran (minfRec r_in, minfRec y_in) := TRANSFORM
+				  cells := r_in.part_rows * r_in.part_cols;
+					SELF.v := (1/y_in.sty) * sump(cells, r_in.mat_part, y_in.mat_part);
+				END;
+				be_ := JOIN (r_inp, y_tmp, LEFT.partition_id = right.partition_id, be_tran (LEFT, RIGHT), LOCAL);
+				be := SUM (be_, be_.v);
+				// calculate (al (i) - be ) * s (i)
+				minfRec s_tran (minfRec s_in, minfRec al_in) := TRANSFORM
+					cells := s_in.part_rows * s_in.part_cols;
+					SELF.mat_part := PBBlas.BLAS.dscal(cells, (al_in.mat_part[1] - be), s_in.mat_part, 1);
+					SELF := s_in;
+				END;
+				al_be_s := JOIN (s_tmp, q_result (no = (r_itr + 1)) , LEFT.partition_id = RIGHT. partition_id, s_tran (LEFT, RIGHT), LOCAL);
+				// calculate new_r := r + al_be_s
+				minfRec new_r_tran (minfRec le, minfRec ri):= TRANSFORM
+					cells := le.part_rows * le.part_cols;
+			    SELF.mat_part := PBblas.BLAS.daxpy(cells, 1.0, le.mat_part, 1, ri.mat_part, 1);
+					SELF := ri;//again here by assigning the r part (RIGHT) we are making sure we are keeping all the field initially comming from g (min_in (no=1)) such as funevals field and etc.
+				END;
+				new_r := JOIN (al_be_s, r_inp, LEFT.partition_id = RIGHT.partition_id, new_r_tran (LEFT, RIGHT), LOCAL);
+				RETURN new_r; 
+			END;// END r_step
+			minfRec r_pass_tran (minfRec le) := TRANSFORM
+				cells := le.part_rows * le.part_cols;
+				SELF.mat_part := PBBlas.BLAS.dscal(cells, le.h, le.mat_part, 1);
+				SELF := le;
+			END;
+			//r(:,1) = Hdiag*q(:,1);
+			topass_r := PROJECT (q_result (no=1), r_pass_tran (LEFT), LOCAL);
+			//final_d := LOOP(topass_r, COUNTER <= k, r_step(ROWS(LEFT),COUNTER)); orig
+			final_d := LOOP(topass_r, k, r_step(ROWS(LEFT),COUNTER));
+		  //RETURN q_result;
+			// q1 := q_step(topass_q,1);
+			r1 := r_step(topass_r,1);
+			r2 := r_step(r1,2);
+			RETURN q_result;
+    END; // END lbfgs4
+		
 		
 			lbfgs3 (DATASET(minfRec) min_in) := FUNCTION
 			itr_n := MAX (min_in, min_in.update_itr);
@@ -3544,6 +4307,7 @@ corrections := 3;
 			SELF.sty := -1;// not calculated yet
 			SELF.update_itr := -1; // not calculated yet
 			SELF.cost_value := le.cost_value;
+			SELF.itr_counter := 1;
 			SELF := ri;
 		END;
 		td := JOIN (w, d, LEFT.partition_id = RIGHT.partition_id, td_tran (LEFT, RIGHT), LOCAL);
@@ -3558,6 +4322,7 @@ corrections := 3;
 			SELF.sty := -1;// NA
 			SELF.update_itr := -1; // not calculated yet
 			SELF.cost_value := ri.cost_value;
+			SELF.itr_counter := 1;
 			SELF := le;
 		END;
 		x_new := JOIN (x0, td, LEFT.partition_id = RIGHT.partition_id, x_new_tran(LEFT, RIGHT), LOCAL);
@@ -3574,6 +4339,7 @@ corrections := 3;
 			SELF.sty := -1;// not calculated yet
 			SELF.update_itr := -1; // not calculated yet
 			SELF.cost_value := ri.cost_value;
+			SELF.itr_counter := 1;
 			SELF := le;
 		END;
 		y_y := JOIN (CostGrad, w, LEFT.partition_id = RIGHT.partition_id, y_y_tran(LEFT, RIGHT), LOCAL);
@@ -3618,21 +4384,21 @@ corrections := 3;
 		// 4 : lack of progress
 		minfunc_cond := IF (optimality_cond, 3, IF (lack_prog_cond, 4, -1));
 		//when d is not legal, no other calculation is done and we return the current g and x values
-		g0_dnotlegal_return := PROJECT (Costgrad, TRANSFORM(minfrec, SELF.sty := -1; SELF.update_itr := 0; SELF.h := Hdiag; SELF.break_cond := 1, SELF.no := 1; SELF.min_funEval:= funEvals; SELF:= LEFT ), LOCAL);
-		x0_dnotlegal_return := PROJECT (x0,       TRANSFORM(minfrec, SELF.sty := -1; SELF.update_itr := 0; SELF.h := Hdiag; SELF.break_cond := 1, SELF.no := 2; SELF.min_funEval:= funEvals; SELF.cost_value := -1; SELF:= LEFT ), LOCAL);//cost_value for x (when no =2 ) does not mean any thing, the correct cost) value is shown when no=1 (along with gradient value)
+		g0_dnotlegal_return := PROJECT (Costgrad, TRANSFORM(minfrec, SELF.itr_counter := 1; SELF.sty := -1; SELF.update_itr := 0; SELF.h := Hdiag; SELF.break_cond := 1, SELF.no := 1; SELF.min_funEval:= funEvals; SELF:= LEFT ), LOCAL);
+		x0_dnotlegal_return := PROJECT (x0,       TRANSFORM(minfrec, SELF.itr_counter := 1; SELF.sty := -1; SELF.update_itr := 0; SELF.h := Hdiag; SELF.break_cond := 1, SELF.no := 2; SELF.min_funEval:= funEvals; SELF.cost_value := -1; SELF:= LEFT ), LOCAL);//cost_value for x (when no =2 ) does not mean any thing, the correct cost) value is shown when no=1 (along with gradient value)
 		dnotlegal_return := g0_dnotlegal_return + x0_dnotlegal_return;
 		//After gtd is calculated check whether progress along the direction is possible, if it is not, break
-		g0_noprogalong_return := PROJECT (Costgrad, TRANSFORM(minfrec, SELF.sty := -1; SELF.update_itr := 0; SELF.h := Hdiag; SELF.break_cond := 2, SELF.no := 1; SELF.min_funEval:= funEvals; SELF:= LEFT ), LOCAL);
-		x0_noprogalong_return := PROJECT (x0,       TRANSFORM(minfrec, SELF.sty := -1; SELF.update_itr := 0; SELF.h := Hdiag; SELF.break_cond := 2, SELF.no := 2; SELF.min_funEval:= funEvals; SELF.cost_value := -1; SELF:= LEFT ), LOCAL);//cost_value for x (when no =2 ) does not mean any thing, the correct cost) value is shown when no=1 (along with gradient value)
+		g0_noprogalong_return := PROJECT (Costgrad, TRANSFORM(minfrec, SELF.itr_counter := 1; SELF.sty := -1; SELF.update_itr := 0; SELF.h := Hdiag; SELF.break_cond := 2, SELF.no := 1; SELF.min_funEval:= funEvals; SELF:= LEFT ), LOCAL);
+		x0_noprogalong_return := PROJECT (x0,       TRANSFORM(minfrec, SELF.itr_counter := 1; SELF.sty := -1; SELF.update_itr := 0; SELF.h := Hdiag; SELF.break_cond := 2, SELF.no := 2; SELF.min_funEval:= funEvals; SELF.cost_value := -1; SELF:= LEFT ), LOCAL);//cost_value for x (when no =2 ) does not mean any thing, the correct cost) value is shown when no=1 (along with gradient value)
 		noprogalong_return := g0_noprogalong_return + x0_noprogalong_return;
-		x_new_break := PROJECT (x_new, TRANSFORM (minfRec, SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL); // if after calculating new point and calculating x_new and g_new one of the conditions is satisfied we return and no need to calculate s ad y and updated_hdiag fo rthe next itr
-		g_new_break := PROJECT (w,TRANSFORM (minfRec, SELF.min_funEval := funEvals + LEFT.wolfe_funevals; SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := 0;  SELF.no :=1; SELF.h := Hdiag; SELF := LEFT) ,LOCAL);
+		x_new_break := PROJECT (x_new, TRANSFORM (minfRec, SELF.itr_counter := 1; SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL); // if after calculating new point and calculating x_new and g_new one of the conditions is satisfied we return and no need to calculate s ad y and updated_hdiag fo rthe next itr
+		g_new_break := PROJECT (w,TRANSFORM (minfRec, SELF.itr_counter := 1; SELF.min_funEval := funEvals + LEFT.wolfe_funevals; SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := 0;  SELF.no :=1; SELF.h := Hdiag; SELF := LEFT) ,LOCAL);
 		break_result := x_new_break + g_new_break;
-		x_new_nextitr := PROJECT (x_new, TRANSFORM (minfRec, SELF.update_itr := IF (update_cond,1,0); SELF.h := IF (update_cond, hdiag_updated, Hdiag); SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);// IF (minfunc_cond=-1,hdiag_updated, -1) : if a breack condition is satisfied, then there is not going to be a next iteration, so no need to calculate updated hidiag
-		g_new_nextitr := PROJECT (w,TRANSFORM (minfRec, SELF.min_funEval := funEvals + LEFT.wolfe_funevals; SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := IF (update_cond,1,0);  SELF.no :=1; SELF.h := IF (update_cond, hdiag_updated, Hdiag); SELF := LEFT) ,LOCAL);
+		x_new_nextitr := PROJECT (x_new, TRANSFORM (minfRec, SELF.itr_counter := 1; SELF.update_itr := IF (update_cond,1,0); SELF.h := IF (update_cond, hdiag_updated, Hdiag); SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);// IF (minfunc_cond=-1,hdiag_updated, -1) : if a breack condition is satisfied, then there is not going to be a next iteration, so no need to calculate updated hidiag
+		g_new_nextitr := PROJECT (w,TRANSFORM (minfRec, SELF.itr_counter := 1; SELF.min_funEval := funEvals + LEFT.wolfe_funevals; SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := IF (update_cond,1,0);  SELF.no :=1; SELF.h := IF (update_cond, hdiag_updated, Hdiag); SELF := LEFT) ,LOCAL);
 		g_x_nextitr := x_new_nextitr + g_new_nextitr;
-		s_s_corr := PROJECT (s_s,TRANSFORM (minfRec, SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
-		y_y_corr := PROJECT (y_y,TRANSFORM (minfRec, SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
+		s_s_corr := PROJECT (s_s,TRANSFORM (minfRec, SELF.itr_counter := 1; SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
+		y_y_corr := PROJECT (y_y,TRANSFORM (minfRec, SELF.itr_counter := 1; SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
 		// IF one of the break conditions is satisfied and minfunc!=-1 we need to return only x_new and g_new and no need to calculated Hdiag, s, y fo rthe next iteration
 		//Conversly, if no condition is satisfied, it means we are going to the next iteration so we need to update Hdiag, s and y if and only if update_cond is satisfied, otherwise no update is done and we just return the current values to the next iteration
 		TheReturn := IF (minfunc_cond = -1, IF (update_cond, g_x_nextitr + s_s_corr + y_y_corr, g_x_nextitr), break_result);
@@ -3752,22 +4518,22 @@ corrections := 3;
 		// 4 : lack of progress
 		minfunc_cond := IF (optimality_cond, 3, IF (lack_prog_cond, 4, -1));
 		//when d is not legal, no other calculation is done and we return the current g and x values recived in the loop input with break_cond updated 
-		dnotlegal_return := PROJECT (inp (no =1 OR no =2), TRANSFORM(minfrec, SELF.break_cond := 1; SELF:= LEFT ), LOCAL);
+		dnotlegal_return := PROJECT (inp (no =1 OR no =2), TRANSFORM(minfrec, SELF.itr_counter := min_c + 1; SELF.break_cond := 1; SELF:= LEFT ), LOCAL);
 		//After gtd is calculated check whether progress along the direction is possible, if it is not, the current g and x values recived in the loop input with break_cond updated 
-		noprogalong_return := PROJECT (inp (no =1 OR no =2), TRANSFORM(minfrec, SELF.break_cond := 2; SELF:= LEFT ), LOCAL);
+		noprogalong_return := PROJECT (inp (no =1 OR no =2), TRANSFORM(minfrec, SELF.itr_counter := min_c + 1; SELF.break_cond := 2; SELF:= LEFT ), LOCAL);
 		// if d is legal and progress along direction is allowed, then calculate new point using wolfe algorithm. Next check for minfunc termination conditions (break conditions) if any of them is satisfied
 		//no need to calculate new hdiag , s and y values, just retunr new calculated x and g and return with break_cond updated
-		x_new_break := PROJECT (x_new, TRANSFORM (minfRec, SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);
+		x_new_break := PROJECT (x_new, TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);
 		//when passing g_new to wolfe function we lost the funevals, h and other values, so here we need to JOIN g_new with x_new in order to get those values back
 		//g_new_break := PROJECT (w,TRANSFORM (minfRec, SELF.min_funEval := -1; SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := -1;  SELF.no :=1; SELF.h := -1; SELF := LEFT) ,LOCAL);
-		g_new_break := JOIN (w, x_new_break, LEFT.partition_id = RIGHT.partition_id, TRANSFORM (minfRec, SELF.min_funEval := RIGHT.min_funEval;  SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := RIGHT.update_itr;  SELF.no :=1; SELF.h := RIGHT.h; SELF:= LEFT), LOCAL);
+		g_new_break := JOIN (w, x_new_break, LEFT.partition_id = RIGHT.partition_id, TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.min_funEval := RIGHT.min_funEval;  SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := RIGHT.update_itr;  SELF.no :=1; SELF.h := RIGHT.h; SELF:= LEFT), LOCAL);
 		break_result := x_new_break + g_new_break;
 		// id d is legal, progress along direction is allowed, no break condition is satified then return x_new, g_new values along with newly calculated Hdiag and s and y value only if update_cond is satified
-		x_new_nextitr := PROJECT (x_new, TRANSFORM (minfRec, SELF.update_itr := IF (update_cond, LEFT.update_itr + 1, LEFT.update_itr); SELF.h := IF (update_cond, hdiag_updated, LEFT.h); SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);
-		g_new_nextitr := JOIN (w, x_new_nextitr, LEFT.partition_id = RIGHT.partition_id, TRANSFORM (minfRec, SELF.min_funEval := RIGHT.min_funEval;  SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := RIGHT.update_itr;  SELF.no :=1; SELF.h := RIGHT.h; SELF:= LEFT), LOCAL);
+		x_new_nextitr := PROJECT (x_new, TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.update_itr := IF (update_cond, LEFT.update_itr + 1, LEFT.update_itr); SELF.h := IF (update_cond, hdiag_updated, LEFT.h); SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);
+		g_new_nextitr := JOIN (w, x_new_nextitr, LEFT.partition_id = RIGHT.partition_id, TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.min_funEval := RIGHT.min_funEval;  SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := RIGHT.update_itr;  SELF.no :=1; SELF.h := RIGHT.h; SELF:= LEFT), LOCAL);
 		g_x_nextitr := x_new_nextitr + g_new_nextitr + inp ((no = 3 OR no = 4) AND update_itr > (min_c+1-corrections));// retunr new_x + new_g + the n=correction recent correction vectors, the old correction vectors should not be returned -> limited memory
-		s_s_corr := PROJECT (s_s,TRANSFORM (minfRec, SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := LEFT.update_itr + 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
-		y_y_corr := PROJECT (y_y,TRANSFORM (minfRec, SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := LEFT.update_itr + 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
+		s_s_corr := PROJECT (s_s,TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := LEFT.update_itr + 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
+		y_y_corr := PROJECT (y_y,TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := LEFT.update_itr + 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
 		// IF one of the break conditions is satisfied and minfunc!=-1 we need to return only x_new and g_new and no need to calculated Hdiag, s, y fo rthe next iteration
 		//Conversly, if no condition is satisfied, it means we are going to the next iteration so we need to update Hdiag, s and y if and only if update_cond is satisfied, otherwise no update is done and we just return the current values to the next iteration
 		TheReturn := IF (minfunc_cond = -1, IF (update_cond, g_x_nextitr + s_s_corr + y_y_corr, g_x_nextitr), break_result);
@@ -3777,159 +4543,15 @@ corrections := 3;
 		//RETURN g_x_nextitr + s_s_corr + y_y_corr;
  END;//END min_step
  
- 
- 
- 
- 	
-  	min_step_firstitr_test := FUNCTION
-		//calculate d
-		//Steepest_Descent
-		costgrad_record steep_tran (costgrad_record le) := TRANSFORM
-			cells := le.part_rows * le.part_cols;
-			SELF.mat_part := PBBlas.BLAS.dscal(cells, -1, le.mat_part, 1);//multiply by -1
-			SELF := le;
-		END;
-		d := PROJECT (CostGrad, steep_tran (LEFT) , LOCAL);
-		//check whether d is legal, if not return
-		dlegalstep := IsLegal (d);
-		// Directional Derivative : gtd = g'*d;
-		//Since d = -g -> gtd = -sum (g.^2)
-		Elem := {REAL8 v};
-		Elem g2_tran (costgrad_record le) := TRANSFORM
-			cells := le.part_rows * le.part_cols;
-			SELF.v := sum_sq(cells, le.mat_part);
-		END;
-		gtd_ := PROJECT (CostGrad, g2_tran (LEFT), LOCAL);
-		gtd := -1*SUM (gtd_, gtd_.v);
-		//Check that progress can be made along direction : if gtd > -tolX then break!
-		gtdprogress := gtd > -1*tolX;
-		// Select Initial Guess If coun =1 then t = min(1,1/sum(abs(g)));
-		Elem gabs_tran (costgrad_record le) := TRANSFORM
-			cells := le.part_rows * le.part_cols;
-			SELF.v := sumabs(cells, le.mat_part);
-		END;
-		sum_abs_g0_ := PROJECT (CostGrad, gabs_tran (LEFT), LOCAL);
-		sum_abs_g0 := SUM (sum_abs_g0_, sum_abs_g0_.v);
-		t_init := MIN ([1, 1/(sum_abs_g0)]);
-		// Find Point satisfying Wolfe
-		w := WolfeLineSearch4_4_2_test(1, x0,CostFunc_params,TrainData, TrainLabel,CostFunc, t_init, d, CostGrad,gtd, 0.0001, 0.9, wolfe_max_itr, 0.000000001);
-		//calculate new oint
-		//calculate td
-		minfRec td_tran (w le, d ri) := TRANSFORM
-			cells := ri.part_rows * ri.part_cols;
-			SELF.mat_part := PBBlas.BLAS.dscal(cells, le.prev_t, ri.mat_part, 1);
-			SELF.no := 3;
-			SELF.h := -1; //not calculated yet
-			SELF.min_funEval := funEvals + le.wolfe_funevals;
-			SELF.break_cond := -1;
-			SELF.sty := -1;// not calculated yet
-			SELF.update_itr := -1; // not calculated yet
-			SELF.cost_value := le.cost_value;
-			SELF := ri;
-		END;
-		td := JOIN (w, d, LEFT.partition_id = RIGHT.partition_id, td_tran (LEFT, RIGHT), LOCAL);
-		//calculate x_new = x0 + td
-		minfRec x_new_tran (Layout_part le, minfRec ri) := TRANSFORM
-			cells := le.part_rows * le.part_cols;
-			SELF.mat_part := PBblas.BLAS.daxpy(cells, 1.0, le.mat_part, 1, ri.mat_part, 1);
-			SELF.no := 2;
-			SELF.h := Hdiag; //not calculated yet
-			SELF.min_funEval := ri.min_funEval;
-			SELF.break_cond := -1;
-			SELF.sty := -1;// NA
-			SELF.update_itr := -1; // not calculated yet
-			SELF.cost_value := ri.cost_value;
-			SELF := le;
-		END;
-		x_new := JOIN (x0, td, LEFT.partition_id = RIGHT.partition_id, x_new_tran(LEFT, RIGHT), LOCAL);
-		//s_s = t*d
-		s_s := td;
-		//y_y := g_new - g_old
-		minfRec y_y_tran (costgrad_record le, w ri) := TRANSFORM
-			cells := le.part_rows * le.part_cols;
-			SELF.mat_part := PBblas.BLAS.daxpy(cells, -1.0, le.mat_part, 1, ri.mat_part, 1);
-			SELF.no := 4;
-			SELF.h := -1; //not calculated yer
-			SELF.min_funEval := funEvals + ri.wolfe_funevals;
-			SELF.break_cond := -1;
-			SELF.sty := -1;// not calculated yet
-			SELF.update_itr := -1; // not calculated yet
-			SELF.cost_value := ri.cost_value;
-			SELF := le;
-		END;
-		y_y := JOIN (CostGrad, w, LEFT.partition_id = RIGHT.partition_id, y_y_tran(LEFT, RIGHT), LOCAL);
-		//y_s = y_y'*s_s
-		Elem y_s_tran (y_y le, s_s ri) := TRANSFORM
-			cells := ri.part_rows * ri.part_cols;
-			SELF.v:= sump(cells, le.mat_part, ri.mat_part);
-		END;
-		y_s_ := JOIN (y_y, s_s, LEFT.partition_id = RIGHT.partition_id, y_s_tran (LEFT, RIGHT), LOCAL);
-		y_s := SUM (y_s_, y_s_.v);
-		//calculated y_y^2
-		Elem yy2_tran (Layout_Part le) := TRANSFORM
-			cells := le.part_rows * le.part_cols;
-			SELF.v := sum_sq(cells, le.mat_part);
-		END;
-		y_y_2_ := PROJECT (y_y, yy2_tran(LEFT), LOCAL);
-		y_y_2 := SUM (y_y_2_, y_y_2_.v);
-		hdiag_updated := y_s/ y_y_2;
-		update_cond := y_s>10^(-10);
-		// calculate sum(abs(g_new))
-		Elem abs_g_tran (w le) := TRANSFORM
-			cells := le.part_rows * le.part_cols;
-			SELF.v:= sumabs(cells, le.mat_part);
-		END;
-		sum_abs_g_new_ := PROJECT (w, abs_g_tran (LEFT), LOCAL);
-		sum_abs_g_new := SUM (sum_abs_g_new_, sum_abs_g_new_.v);
-		//calculate sum(abs(td))
-		Elem abs_td_tran (td le) := TRANSFORM
-			cells := le.part_rows * le.part_cols;
-			SELF.v:= sumabs(cells, le.mat_part);
-		END;
-		sum_abs_td_ := PROJECT (td, abs_td_tran(LEFT), LOCAL);
-		sum_abs_td := SUM (sum_abs_td_, sum_abs_td_.v);
-		//Optimality Condition sum(abs(g)) <= tolFun
-		optimality_cond := sum_abs_g_new <= tolFun;
-		//Check for lack of progress sum(abs(t*d)) <= tolX
-		lack_prog_cond := sum_abs_td <= tolX;
-		// -1: no condition
-		// 1 : when d is not legal
-		// 2 : when progress along direction not allowed
-		// 3 : optimality cond
-		// 4 : lack of progress
-		minfunc_cond := IF (optimality_cond, 3, IF (lack_prog_cond, 4, -1));
-		//when d is not legal, no other calculation is done and we return the current g and x values
-		g0_dnotlegal_return := PROJECT (Costgrad, TRANSFORM(minfrec, SELF.sty := -1; SELF.update_itr := 0; SELF.h := Hdiag; SELF.break_cond := 1, SELF.no := 1; SELF.min_funEval:= funEvals; SELF:= LEFT ), LOCAL);
-		x0_dnotlegal_return := PROJECT (x0,       TRANSFORM(minfrec, SELF.sty := -1; SELF.update_itr := 0; SELF.h := Hdiag; SELF.break_cond := 1, SELF.no := 2; SELF.min_funEval:= funEvals; SELF.cost_value := -1; SELF:= LEFT ), LOCAL);//cost_value for x (when no =2 ) does not mean any thing, the correct cost) value is shown when no=1 (along with gradient value)
-		dnotlegal_return := g0_dnotlegal_return + x0_dnotlegal_return;
-		//After gtd is calculated check whether progress along the direction is possible, if it is not, break
-		g0_noprogalong_return := PROJECT (Costgrad, TRANSFORM(minfrec, SELF.sty := -1; SELF.update_itr := 0; SELF.h := Hdiag; SELF.break_cond := 2, SELF.no := 1; SELF.min_funEval:= funEvals; SELF:= LEFT ), LOCAL);
-		x0_noprogalong_return := PROJECT (x0,       TRANSFORM(minfrec, SELF.sty := -1; SELF.update_itr := 0; SELF.h := Hdiag; SELF.break_cond := 2, SELF.no := 2; SELF.min_funEval:= funEvals; SELF.cost_value := -1; SELF:= LEFT ), LOCAL);//cost_value for x (when no =2 ) does not mean any thing, the correct cost) value is shown when no=1 (along with gradient value)
-		noprogalong_return := g0_noprogalong_return + x0_noprogalong_return;
-		x_new_break := PROJECT (x_new, TRANSFORM (minfRec, SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL); // if after calculating new point and calculating x_new and g_new one of the conditions is satisfied we return and no need to calculate s ad y and updated_hdiag fo rthe next itr
-		g_new_break := PROJECT (w,TRANSFORM (minfRec, SELF.min_funEval := funEvals + LEFT.wolfe_funevals; SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := 0;  SELF.no :=1; SELF.h := Hdiag; SELF := LEFT) ,LOCAL);
-		break_result := x_new_break + g_new_break;
-		x_new_nextitr := PROJECT (x_new, TRANSFORM (minfRec, SELF.update_itr := IF (update_cond,1,0); SELF.h := IF (update_cond, hdiag_updated, Hdiag); SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);// IF (minfunc_cond=-1,hdiag_updated, -1) : if a breack condition is satisfied, then there is not going to be a next iteration, so no need to calculate updated hidiag
-		g_new_nextitr := PROJECT (w,TRANSFORM (minfRec, SELF.min_funEval := funEvals + LEFT.wolfe_funevals; SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := IF (update_cond,1,0);  SELF.no :=1; SELF.h := IF (update_cond, hdiag_updated, Hdiag); SELF := LEFT) ,LOCAL);
-		g_x_nextitr := x_new_nextitr + g_new_nextitr;
-		s_s_corr := PROJECT (s_s,TRANSFORM (minfRec, SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
-		y_y_corr := PROJECT (y_y,TRANSFORM (minfRec, SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
-		// IF one of the break conditions is satisfied and minfunc!=-1 we need to return only x_new and g_new and no need to calculated Hdiag, s, y fo rthe next iteration
-		//Conversly, if no condition is satisfied, it means we are going to the next iteration so we need to update Hdiag, s and y if and only if update_cond is satisfied, otherwise no update is done and we just return the current values to the next iteration
-		TheReturn := IF (minfunc_cond = -1, IF (update_cond, g_x_nextitr + s_s_corr + y_y_corr, g_x_nextitr), break_result);
-		Rresult := IF (dlegalstep, IF (gtdprogress, noprogalong_return, TheReturn) , dnotlegal_return);
-		RETURN w;
-		//RETURN g_x_nextitr + s_s_corr + y_y_corr;
-	 END;// END min_step_firstitr_test
-	 
- 
-	 min_step29 (DATASET(minfRec) inp,unsigned4 min_c) := FUNCTION
+   
+	
+	 min_step2 (DATASET(minfRec) inp,unsigned4 min_c) := FUNCTION
 		g_pre := inp (no = 1);
 		x_pre := inp (no = 2);
 		//calculate d
-		// OUTPUT(inp,,'~thor::maryam::mytest::minfunc_inp',CSV(HEADING(SINGLE)), OVERWRITE);		
-		whatever := MAX ([5, MAX (inp, update_itr)]);
-		lbfgs_d := lbfgs2 (inp, min_c);
+		upitr := MAX (inp, inp.update_itr);
+		// lbfgs_d := lbfgs2 (inp, min_c);
+		lbfgs_d := lbfgs2 (inp, upitr);
 		d := lbfgs_d;
 		// is d legal
 		dlegalstep := IsLegal (d);// lbfgs algorithm keeps the funevals, cost_value and other fields for final calculated d same as what it is recieved intitially (inp(no=1))
@@ -4031,37 +4653,184 @@ corrections := 3;
 		// 2 : when progress along direction not allowed
 		// 3 : optimality cond
 		// 4 : lack of progress
-		minfunc_cond := IF (optimality_cond, 3, IF (lack_prog_cond, 4, -1));
+		// 5 : maximum number of iterations reached
+		// 6 : Check for going over iteration/evaluation limit
+		// 7 : lack of progress 2 : abs(f-f_old) < tolX
+		funevalCond := x_new[1].min_funEval > maxFunEvals;
+		costCond := ABS(x_pre[1].cost_value - w[1].cost_value) < tolX;
+
+		minfunc_cond := IF (optimality_cond, 3, IF (lack_prog_cond, 4, IF (min_c > MaxIter, 5, IF (funevalCond, 6, IF (costCond, 7, -1)))));
 		//when d is not legal, no other calculation is done and we return the current g and x values recived in the loop input with break_cond updated 
-		dnotlegal_return := PROJECT (inp (no =1 OR no =2), TRANSFORM(minfrec, SELF.break_cond := 1; SELF:= LEFT ), LOCAL);
+		dnotlegal_return := PROJECT (inp (no =1 OR no =2), TRANSFORM(minfrec, SELF.itr_counter := min_c + 1; SELF.break_cond := 1; SELF:= LEFT ), LOCAL);
 		//After gtd is calculated check whether progress along the direction is possible, if it is not, the current g and x values recived in the loop input with break_cond updated 
-		noprogalong_return := PROJECT (inp (no =1 OR no =2), TRANSFORM(minfrec, SELF.break_cond := 2; SELF:= LEFT ), LOCAL);
+		noprogalong_return := PROJECT (inp (no =1 OR no =2), TRANSFORM(minfrec, SELF.itr_counter := min_c + 1; SELF.break_cond := 2; SELF:= LEFT ), LOCAL);
 		// if d is legal and progress along direction is allowed, then calculate new point using wolfe algorithm. Next check for minfunc termination conditions (break conditions) if any of them is satisfied
 		//no need to calculate new hdiag , s and y values, just retunr new calculated x and g and return with break_cond updated
-		x_new_break := PROJECT (x_new, TRANSFORM (minfRec, SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);
+		x_new_break := PROJECT (x_new, TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);
 		//when passing g_new to wolfe function we lost the funevals, h and other values, so here we need to JOIN g_new with x_new in order to get those values back
 		//g_new_break := PROJECT (w,TRANSFORM (minfRec, SELF.min_funEval := -1; SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := -1;  SELF.no :=1; SELF.h := -1; SELF := LEFT) ,LOCAL);
-		g_new_break := JOIN (w, x_new_break, LEFT.partition_id = RIGHT.partition_id, TRANSFORM (minfRec, SELF.min_funEval := RIGHT.min_funEval;  SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := RIGHT.update_itr;  SELF.no :=1; SELF.h := RIGHT.h; SELF:= LEFT), LOCAL);
+		g_new_break := JOIN (w, x_new_break, LEFT.partition_id = RIGHT.partition_id, TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.min_funEval := RIGHT.min_funEval;  SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := RIGHT.update_itr;  SELF.no :=1; SELF.h := RIGHT.h; SELF:= LEFT), LOCAL);
 		break_result := x_new_break + g_new_break;
 		// id d is legal, progress along direction is allowed, no break condition is satified then return x_new, g_new values along with newly calculated Hdiag and s and y value only if update_cond is satified
-		x_new_nextitr := PROJECT (x_new, TRANSFORM (minfRec, SELF.update_itr := IF (update_cond, LEFT.update_itr + 1, LEFT.update_itr); SELF.h := IF (update_cond, hdiag_updated, LEFT.h); SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);
-		g_new_nextitr := JOIN (w, x_new_nextitr, LEFT.partition_id = RIGHT.partition_id, TRANSFORM (minfRec, SELF.min_funEval := RIGHT.min_funEval;  SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := RIGHT.update_itr;  SELF.no :=1; SELF.h := RIGHT.h; SELF:= LEFT), LOCAL);
+		x_new_nextitr := PROJECT (x_new, TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.update_itr := IF (update_cond, LEFT.update_itr + 1, LEFT.update_itr); SELF.h := IF (update_cond, hdiag_updated, LEFT.h); SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);
+		g_new_nextitr := JOIN (w, x_new_nextitr, LEFT.partition_id = RIGHT.partition_id, TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.min_funEval := RIGHT.min_funEval;  SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := RIGHT.update_itr;  SELF.no :=1; SELF.h := RIGHT.h; SELF:= LEFT), LOCAL);
 		g_x_nextitr := x_new_nextitr + g_new_nextitr + inp ((no = 3 OR no = 4) AND update_itr > (min_c+1-corrections));// retunr new_x + new_g + the n=correction recent correction vectors, the old correction vectors should not be returned -> limited memory
-		s_s_corr := PROJECT (s_s,TRANSFORM (minfRec, SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := LEFT.update_itr + 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
-		y_y_corr := PROJECT (y_y,TRANSFORM (minfRec, SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := LEFT.update_itr + 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
+		s_s_corr := PROJECT (s_s,TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := LEFT.update_itr + 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
+		y_y_corr := PROJECT (y_y,TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := LEFT.update_itr + 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
 		// IF one of the break conditions is satisfied and minfunc!=-1 we need to return only x_new and g_new and no need to calculated Hdiag, s, y fo rthe next iteration
 		//Conversly, if no condition is satisfied, it means we are going to the next iteration so we need to update Hdiag, s and y if and only if update_cond is satisfied, otherwise no update is done and we just return the current values to the next iteration
 		TheReturn := IF (minfunc_cond = -1, IF (update_cond, g_x_nextitr + s_s_corr + y_y_corr, g_x_nextitr), break_result);
 		Rresult := IF (dlegalstep, IF (gtdprogress, noprogalong_return, TheReturn) , dnotlegal_return);
-		RETURN hdiag_updated;
+		RETURN Rresult;
 		//RETURN PROJECT (w, TRANSFORM(minfRec, SELF.sty:=LEFT.prev_t; SELF.break_cond := LEFT.bracketing_cond; SELF.h := -1; SELF.update_itr := 0; SELF.no := 10; SELF.min_funeval := LEFT.wolfe_funevals;SELF:= LEFT), LOCAL);
 		//RETURN g_x_nextitr + s_s_corr + y_y_corr;
- END;//END min_step29 
+ END;//END min_step2
  
+ 
+ 	 min_step2_9 (DATASET(minfRec) inp,unsigned4 min_c) := FUNCTION
+		g_pre := inp (no = 1);
+		x_pre := inp (no = 2);
+		//calculate d
+		upitr := MAX (inp, inp.update_itr);
+		// lbfgs_d := lbfgs2 (inp, min_c);
+		lbfgs_d := lbfgs2 (inp, upitr);
+		d := lbfgs_d;
+		// is d legal
+		dlegalstep := IsLegal (d);// lbfgs algorithm keeps the funevals, cost_value and other fields for final calculated d same as what it is recieved intitially (inp(no=1))
+		// Directional Derivative : gtd = g_pre'*d;
+		Elem := {REAL8 v};
+		Elem gtd_tran(minfRec inrec, minfRec drec) := TRANSFORM //hadamard product
+			cells := inrec.part_rows * inrec.part_cols;
+			SELF.v :=  sump(cells, inrec.mat_part, drec.mat_part);
+		END;
+		gtd_ := JOIN (g_pre, d, LEFT.partition_id = RIGHT.partition_id, gtd_tran (LEFT, RIGHT), LOCAL);
+		gtd := SUM (gtd_, gtd_.v);
+		//Check that progress can be made along direction : if gtd > -tolX then break!
+		gtdprogress := gtd > -1*tolX;
+		// Find Point satisfying Wolfe
+		t_init := 1;
+		w := WolfeLineSearch4_4_2(1, x_pre, CostFunc_params, TrainData, TrainLabel,CostFunc, t_init, d, g_pre, gtd, 0.0001, 0.9, wolfe_max_itr, 0.000000001);
+		//w := ASSERT(w_, EXISTS(w_), 'w has zero rows', FAIL);
+		//calculate new oint
+		//calculate td
+		minfRec td_tran (w le, d ri) := TRANSFORM
+			cells := ri.part_rows * ri.part_cols;
+			SELF.mat_part := PBBlas.BLAS.dscal(cells, le.prev_t, ri.mat_part, 1);
+			SELF.no := 3;
+			SELF.h := -1; //not calculated yet
+			SELF.min_funEval := ri.min_funEval + le.wolfe_funevals;//ri.min_funEval is meaningful because in calculating d in the lbfgs function, we reserved the funeval value
+			SELF.break_cond := -1;
+			SELF.sty := -1;// not calculated yet
+			SELF.update_itr := ri.update_itr; // will be increased if we decide to return s vector for the next iteration
+			SELF.cost_value := le.cost_value; // new cost value calculated in wolfe function
+			SELF := ri;
+		END;
+		td := JOIN (w, d, LEFT.partition_id = RIGHT.partition_id, td_tran (LEFT, RIGHT), LOCAL);
+		//calculate x_new = x0 + td
+		minfRec x_new_tran (minfRec le, minfRec ri) := TRANSFORM
+			cells := le.part_rows * le.part_cols;
+			SELF.mat_part := PBblas.BLAS.daxpy(cells, 1.0, le.mat_part, 1, ri.mat_part, 1);
+			SELF.no := 2;
+			SELF.h := -1; //not calculated yer
+			SELF.min_funEval := ri.min_funEval;
+			SELF.break_cond := -1;
+			SELF.sty := -1;// NA
+			SELF.update_itr := ri.update_itr; // only will get increased if  we are not breaking the loop and update_cond is true
+			SELF.cost_value := ri.cost_value;
+			SELF := le;
+		END;
+		x_new := JOIN (x_pre, td, LEFT.partition_id = RIGHT.partition_id, x_new_tran(LEFT, RIGHT), LOCAL);
+		//s_s = t*d
+		s_s := td;
+    //y_y := g_new - g_old
+		minfRec y_y_tran (minfRec le, w ri) := TRANSFORM
+			cells := le.part_rows * le.part_cols;
+			SELF.mat_part := PBblas.BLAS.daxpy(cells, -1.0, le.mat_part, 1, ri.mat_part, 1);
+			SELF.no := 4;
+			SELF.h := -1; //not calculated yer
+			SELF.min_funEval := le.min_funEval + ri.wolfe_funevals;
+			SELF.break_cond := -1;
+			SELF.sty := -1;// not yet calculated
+			SELF.update_itr := le.update_itr; // will get increased if we return the y vector for the next iteration
+			SELF.cost_value := ri.cost_value;
+			SELF := le;
+		END;
+		y_y := JOIN (g_pre, w, LEFT.partition_id = RIGHT.partition_id, y_y_tran(LEFT, RIGHT), LOCAL);
+		//y_s = y_y'*s_s
+		Elem y_s_tran (y_y le, s_s ri) := TRANSFORM
+			cells := ri.part_rows * ri.part_cols;
+			SELF.v:= sump(cells, le.mat_part, ri.mat_part);
+		END;
+		y_s_ := JOIN (y_y, s_s, LEFT.partition_id = RIGHT.partition_id, y_s_tran (LEFT, RIGHT), LOCAL);
+		y_s := SUM (y_s_, y_s_.v);
+		//calculated y_y^2
+		Elem yy2_tran (Layout_Part le) := TRANSFORM
+			cells := le.part_rows * le.part_cols;
+			SELF.v := sum_sq(cells, le.mat_part);
+		END;
+		y_y_2_ := PROJECT (y_y, yy2_tran(LEFT), LOCAL);
+		y_y_2 := SUM (y_y_2_, y_y_2_.v);
+		hdiag_updated := y_s/ y_y_2;
+		update_cond := y_s>10^(-10);
+		// calculate sum(abs(g_new))
+		Elem abs_g_tran (w le) := TRANSFORM
+			cells := le.part_rows * le.part_cols;
+			SELF.v:= sumabs(cells, le.mat_part);
+		END;
+		sum_abs_g_new_ := PROJECT (w, abs_g_tran (LEFT), LOCAL);
+		sum_abs_g_new := SUM (sum_abs_g_new_, sum_abs_g_new_.v);
+		//calculate sum(abs(td))
+		Elem abs_td_tran (td le) := TRANSFORM
+			cells := le.part_rows * le.part_cols;
+			SELF.v:= sumabs(cells, le.mat_part);
+		END;
+		sum_abs_td_ := PROJECT (td, abs_td_tran(LEFT), LOCAL);
+		sum_abs_td := SUM (sum_abs_td_, sum_abs_td_.v);
+		//Optimality Condition sum(abs(g)) <= tolFun
+		optimality_cond := sum_abs_g_new <= tolFun;
+		//Check for lack of progress sum(abs(t*d)) <= tolX
+		lack_prog_cond := sum_abs_td <= tolX;
+		// -1: no condition
+		// 1 : when d is not legal
+		// 2 : when progress along direction not allowed
+		// 3 : optimality cond
+		// 4 : lack of progress
+		// 5 : maximum number of iterations reached
+		// 6 : Check for going over iteration/evaluation limit
+		// 7 : lack of progress 2 : abs(f-f_old) < tolX
+		funevalCond := x_new[1].min_funEval > maxFunEvals;
+		costCond := ABS(x_pre[1].cost_value - w[1].cost_value) < tolX;
+
+		minfunc_cond := IF (optimality_cond, 3, IF (lack_prog_cond, 4, IF (min_c > MaxIter, 5, IF (funevalCond, 6, IF (costCond, 7, -1)))));
+		//when d is not legal, no other calculation is done and we return the current g and x values recived in the loop input with break_cond updated 
+		dnotlegal_return := PROJECT (inp (no =1 OR no =2), TRANSFORM(minfrec, SELF.itr_counter := min_c + 1; SELF.break_cond := 1; SELF:= LEFT ), LOCAL);
+		//After gtd is calculated check whether progress along the direction is possible, if it is not, the current g and x values recived in the loop input with break_cond updated 
+		noprogalong_return := PROJECT (inp (no =1 OR no =2), TRANSFORM(minfrec, SELF.itr_counter := min_c + 1; SELF.break_cond := 2; SELF:= LEFT ), LOCAL);
+		// if d is legal and progress along direction is allowed, then calculate new point using wolfe algorithm. Next check for minfunc termination conditions (break conditions) if any of them is satisfied
+		//no need to calculate new hdiag , s and y values, just retunr new calculated x and g and return with break_cond updated
+		x_new_break := PROJECT (x_new, TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);
+		//when passing g_new to wolfe function we lost the funevals, h and other values, so here we need to JOIN g_new with x_new in order to get those values back
+		//g_new_break := PROJECT (w,TRANSFORM (minfRec, SELF.min_funEval := -1; SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := -1;  SELF.no :=1; SELF.h := -1; SELF := LEFT) ,LOCAL);
+		g_new_break := JOIN (w, x_new_break, LEFT.partition_id = RIGHT.partition_id, TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.min_funEval := RIGHT.min_funEval;  SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := RIGHT.update_itr;  SELF.no :=1; SELF.h := RIGHT.h; SELF:= LEFT), LOCAL);
+		break_result := x_new_break + g_new_break;
+		// id d is legal, progress along direction is allowed, no break condition is satified then return x_new, g_new values along with newly calculated Hdiag and s and y value only if update_cond is satified
+		x_new_nextitr := PROJECT (x_new, TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.update_itr := IF (update_cond, LEFT.update_itr + 1, LEFT.update_itr); SELF.h := IF (update_cond, hdiag_updated, LEFT.h); SELF.break_cond := minfunc_cond; SELF := LEFT) ,LOCAL);
+		g_new_nextitr := JOIN (w, x_new_nextitr, LEFT.partition_id = RIGHT.partition_id, TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.min_funEval := RIGHT.min_funEval;  SELF.break_cond := minfunc_cond; SELF.sty := -1; SELF.update_itr := RIGHT.update_itr;  SELF.no :=1; SELF.h := RIGHT.h; SELF:= LEFT), LOCAL);
+		g_x_nextitr := x_new_nextitr + g_new_nextitr + inp ((no = 3 OR no = 4) AND update_itr > (min_c+1-corrections));// retunr new_x + new_g + the n=correction recent correction vectors, the old correction vectors should not be returned -> limited memory
+		s_s_corr := PROJECT (s_s,TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := LEFT.update_itr + 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
+		y_y_corr := PROJECT (y_y,TRANSFORM (minfRec, SELF.itr_counter := min_c + 1; SELF.sty := y_s; SELF.h := hdiag_updated; SELF.update_itr := LEFT.update_itr + 1; SELF := LEFT) ,LOCAL);//update_itr:=1 becasue if we are adding s_s_corr to the loop data it means the condition has been accepted
+		// IF one of the break conditions is satisfied and minfunc!=-1 we need to return only x_new and g_new and no need to calculated Hdiag, s, y fo rthe next iteration
+		//Conversly, if no condition is satisfied, it means we are going to the next iteration so we need to update Hdiag, s and y if and only if update_cond is satisfied, otherwise no update is done and we just return the current values to the next iteration
+		TheReturn := IF (minfunc_cond = -1, IF (update_cond, g_x_nextitr + s_s_corr + y_y_corr, g_x_nextitr), break_result);
+		Rresult := IF (dlegalstep, IF (gtdprogress, noprogalong_return, TheReturn) , dnotlegal_return);
+		RETURN td;
+		//RETURN PROJECT (w, TRANSFORM(minfRec, SELF.sty:=LEFT.prev_t; SELF.break_cond := LEFT.bracketing_cond; SELF.h := -1; SELF.update_itr := 0; SELF.no := 10; SELF.min_funeval := LEFT.wolfe_funevals;SELF:= LEFT), LOCAL);
+		//RETURN g_x_nextitr + s_s_corr + y_y_corr;
+ END;//END min_step2_9
  //RETURN lbfgs(min_step_firstitr);
  //RETURN min_step_firstitr;
  m1 := min_step_firstitr;
- m2 := min_step (m1,1);
+ // m2 := min_step (m1,1);
 // l2 := lbfgs3 (m2);//works
 //works
 // m2 := min_step2 (m1,1);
@@ -4076,14 +4845,241 @@ m6 := LOOP(m1, COUNTER <= 6, min_step(ROWS(LEFT),COUNTER));
  // min_step29 (m28 ,29)
  //RETURN m1;
   //RETURN min_step29 (m28 ,29);
-	RETURN LOOP(m1, 400, min_step(ROWS(LEFT),COUNTER));
- //RETURN m28;
+	//RETURN LOOP(m1, 3, min_step(ROWS(LEFT),COUNTER));
+	m2 := LOOP(m1, 2, min_step(ROWS(LEFT),COUNTER));
+	//RETURN min_step_test (m2, 3);
+	//RETURN LOOP(m1, 10, min_step_maxup(ROWS(LEFT),COUNTER));//minstep works
+	// RETURN LOOP(m1, 1, min_step(ROWS(LEFT),COUNTER));//minstep works
+	
+	//start here
+	m9 := LOOP(m1, 9, min_step2(ROWS(LEFT),COUNTER));
+	ther := CostFunc(m9(no=1),CostFunc_params,TrainData, TrainLabel);
+	
+	
+
+theta := PROJECT (m9(no=1), TRANSFORM (Layout_Part, SELF := LEFT),LOCAL);
+Numfeat:= CostFunc_params(id=2)[1].value;
+  NumClass := CostFunc_params(id=3)[1].value;// number of features
+  m := CostFunc_params(id=1)[1].value;// number of samples
+	m_ := -1/m;
+  part_rows := CostFunc_params(id=4)[1].value;
+  part_cols := CostFunc_params(id=5)[1].value;
+  LAMBDA:= CostFunc_params(id=6)[1].value;
+	//maps used
+	SET OF PBblas.Types.value_t empty_array := [];
+	map_c := PBblas.Matrix_Map(NumClass, m, NumClass, part_cols);
+	dmap := PBblas.Matrix_Map(Numfeat, m, part_rows, part_cols);
+	theta_map := PBblas.Matrix_Map(NumClass, Numfeat, NumClass, part_rows);
+	//distribute theta to all the nodes that train data is on
+	data_nodesused := dmap.col_blocks;
+	Layout_Part_newnode := RECORD (Layout_Part)
+		PBblas.Types.node_t new_node_id;
+	END;
+	Layout_Part_newnode norm_theta (Layout_Part te, INTEGER co) := TRANSFORM
+		SELF.new_node_id := co % data_nodesused  ;
+		SELF:= te;
+	END;
+	theta_norm := NORMALIZE(theta, data_nodesused, norm_theta(LEFT, COUNTER) );
+	theta_dist := DISTRIBUTE (theta_norm, new_node_id);
+	//calculated theta*TrainData
+	//M=(theta*x);
+	Layout_Part multx(Layout_Part_newnode t_part, Layout_Part x_part):=TRANSFORM
+		part_id := x_part.block_col;
+		part_c_rows := map_c.part_rows(part_id);
+		part_c_cols := map_c.part_cols(part_id);
+		k := t_part.part_cols;
+		SELF.partition_id := part_id;
+		SELF.node_id      := x_part.node_id;
+		SELF.block_row    := t_part.block_row;
+		SELF.block_col    := x_part.block_col;
+		SELF.first_row    := map_c.first_row(part_id);
+		SELF.part_rows    := part_c_rows;
+		SELF.first_col    := map_c.first_col(part_id);
+		SELF.part_cols    := part_c_cols;
+		SELF.mat_part     := PBblas.BLAS.dgemm(FALSE, FALSE,
+																		part_c_rows, part_c_cols, k,
+																		1.0, t_part.mat_part, x_part.mat_part,
+																		0.0, empty_array);
+  END;
+	tx_ := JOIN (theta_dist, TrainData, LEFT.block_col = RIGHT.block_row, multx(LEFT, RIGHT), LOCAL );
+	// Sum terms
+	//In the transform function check whether the left side is NULL, it can be possible that there is only one partition on one node that needs to rollup
+  Layout_Part sumTerms(Layout_Part cumm, Layout_Part term) := TRANSFORM
+		HaveTerm := IF(term.part_cols=0, FALSE, TRUE);
+    N := cumm.part_rows * cumm.part_cols;
+    SELF.mat_part := IF (HaveTerm, PBblas.BLAS.daxpy(N, 1.0, cumm.mat_part, 1, term.mat_part, 1), cumm.mat_part);
+    SELF := cumm;
+  END;
+	tx_sorted := SORT(tx_, partition_id, LOCAL);
+  tx := ROLLUP(tx_sorted, sumTerms(LEFT, RIGHT), partition_id, LOCAL);
+	// define a c++ function who does the following operations on each partition
+	// M=tx;
+	// M = bsxfun(@minus, M, max(M, [], 1));
+	// M=exp(M);
+	// M = bsxfun(@rdivide, M, sum(M));
+	//r : rows
+	//s : cols
+	// D : input matrix
+	SET OF REAL8 soft_fun (PBblas.Types.dimension_t r, PBblas.Types.dimension_t s, PBblas.Types.matrix_t D) := BEGINC++
+
+    #body
+    __lenResult = r * s* sizeof(double);
+    __isAllResult = false;
+    double * result = new double[r*s];
+    __result = (void*) result;
+    double *cell = (double*) d;
+		double *max_arr = new double[s];
+		double *sum_arr = new double[s];
+		double max_tmp;
+		double sum_tmp;
+    uint32_t cells =  r * s;
+    uint32_t i;
+		uint32_t j;
+    uint32_t pos;
+		uint32_t posj;
+		for (i=0; i<s; i++) {
+			pos = i * r;
+			max_tmp = cell[pos];
+			for (j=1; j<r; j++)
+			{
+				posj = pos +j;
+				if(cell[posj]>max_tmp)
+					max_tmp = cell[posj];
+			}
+			max_arr[i]=max_tmp;
+    }
+		for (i=0; i<cells; i++) {
+			pos = (int) i / r;
+			result[i]=exp(cell[i]-max_arr[pos]);
+		}
+    for (i=0; i<s; i++) {
+			sum_tmp = 0;
+			pos = i * r;
+			for (j=0; j<r; j++)
+			{
+					sum_tmp = sum_tmp + result[pos+j];
+			}
+			sum_arr[i]=sum_tmp;
+    }
+		for (i=0; i<cells; i++) {
+			pos = (int) i / r;
+			result[i]=result[i] / sum_arr[pos];
+		}
+
+  ENDC++;
+	Layout_Part soft_tran(Layout_Part le) := TRANSFORM
+    SELF.mat_part := soft_fun(le.part_rows, le.part_cols, le.mat_part);
+    SELF := le;
+  END;
+	tx_soft := PROJECT (tx, soft_tran (LEFT), LOCAL);//same as M in MATLAB
+	//groundTruth - tx_soft : (groundTruth-M)
+	groundTruth := TrainLabel;
+	Layout_Part grnd_tran(Layout_Part le, Layout_Part ri) := TRANSFORM
+		N := le.part_rows * le.part_cols;
+    SELF.mat_part := PBblas.BLAS.daxpy(N, -1.0, ri.mat_part, 1, le.mat_part, 1);
+    SELF := le;
+  END;
+	grnd_tx := JOIN (groundTruth, tx_soft, LEFT.partition_id = RIGHT.partition_id, grnd_tran(LEFT, RIGHT),FULL OUTER, LOCAL );
+	//grnd_tx * x' : (groundTruth-M)*x')
+	Layout_Part grndtx_xt_mul(Layout_Part g_part, Layout_Part x_part):=TRANSFORM
+		part_id     := x_part.block_row;
+		part_g_cols := g_part.part_cols;
+		part_g_rows := g_part.part_rows;
+		part_x_rows := x_part.part_rows;
+		part_x_cols := x_part.part_cols;
+		k := part_g_cols;
+		SELF.partition_id := part_id;
+		SELF.node_id      := theta_map.assigned_node(part_id);
+		SELF.block_row    := g_part.block_row;
+		SELF.block_col    := x_part.block_row;
+		SELF.first_row    := theta_map.first_row(part_id);
+		SELF.part_rows    := theta_map.part_rows(part_id);
+		SELF.first_col    := theta_map.first_col(part_id);
+		SELF.part_cols    := theta_map.part_cols(part_id);
+		SELF.mat_part     := PBblas.BLAS.dgemm(FALSE, TRUE,
+																		part_g_rows, part_x_rows, k,
+																		m_, g_part.mat_part, x_part.mat_part,
+																		0.0, empty_array);
+	END;
+	//-1/m*(groundTruth-M)*x')
+	grndtx_xt := JOIN (grnd_tx, TrainData, LEFT.block_col = RIGHT.block_col, grndtx_xt_mul(LEFT, RIGHT), LOCAL );
+	
+	Layout_Part addup(Layout_Part le, Layout_Part ri) := TRANSFORM
+	  HaveRight := IF(ri.part_cols=0, FALSE, TRUE);
+		N := le.part_rows * le.part_cols ;
+		SELF.mat_part := IF (HaveRight, PBblas.BLAS.daxpy(N, 1.0, le.mat_part, 1, ri.mat_part, 1), le.mat_part);
+		SELF := le;
+	END;
+	grndtx_xt_dist := DISTRIBUTE (grndtx_xt, node_id);
+	grndtx_xt_dist_sorted := SORT (grndtx_xt_dist, partition_id, LOCAL);
+	grndtx_xt_m := ROLLUP(grndtx_xt_dist_sorted, LEFT.partition_id = RIGHT.partition_id, addup(LEFT, RIGHT), LOCAL);
+	//calculate theta_grad
+	Layout_Part theta_grad_tran(Layout_Part le, Layout_Part ri) := TRANSFORM
+		N := le.part_rows * le.part_cols ;
+		SELF.mat_part := PBblas.BLAS.daxpy(N, LAMBDA, le.mat_part, 1, ri.mat_part, 1);
+		SELF := le;
+	END;
+	theta_grad := JOIN (theta, grndtx_xt_m,LEFT.partition_id = RIGHT.partition_id, theta_grad_tran(LEFT,RIGHT), FULL OUTER, LOCAL);
+		
+	simple := {Pbblas.types.value_t v};
+	simple wd_tran (Layout_Part le) := TRANSFORM
+		SELF.v := sum_sq(le.part_cols * le.part_rows, le.mat_part);
+	END;
+	weightdecay_term_ := PROJECT (theta, wd_tran (LEFT), LOCAL);
+	weightdecay_term := SUM (weightdecay_term_, weightdecay_term_.v);
+	// tmp=log(M).*groundTruth;
+  // log_cost=sum(tmp(:));
+	REAL8 log_cost_c (PBblas.Types.dimension_t N, PBblas.Types.matrix_t M, PBblas.Types.matrix_t D) := BEGINC++
+
+    #body
+    double result = 0;
+		double tmpp ;
+    double *cellm = (double*) m;
+		double *celld = (double*) d;
+    uint32_t i;
+		for (i=0; i<n; i++) {
+      result = result + (log(cellm[i])*celld[i]);
+    }
+		return(result);
+  ENDC++;
+	simple cost_log_tran (Layout_Part le, Layout_Part ri) := TRANSFORM
+		SELF.v := log_cost_c(le.part_cols * le.part_rows, le.mat_part, ri.mat_part);
+	END;
+	
+	Layout_Part cost_log_tran2 (Layout_Part le, Layout_Part ri) := TRANSFORM
+		SELF.mat_part := [log_cost_c(le.part_cols * le.part_rows, le.mat_part, ri.mat_part)];
+		SELF := le;
+	END;
+	log_cost_ := JOIN (tx_soft, groundTruth, LEFT.partition_id = RIGHT.partition_id, cost_log_tran(LEFT,RIGHT), LOCAL);
+	log_cost_2 := JOIN (tx_soft, groundTruth, LEFT.partition_id = RIGHT.partition_id, cost_log_tran2(LEFT,RIGHT), LOCAL);
+	log_cost := SUM (log_cost_, log_cost_.v);
+	return_record := RECORD (Layout_Part)
+		REAL8 cost_value;
+	END;
+	theta_cost := PROJECT (log_cost_2, TRANSFORM (return_record, SELF.cost_value := log_cost; SELF:=LEFT), LOCAL);
+	
+
+thrmin := PROJECT (theta_cost, TRANSFORM (minfRec,SELF.break_cond:= 10;  SELF.min_funeval :=10;  SELF.no := 10; SELF.itr_counter := 100; SELF.sty := 1; SELF.h := 1; SELF.update_itr := 1; SELF := LEFT) ,LOCAL);
+
+
+
+
+
+
+ // RETURN LOOP(m1, 9, min_step2(ROWS(LEFT),COUNTER));
+ // RETURN LOOP(m1, 10, min_step2(ROWS(LEFT),COUNTER));
+ // RETURN CostFunc(m9(no=1),CostFunc_params,TrainData, TrainLabel);
+ // RETURN m1;
+ RETURN LOOP (m1, LEFT.break_cond = -1 , min_step2(ROWS(LEFT),COUNTER));
+ // RETURN m1;
+ // RETURN m1;
+// LOOP(topass_zooming, (LEFT.zoomtermination = FALSE) AND (LEFT.c < (maxLS+1)), ZoomingStep(ROWS(LEFT), COUNTER));
   END;// END MinFUNC
 
 END;// END Optimization
 
 // in lbfgs2 k should be max(update_itr)
-// f-fpre and on eother condition should be added to minfunc
+// f-fpre and one other condition should be added to minfunc
 // program root and poly in c++
 // The reason calculated cost value is not deterministic is that whenever there is a distribution followed by a roll up the results are not deterministic. Because distribution distributes record in different orders and adding floqting values a+b+c results in different value as adding c+a+b
 // an example of this is d3a2t function in deep learning MODULE where the calclation of final results is not determinitstic due to roll up after a distribution
