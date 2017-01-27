@@ -18,10 +18,10 @@ matrix_t     := SET OF REAL8;
       DATASET(Mat.Types.Element) g_new;
       INTEGER8 WolfeFunEval;
     END;
-      
+  //test Optimization_new_new_2_2, why lhtc data is giving positie rank matrix error    
 
 //Func : handle to the function we want to minimize it, its output should be the error cost and the error gradient
-EXPORT Optimization_new_new_2_2 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
+EXPORT Optimization_new_new_2_2_test (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
     // BFGS Search Direction
     //
     // This function returns the (L-BFGS) approximate inverse Hessian,
@@ -1728,15 +1728,18 @@ EXPORT ArmijoBacktrack_fromwolfe(DATASET(Layout_Part) x, DATASET(Types.NumericFi
 			armt3 := polyinterp_noboundry_img2 (0, le.glob_f, gtd, temp, le.cost_value);
 			// t = polyinterp([0 f gtd; t f_new sqrt(-1); t_prev f_prev sqrt(-1)],doPlot);
 			armtelse := polyinterp_noboundry_3points_imag2_3 (0, le.glob_f, gtd, temp, le.cost_value, le.tprev, f_prev) ;
-			// armt_tmp := IF (cond1, armt1, IF (cond2, armt2, IF (cond3, armt3, armtelse)));
+			// armt_tmp := IF (cond1, armt1, IF (cond2, armt2, IF (cond3, armt3, armtelse))); orig
+			// armt_tmp := IF (cond1 & armt1<temp*0.001,temp*0.001, IF (cond1 & armt1<temp*0.001));
 			armt_tmp := IF (cond1, IF ( armt1 < temp*0.001 , temp*0.001, IF (armt1 >= temp*0.6, temp*0.6, armt1))
 			, IF (cond2, IF ( armt2 < temp*0.001 , temp*0.001, IF (armt2 >= temp*0.6, temp*0.6, armt2)), IF (cond3, IF ( armt3 < temp*0.001 , temp*0.001, IF (armt3 >= temp*0.6, temp*0.6, armt3)), 
 			IF ( armtelse < temp*0.001 , temp*0.001, IF (armtelse >= temp*0.6, temp*0.6, armtelse)))));
 			//Adjust if change in t is too small/large
 			armt := IF ( armt_tmp < temp*0.001 , temp*0.001, IF (armt_tmp >= temp*0.6, temp*0.6, armt_tmp));
-			// SELF.prev_t := armt;// the new t value
-			SELF.prev_t := armt_tmp; // armt causes error, somehow when I was using the old sintax armt_tmp := IF (cond1, armt1, IF (cond2, armt2, IF (cond3, armt3, armtelse))); followed by armt := IF ( armt_tmp < temp*0.001 , temp*0.001, IF (armt_tmp >= temp*0.6, temp*0.6, armt_tmp)); 
-			// th compiler would compile all armt"i" values and it was cuasing matrix not positive ... error
+			// SELF.prev_t := armt;// orig the new t value
+			// SELF.prev_t := IF (cond1, 1, IF (cond2, 2, IF (cond3, 3, 4)));// works
+			// SELF.prev_t := armt_tmp; works
+			// SELF.prev_t := armt; orig
+			SELF.prev_t := armt_tmp;
 			SELF.tprev := temp;
 			SELF.fprev := le.cost_value;
 			SELF.wolfe_funevals := le.wolfe_funevals;
@@ -1809,6 +1812,9 @@ EXPORT ArmijoBacktrack_fromwolfe(DATASET(Layout_Part) x, DATASET(Types.NumericFi
 	END;// END BackTracking
 	ar1 := BackTracking(topass_BackTracking,1);
 	// RETURN BackTracking(ar1,2);
+	// RETURN ar1;
+	// RETURN topass_BackTracking;
+	// RETURN  LOOP (topass_BackTracking, 1 , BackTracking(ROWS(LEFT),COUNTER));
 	RETURN LOOP (topass_BackTracking, LEFT.armCond = -1 , BackTracking(ROWS(LEFT),COUNTER));
 END;// END ArmijoBacktrack_fromwolfe
 EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
@@ -2222,6 +2228,8 @@ EXPORT WolfeLineSearch4_4_2_ttest(INTEGER cccc, DATASET(Layout_Part) x, DATASET(
 		final_result := IF (IS_f_g_new_legal, result, Arm_result_zoomingformat); // if either of f_new or g_new are not legal return the armijobacktracking instead of wolfelinesearch
 		RETURN final_result;
 	END; // END BracketingStep
+	
+	/*
 	//after the bracketing step check whether we have reached maxitr , however if we left bracketing step with which_cond==10 which means we used armijobacktracking then this is the final result and does not need to go for maxitr check
 	ZoomingRecord maxitr_tran (ZoomingRecord le_brack , CostGrad_record ri_g) := TRANSFORM
 		itr_num := le_brack.c;
@@ -2239,6 +2247,8 @@ EXPORT WolfeLineSearch4_4_2_ttest(INTEGER cccc, DATASET(Layout_Part) x, DATASET(
 	bracketing_result_ := LOOP(topass_bracketing, LEFT.bracketing_cond = -1, BracketingStep(ROWS(LEFT), COUNTER));
 	//check if MAXITR is reached and decide between bracketing result and f (t=0) to be returned
 	bracketing_result := JOIN (bracketing_result_ , g, LEFT.partition_id = RIGHT.partition_id, maxitr_tran (LEFT, RIGHT), LOCAL);
+	
+	
 	topass_zooming := bracketing_result;
 	ZoomingStep (DATASET (ZoomingRecord) inputp, UNSIGNED coun) := FUNCTION
 		//similar to BracketingStep, first we calculate the new point (for that we need to calculate the new t using interpolation)
@@ -2360,7 +2370,10 @@ EXPORT WolfeLineSearch4_4_2_ttest(INTEGER cccc, DATASET(Layout_Part) x, DATASET(
 	//RETURN LOOP(topass_bracketing, (maxLS+1), LEFT.bracketing_cond = -1, BracketingStep(ROWS(LEFT), COUNTER));
 	//RETURN bracketing_result;// works
 	//RETURN zooming_result;
-	RETURN zooming_result;
+	
+	*/
+	// RETURN topass_bracketing;
+	RETURN BracketingStep(topass_bracketing, 1);
 	//RETURN LOOP(topass_bracketing, LEFT.bracketing_cond = -1, BracketingStep(ROWS(LEFT), COUNTER)); // works correctly
 	//RETURN BracketingStep(topass_bracketing, 1); works correctly
 	//RETURN LOOP(topass_bracketing, 1, BracketingStep(ROWS(LEFT), COUNTER));works correctly
@@ -4726,6 +4739,8 @@ corrections := 3;
 		t_init := MIN ([1, 1/(sum_abs_g0)]);
 		// Find Point satisfying Wolfe
 		w := WolfeLineSearch4_4_2_ttest(1, x0,CostFunc_params,TrainData, TrainLabel,CostFunc, t_init, d, CostGrad,gtd, 0.0001, 0.9, wolfe_max_itr, 0.000000001);
+		
+/*		
 		//calculate new oint
 		//calculate td
 		minfRec td_tran (w le, d ri) := TRANSFORM
@@ -4834,6 +4849,8 @@ corrections := 3;
 		//Conversly, if no condition is satisfied, it means we are going to the next iteration so we need to update Hdiag, s and y if and only if update_cond is satisfied, otherwise no update is done and we just return the current values to the next iteration
 		TheReturn := IF (minfunc_cond = -1, IF (update_cond, g_x_nextitr + s_s_corr + y_y_corr, g_x_nextitr), break_result);
 		Rresult := IF (dlegalstep, IF (gtdprogress, noprogalong_return, TheReturn) , dnotlegal_return);
+		
+		*/
 		RETURN w;
 		//RETURN g_x_nextitr + s_s_corr + y_y_corr;
 	 END;// END min_step_firstitr_ttest
@@ -5501,8 +5518,8 @@ thrmin := PROJECT (theta_cost, TRANSFORM (minfRec,SELF.break_cond:= 10;  SELF.mi
  // RETURN LOOP(m1, 10, min_step2(ROWS(LEFT),COUNTER));
  // RETURN CostFunc(m9(no=1),CostFunc_params,TrainData, TrainLabel);
  // RETURN m1;
- RETURN LOOP (m1, LEFT.break_cond = -1 , min_step2(ROWS(LEFT),COUNTER)); //orig
-
+ // RETURN LOOP (m1, LEFT.break_cond = -1 , min_step2(ROWS(LEFT),COUNTER)); //orig
+ RETURN min_step_firstitr_ttest;
  // RETURN m1;
 // LOOP(topass_zooming, (LEFT.zoomtermination = FALSE) AND (LEFT.c < (maxLS+1)), ZoomingStep(ROWS(LEFT), COUNTER));
   END;// END MinFUNC
@@ -5515,4 +5532,3 @@ END;// END Optimization
 // The reason calculated cost value is not deterministic is that whenever there is a distribution followed by a roll up the results are not deterministic. Because distribution distributes record in different orders and adding floqting values a+b+c results in different value as adding c+a+b
 // an example of this is d3a2t function in deep learning MODULE where the calclation of final results is not determinitstic due to roll up after a distribution
 //I output the same mul_part_dist_sorted out multiple times, each time the order of records are different 
-// in 

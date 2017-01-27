@@ -5,7 +5,6 @@ IMPORT PBblas;
 IMPORT STD;
 Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_part := PBblas.Types.Layout_part;
-Layout_part4 := PBblas.Types.Layout_part4;
 //matlab code stlExercise_softmax_LExisNexis_toy_sparse.m
 
 indepDataC := DATASET ([
@@ -129,7 +128,7 @@ indepDataC := DATASET ([
 { 102,2 , 7},
 { 103,2 , 7},
 { 104,2 , 7},
-{105, 2, 1}], ML.Types.NumericField4);
+{105, 2, 1}], ML.Types.NumericField);
 
 
 
@@ -143,13 +142,13 @@ END;
 label_table := DATASET ([
 {	1	,	1	}	,
 {	2	,	2	}	,
-{	3	,	3	}	,
+{	3	,	1	}	,
 {	4	,	2	}	,
 {	5	,	1	}	,
 {	6	,	2	}	,
 {	7	,	1	}	,
 {	8	,	1	}	,
-{	9	,	4	}	,
+{	9	,	1	}	,
 {	10	,	2	}	,
 {	11	,	2	}	,
 {	12	,	2	}	,
@@ -167,14 +166,14 @@ label_table := DATASET ([
 {	24	,	2	}	,
 {	25	,	2	}	,
 {	26	,	2	}	,
-{	27	,	4	}	,
+{	27	,	1	}	,
 {	28	,	2	}	,
 {	29	,	1	}	,
 {	30	,	2	}	,
 {	31	,	1	}	,
 {	32	,	2	}	,
 {	33	,	1	}	,
-{	34	,	3	}	,
+{	34	,	1	}	,
 {	35	,	1	}	,
 {	36	,	2	}	,
 {	37	,	2	}	,
@@ -221,7 +220,7 @@ label_table := DATASET ([
 {	78	,	2	}	,
 {	79	,	2	}	,
 {	80	,	2	}	,
-{	81	,	4	}	,
+{	81	,	1	}	,
 {	82	,	2	}	,
 {	83	,	2	}	,
 {	84	,	1	}	,
@@ -250,9 +249,7 @@ OUTPUT  (label_table, ALL, NAMED ('label_table'));
 
 
 
-ML.ToField(label_table, depDataC_);
-depDataC := PROJECT (depDataC_, TRANSFORM (Types.NumericField4, SELF := LEFT));
-
+ML.ToField(label_table, depDataC);
 OUTPUT  (depDataC, ALL, NAMED ('depDataC'));
 label := PROJECT(depDataC,Types.DiscreteField);
 OUTPUT  (label, ALL, NAMED ('label'));
@@ -265,25 +262,16 @@ InputSize := 4;
 T1 := DATASET ([
 {1,1, 0.1},
 {2,1, 0.2},
-{3,1, 0.1},
-{4,1, 0.2},
 {1,2, 0.3},
 {2,2,0.001},
-{3,2, 0.3},
-{4,2,0.001},
 {1,3,0.009},
 {2,3, 0.098},
-{3,3,0.009},
-{4,3, 0.098},
 {1,4,0.543},
-{2,4,0.876},
-{3,4,0.543},
-{4,4,0.876}
+{2,4,0.876}
 
-
-], Mat.Types.Element4);
+], Mat.Types.Element);
 OUTPUT  (T1, ALL, NAMED ('T1'));
-IntTHETA := PROJECT (T1, TRANSFORM (Mat.Types.Element4, SELF.value := LEFT.value * 0.005, SELF := LEFT));
+IntTHETA := Mat.Scale (T1,0.005);
 OUTPUT  (IntTHETA, ALL, NAMED ('IntTHETA'));
 //SoftMax_Sparse Classfier
 
@@ -296,18 +284,18 @@ UNSIGNED4 prows:=0;
 
  UNSIGNED corr := 3;
 
-// trainer := DeepLearning.softmax_lbfgs_partitions_datadist (InputSize, Numclass, 2,  2, TRUE); 
-trainer := DeepLearning.softmax_lbfgs_partitions_datadist (4, 4,2,  2, TRUE); //when calling the label one
+trainer := DeepLearning.softmax_lbfgs_partitions_datadist (InputSize, Numclass, 2,  2); 
+
 softresult := trainer.LearnC (indepDataC, depDataC,IntTHETA, LAMBDA, LoopNum, corr);
 
- OUTPUT (softresult, named('softresult'),ALL);
-/*
-thsirec := RECORD (Layout_Part4)
+OUTPUT (softresult, named('softresult'), ALL);
+
+thsirec := RECORD (Layout_Part)
 UNSIGNED real_node;
 END;
 
 OUTPUT (PROJECT(softresult, TRANSFORM (thsirec,  SELF.real_node := STD.System.Thorlib.Node(); SELF := LEFT), LOCAL), ALL);
-/*
+
 
 SAmod := trainer.model(softresult);
 
@@ -317,8 +305,6 @@ prob := trainer.ClassProbDistribC(indepDataC,softresult);
 
 OUTPUT(prob, named('prob'), ALL);
 
-classprob := trainer.ClassifyC(indepDataC,softresult);
+// classprob := trainer.ClassifyC(indepDataC,softresult);
 
-OUTPUT(classprob, named('classprob'), ALL);
-
-*/
+// OUTPUT(classprob, named('classprob'), ALL);

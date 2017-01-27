@@ -8,8 +8,8 @@ Layout_part := PBblas.Types.Layout_part;
 
 
 
-// fileName := '~vherrara::datasets::sparsearfffile.arff';
-fileName := '~vherrara::datasets::sentiment_75pct.arff';
+fileName := '~vherrara::datasets::sparsearfffile.arff'; // 109733 features, 80000 instances
+// fileName := '~vherrara::datasets::sentiment_75pct.arff';
    InDS    := DATASET(fileName, {STRING Line}, CSV(SEPARATOR([])));
    ParseDS := PROJECT(InDS, TRANSFORM({UNSIGNED RecID, STRING Line}, SELF.RecID:= COUNTER, SELF := LEFT));
    //Parse the fields and values out
@@ -26,7 +26,7 @@ fileName := '~vherrara::datasets::sentiment_75pct.arff';
      STRING   FldName;
      STRING   FldVal;
    END;
-   Types.DiscreteField XF(ParseDS L) := TRANSFORM
+   ML.Types.NumericField XF(ParseDS L) := TRANSFORM
      SELF.id     := L.RecID;
      SELF.number := (TYPEOF(SELF.number))MATCHTEXT(FldNum) + 1;
      SELF.value  := (TYPEOF(SELF.value))MATCHTEXT(DataVal);
@@ -36,7 +36,7 @@ indepData := TrainDS(Number<109736);
 depData   := TrainDS(Number=109736);
 // input_data_tmp := DATASET('~maryam::mytest::mnist_5digits_traindata', value_record, CSV); // This dataset is a subset of MNIST dtaset that includes 5 digits (0 to 4), it is used for traibn
 //// max(id) = 15298
-indepDataC := PROJECT (indepData, TRANSFORM (ML.Types.NumericField,SELF:=LEFT));
+indepDataC := indepData;
 
 
 labeldata_Format := RECORD
@@ -48,43 +48,53 @@ label_table := DATASET('~maryam::mytest::news20_train_label', labeldata_Format, 
 // OUTPUT  (label_table,  NAMED ('label_table'));
 
 
-depDataC_ := PROJECT (depData, TRANSFORM (ML.Types.NumericField,SELF:=LEFT));
-depDataC := PROJECT(depDataC_, TRANSFORM (ML.Types.NumericField,SELF.value := IF (LEFT.value=0, 1, 2); SELF:=LEFT));// labels are 0 or 4, we convert them to 1 and 2 with this project. The input to softmax should have its lables starting from 1
+depDataC_ := depData;
+depDataC := PROJECT(depDataC_, TRANSFORM (ML.Types.NumericField,SELF.value := IF (LEFT.value=0, 1, 2); SELF:=LEFT), LOCAL);// labels are 0 or 4, we convert them to 1 and 2 with this project. The input to softmax should have its lables starting from 1
 
 
 
 // ML.ToField(label_table, depDataC);
-OUTPUT  (depDataC,  NAMED ('depDataC'));
+// OUTPUT  (indepData,  NAMED ('indepData'));
+// OUTPUT (MAX (indepData, number));
+// OUTPUT (MAX (TrainDS, number));
+// OUTPUT (MAX (indepData, id));
+// OUTPUT  (TrainDS,  NAMED ('TrainDS'));
+// OUTPUT (COUNT (indepData));
+// OUTPUT (COUNT (depData));
+
+
+//Set Parameters
+LoopNum := 200; // Number of iterations in softmax algortihm
+LAMBDA := 0.00001; // weight decay parameter in  claculation of SoftMax Cost fucntion
+
+UNSIGNED4 prows:=2195;
+ UNSIGNED4 pcols:=1600;
+ // UNSIGNED4 pcols:=2400;
+ UNSIGNED corr := 5;
+
 
 //initialize THETA
 Numclass := 2;
 OUTPUT  (Numclass, NAMED ('Numclass'));
 InputSize := MAX (indepDataC, indepDataC.number);// 109733
 numsamples := MAX (indepDataC, indepDataC.id);
-OUTPUT (InputSize, named ('InputSize'));
-OUTPUT (numsamples, named('numsamples'));
-OUTPUT (MAX (depDataC, depDataC.id), named ('numberlabeledamples'));
-OUTPUT (MIN (depDataC, depDataC.value), named ('minlabels'));
-OUTPUT (MAX (depDataC, depDataC.value), named ('maxabels'));
+// OUTPUT (InputSize, named ('InputSize'));
+// OUTPUT (numsamples, named('numsamples'));
+// OUTPUT (MAX (depDataC, depDataC.id), named ('numberlabeledamples'));
+// OUTPUT (MIN (depDataC, depDataC.value), named ('minlabels'));
+// OUTPUT (MAX (depDataC, depDataC.value), named ('maxabels'));
 
 
-T1 := Mat.RandMat (Numclass,InputSize);
-
-OUTPUT  (T1,  NAMED ('T1'));
+// T1 := Mat.RandMat (Numclass,InputSize);
+T1 := ML.Utils.distcol_ranmap(Numclass, InputSize, prows ) ;
+// OUTPUT (MAX (T1,x),named ('T1x'));
+// OUTPUT (MAX (T1,y),named ('T1y'));
+// OUTPUT  (T1,  NAMED ('T1'));
 IntTHETA := Mat.Scale (T1,0.005);
-OUTPUT  (IntTHETA,  NAMED ('IntTHETA'));
+// OUTPUT  (IntTHETA,  NAMED ('IntTHETA'));
 //SoftMax_Sparse Classfier
 
-//Set Parameters
-LoopNum := 200; // Number of iterations in softmax algortihm
-LAMBDA := 0.01; // weight decay parameter in  claculation of SoftMax Cost fucntion
-
-UNSIGNED4 prows:=2195;
- UNSIGNED4 pcols:=24000;
-
- UNSIGNED corr := 10;
-
-trainer := DeepLearning.softmax_lbfgs (InputSize, Numclass, prows,  pcols); 
+trainer := DeepLearning.softmax_lbfgs_partitions (InputSize, Numclass, prows,  pcols); 
 //SM( X,  Y, Inttheta, LAMBDA,  MaxIter,  LBFGS_corrections ) 
 softresult := trainer.LearnC (indepDataC, depDataC,IntTHETA, LAMBDA, LoopNum, corr);
 
@@ -99,12 +109,16 @@ thsirec := RECORD
     Pbblas.types.dimension_t     part_rows;
     Pbblas.types.dimension_t     first_col;
     Pbblas.types.dimension_t     part_cols;
-    
+    //real8 cost_value;
 UNSIGNED real_node;
 END;
 
 OUTPUT (PROJECT(softresult, TRANSFORM (thsirec,  SELF.real_node := STD.System.Thorlib.Node(); SELF := LEFT), LOCAL),named ('realnodes'), ALL);
-OUTPUT(softresult,,'~thor::maryam::mytest::news20',CSV(HEADING(SINGLE)), OVERWRITE);
+OUTPUT(softresult,,'~thor::maryam::mytest::sent',CSV(HEADING(SINGLE)), OVERWRITE);
+
+// OUTPUT (softresult);
+
+
 /*
 
  lbfgs_rec := RECORD 

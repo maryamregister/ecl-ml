@@ -5,7 +5,6 @@ IMPORT PBblas;
 IMPORT STD;
 Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_part := PBblas.Types.Layout_part;
-Layout_part4 := PBblas.Types.Layout_part4;
 //matlab code stlExercise_softmax_LExisNexis_toy_sparse.m
 
 indepDataC := DATASET ([
@@ -129,7 +128,7 @@ indepDataC := DATASET ([
 { 102,2 , 7},
 { 103,2 , 7},
 { 104,2 , 7},
-{105, 2, 1}], ML.Types.NumericField4);
+{105, 2, 1}], ML.Types.NumericField);
 
 
 
@@ -250,9 +249,7 @@ OUTPUT  (label_table, ALL, NAMED ('label_table'));
 
 
 
-ML.ToField(label_table, depDataC_);
-depDataC := PROJECT (depDataC_, TRANSFORM (Types.NumericField4, SELF := LEFT));
-
+ML.ToField(label_table, depDataC);
 OUTPUT  (depDataC, ALL, NAMED ('depDataC'));
 label := PROJECT(depDataC,Types.DiscreteField);
 OUTPUT  (label, ALL, NAMED ('label'));
@@ -281,9 +278,9 @@ T1 := DATASET ([
 {4,4,0.876}
 
 
-], Mat.Types.Element4);
+], Mat.Types.Element);
 OUTPUT  (T1, ALL, NAMED ('T1'));
-IntTHETA := PROJECT (T1, TRANSFORM (Mat.Types.Element4, SELF.value := LEFT.value * 0.005, SELF := LEFT));
+IntTHETA := Mat.Scale (T1,0.005);
 OUTPUT  (IntTHETA, ALL, NAMED ('IntTHETA'));
 //SoftMax_Sparse Classfier
 
@@ -297,12 +294,12 @@ UNSIGNED4 prows:=0;
  UNSIGNED corr := 3;
 
 // trainer := DeepLearning.softmax_lbfgs_partitions_datadist (InputSize, Numclass, 2,  2, TRUE); 
-trainer := DeepLearning.softmax_lbfgs_partitions_datadist (4, 4,2,  2, TRUE); //when calling the label one
+trainer := DeepLearning8.softmax_lbfgs_partitions_datadist (4, 4,2,  2, TRUE); //when calling the label one
 softresult := trainer.LearnC (indepDataC, depDataC,IntTHETA, LAMBDA, LoopNum, corr);
 
  OUTPUT (softresult, named('softresult'),ALL);
-/*
-thsirec := RECORD (Layout_Part4)
+
+thsirec := RECORD (Layout_Part)
 UNSIGNED real_node;
 END;
 

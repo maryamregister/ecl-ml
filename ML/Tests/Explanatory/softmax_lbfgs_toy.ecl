@@ -167,6 +167,18 @@ input_data_tmp := DATASET([
 {13,232,33,44},
 {113,25,33,73},
 {13,23,3,31},
+{143,25,6,2},
+
+{14,27,3,45},
+{13,52,36,45},
+{12,62,43,4},
+{11,12,343,54},
+{13,32,63,4},
+{15,22,33,4},
+{31,26,33,45},
+{13,232,33,44},
+{113,25,33,73},
+{13,23,3,31},
 {143,25,6,2}
 
 ], value_record);
@@ -175,8 +187,8 @@ input_data_tmp := DATASET([
 ML.AppendID(input_data_tmp, id, input_data);
 sample_table := input_data;
 ML.ToField(sample_table, indepDataC);
-
-output(1);
+output(sample_table, named ('sample_table'), ALL);
+output(indepDataC, named ('indepDataC'), ALL);
 
 labeldata_Format := RECORD
   UNSIGNED id;
@@ -333,7 +345,19 @@ label_table := DATASET ([
 {	147	,	2	}	,
 {	148	,	2	}	,
 {	149	,	2	}	,
-{	150	,	2	}	], labeldata_Format);
+{	150	,	2	},
+{	151	,	2	}	,
+{	152	,	2	}	,
+{	153	,	2	}	,
+{	154	,	2	}	,
+{	155	,	2	}	,
+{	156	,	2	}	,
+{	157	,	2	}	,
+{	158	,	2	}	,
+{	159	,	2	}	,
+{	160	,	2	},	
+{	161	,	2	}
+	], labeldata_Format);
 OUTPUT  (label_table, ALL, NAMED ('label_table'));
 
 
@@ -373,7 +397,7 @@ UNSIGNED4 prows:=0;
 
  UNSIGNED corr := 3;
 
-trainer := DeepLearning.softmax_lbfgs (InputSize, Numclass, 2,  3); 
+trainer := DeepLearning.softmax_lbfgs_partitions (InputSize, Numclass, 2,  3); 
 
 softresult := trainer.LearnC (indepDataC, depDataC,IntTHETA, LAMBDA, LoopNum, corr);
 
@@ -386,14 +410,14 @@ END;
 OUTPUT (PROJECT(softresult, TRANSFORM (thsirec,  SELF.real_node := STD.System.Thorlib.Node(); SELF := LEFT), LOCAL), ALL);
 
 
-SAmod := trainer.model(softresult);
+// SAmod := trainer.model(softresult);
 
-OUTPUT(SAmod, named('SAmod'));
+// OUTPUT(SAmod, named('SAmod'));
 
-prob := trainer.ClassProbDistribC(indepDataC,softresult);
+// prob := trainer.ClassProbDistribC(indepDataC,softresult);
 
-OUTPUT(prob, named('prob'), ALL);
+// OUTPUT(prob, named('prob'), ALL);
 
-classprob := trainer.ClassifyC(indepDataC,softresult);
+// classprob := trainer.ClassifyC(indepDataC,softresult);
 
-OUTPUT(classprob, named('classprob'), ALL);
+// OUTPUT(classprob, named('classprob'), ALL);

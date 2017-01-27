@@ -55,9 +55,10 @@ LAMBDA := 0.01; // weight decay parameter in  claculation of SoftMax Cost fucnti
 UNSIGNED4 prows:=1080;
  UNSIGNED4 pcols:=1127;
 
- UNSIGNED corr := 20;
+ UNSIGNED corr := 5;
 
-trainer := DeepLearning.softmax_lbfgs (InputSize, Numclass, prows,  pcols); 
+// trainer := DeepLearning.softmax_lbfgs (InputSize, Numclass, prows,  pcols); 
+trainer := DeepLearning.softmax_lbfgs_partitions_datadist (InputSize, Numclass, prows,  pcols); 
 //SM( X,  Y, Inttheta, LAMBDA,  MaxIter,  LBFGS_corrections ) 
 softresult := trainer.LearnC (indepDataC, depDataC,IntTHETA, LAMBDA, LoopNum, corr);
 
@@ -150,4 +151,4 @@ OUTPUT(MAX(label_test, label_test.id));
 OUTPUT(sum(acc_data, acc_data.match)/MAX(label_test, label_test.id), NAMED('accuracy'));
 // lambda - 0.1 and corr=5 -. accuracy = 0.77 on train data W20161125-154537 
 //lambda - 0.01 and corr=5 -. accuracy = 0.92 on tain data  W20161128-111749 
-
+// W20161208-165216 works for softmax_lbfgs_partitions_datadist

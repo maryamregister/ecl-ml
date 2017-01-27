@@ -1,4 +1,4 @@
-﻿//this version is a newer version of Optimization_new_new_2 where I am trying to figure out why my program cause thor to crash
+﻿//this version is a newer version of Optimization_new_new_2_2 where I am trying to figure out why my program cause thor to crash
 //#option ('divideByZero', 'nan');
 IMPORT ML;
 IMPORT * FROM $;
@@ -8,7 +8,9 @@ IMPORT PBblas;
 IMPORT STD;
 IMPORT std.system.Thorlib;
 SHARED nodes_available := STD.system.Thorlib.nodes();
-
+SHARED Layout_Cell_nid := RECORD (Pbblas.Types.Layout_Cell)
+UNSIGNED4 node_id;
+END;
 Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_Part := PBblas.Types.Layout_Part;
 matrix_t     := SET OF REAL8;
@@ -19,9 +21,10 @@ matrix_t     := SET OF REAL8;
       INTEGER8 WolfeFunEval;
     END;
       
-
+// A version of Optimization_new_new_2_2 where the costfuc has a different format than costfun in Optimization_new_new_2_2
+// the train data is provided in Layout_Cell_nid which has been converted from numericfield format (_nf)
 //Func : handle to the function we want to minimize it, its output should be the error cost and the error gradient
-EXPORT Optimization_new_new_2_2 (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
+EXPORT Optimization_new_new_2_2_nf (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
     // BFGS Search Direction
     //
     // This function returns the (L-BFGS) approximate inverse Hessian,
@@ -947,7 +950,7 @@ EXPORT lbfgsUpdate_ ( DATASET(PBblas.Types.MUElement) oldsy, DATASET(Layout_Part
 			BOOLEAN insufProgress;
 			BOOLEAN zoomtermination;
 		END;
-EXPORT WolfeLineSearch4(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(PBblas.Types.MUElement) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), UNSIGNED param_num, REAL8 t, DATASET(Layout_Part) d, REAL8 f, DATASET(Layout_Part) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
+EXPORT WolfeLineSearch4(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(PBblas.Types.MUElement) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel), UNSIGNED param_num, REAL8 t, DATASET(Layout_Part) d, REAL8 f, DATASET(Layout_Part) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
     //maps used
     one_map := PBblas.Matrix_Map(1,1,1,1);
     //Extract the gradient layout_part from the cost function result
@@ -1365,7 +1368,7 @@ EXPORT WolfeLineSearch4(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.Nume
  END;// END WolfeLineSearch4
 
 
-EXPORT WolfeLineSearch4_4_2_test(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
+EXPORT WolfeLineSearch4_4_2_test(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
 	//C++ functions used
 	//sum (M.*V)
 	REAL8 sump(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M, PBblas.Types.matrix_t V) := BEGINC++
@@ -1620,7 +1623,7 @@ EXPORT WolfeLineSearch4_4_2_test(INTEGER cccc, DATASET(Layout_Part) x, DATASET(T
 	// At the end the final result returned from wolfe function contains the t value in prev_t field, the g vector in the Layout_part section and the f value in cost_value field and the gtd in the prev_gtd
 END;// END WolfeLineSearch4_4_2_test
 //this ArmijoBacktrack is called from wolfelinesearch function, the initial t is provided in arm_t_rec format arm_t_rec
-EXPORT ArmijoBacktrack_fromwolfe(DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), DATASET(arm_t_rec) t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, REAL8 tolX=0.000000001):=FUNCTION
+EXPORT ArmijoBacktrack_fromwolfe(DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel), DATASET(arm_t_rec) t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, REAL8 tolX=0.000000001):=FUNCTION
   // C++ functions
 	REAL8 sumabs(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M) := BEGINC++
 
@@ -1811,7 +1814,7 @@ EXPORT ArmijoBacktrack_fromwolfe(DATASET(Layout_Part) x, DATASET(Types.NumericFi
 	// RETURN BackTracking(ar1,2);
 	RETURN LOOP (topass_BackTracking, LEFT.armCond = -1 , BackTracking(ROWS(LEFT),COUNTER));
 END;// END ArmijoBacktrack_fromwolfe
-EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
+EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
 	//C++ functions used
 	//sum (M.*V)
 	REAL8 sump(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M, PBblas.Types.matrix_t V) := BEGINC++
@@ -2091,7 +2094,7 @@ EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.
 END;// END WolfeLineSearch4_4_2
 
 
-EXPORT WolfeLineSearch4_4_2_ttest(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
+EXPORT WolfeLineSearch4_4_2_ttest(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
 	//C++ functions used
 	//sum (M.*V)
 	REAL8 sump(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M, PBblas.Types.matrix_t V) := BEGINC++
@@ -2375,7 +2378,7 @@ END;// END WolfeLineSearch4_4_2_ttest
 // CostFunc_params : hyperparameters fo rthe cost function
 // fr is equal to f so we do not pass fr
 
-EXPORT ArmijoBacktrack(DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
+EXPORT ArmijoBacktrack(DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
   // C++ functions
 	REAL8 sumabs(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M) := BEGINC++
 
@@ -2557,7 +2560,7 @@ EXPORT ArmijoBacktrack(DATASET(Layout_Part) x, DATASET(Types.NumericField) CostF
 	// RETURN topass_BackTracking;
 END;// END ArmijoBacktrack
  
-EXPORT WolfeLineSearch4_4_2_no(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
+EXPORT WolfeLineSearch4_4_2_no(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(CostGrad_Record) CostFunc (DATASET(Layout_Part) x, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel), REAL8 t, DATASET(Layout_Part) d, DATASET(costgrad_record) g, REAL8 gtd, REAL8 c1=0.0001, REAL8 c2=0.9, INTEGER maxLS=25, REAL8 tolX=0.000000001):=FUNCTION
 	//C++ functions used
 	//sum (M.*V)
 	REAL8 sump(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M, PBblas.Types.matrix_t V) := BEGINC++
@@ -4033,7 +4036,7 @@ corrections := 3;
 			r2 := r_step(r1,2);
 			RETURN q_result(no=1);
     END; // END lbfgs_ex
-  EXPORT MinFUNC(DATASET(Layout_Part) x0,DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(costgrad_record) CostFunc (DATASET(Layout_Part) x0, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel), INTEGER8 param_num, INTEGER8 MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
+  EXPORT MinFUNC(DATASET(Layout_Part) x0,DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel,DATASET(costgrad_record) CostFunc (DATASET(Layout_Part) x0, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid) TrainData , DATASET(Layout_Part) TrainLabel), INTEGER8 param_num, INTEGER8 MaxIter = 100, REAL8 tolFun = 0.00001, REAL8 TolX = 0.000000001, INTEGER maxFunEvals = 1000, INTEGER corrections = 100, prows=0, pcols=0, Maxrows=0, Maxcols=0) := FUNCTION
 		//C++ function used
 		//sum(abs(M(:)))
 		REAL8 sumabs(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M) := BEGINC++
@@ -5284,226 +5287,10 @@ m6 := LOOP(m1, COUNTER <= 6, min_step(ROWS(LEFT),COUNTER));
 	
 	//start here
 	m9 := LOOP(m1, 9, min_step2(ROWS(LEFT),COUNTER));
-	ther := CostFunc(m9(no=1),CostFunc_params,TrainData, TrainLabel);
 	
-	
+ // RETURN LOOP (m1, LEFT.break_cond = -1 , min_step2(ROWS(LEFT),COUNTER)); //orig
 
-theta := PROJECT (m9(no=1), TRANSFORM (Layout_Part, SELF := LEFT),LOCAL);
-Numfeat:= CostFunc_params(id=2)[1].value;
-  NumClass := CostFunc_params(id=3)[1].value;// number of features
-  m := CostFunc_params(id=1)[1].value;// number of samples
-	m_ := -1/m;
-  part_rows := CostFunc_params(id=4)[1].value;
-  part_cols := CostFunc_params(id=5)[1].value;
-  LAMBDA:= CostFunc_params(id=6)[1].value;
-	//maps used
-	SET OF PBblas.Types.value_t empty_array := [];
-	map_c := PBblas.Matrix_Map(NumClass, m, NumClass, part_cols);
-	dmap := PBblas.Matrix_Map(Numfeat, m, part_rows, part_cols);
-	theta_map := PBblas.Matrix_Map(NumClass, Numfeat, NumClass, part_rows);
-	//distribute theta to all the nodes that train data is on
-	data_nodesused := dmap.col_blocks;
-	Layout_Part_newnode := RECORD (Layout_Part)
-		PBblas.Types.node_t new_node_id;
-	END;
-	Layout_Part_newnode norm_theta (Layout_Part te, INTEGER co) := TRANSFORM
-		SELF.new_node_id := co % data_nodesused  ;
-		SELF:= te;
-	END;
-	theta_norm := NORMALIZE(theta, data_nodesused, norm_theta(LEFT, COUNTER) );
-	theta_dist := DISTRIBUTE (theta_norm, new_node_id);
-	//calculated theta*TrainData
-	//M=(theta*x);
-	Layout_Part multx(Layout_Part_newnode t_part, Layout_Part x_part):=TRANSFORM
-		part_id := x_part.block_col;
-		part_c_rows := map_c.part_rows(part_id);
-		part_c_cols := map_c.part_cols(part_id);
-		k := t_part.part_cols;
-		SELF.partition_id := part_id;
-		SELF.node_id      := x_part.node_id;
-		SELF.block_row    := t_part.block_row;
-		SELF.block_col    := x_part.block_col;
-		SELF.first_row    := map_c.first_row(part_id);
-		SELF.part_rows    := part_c_rows;
-		SELF.first_col    := map_c.first_col(part_id);
-		SELF.part_cols    := part_c_cols;
-		SELF.mat_part     := PBblas.BLAS.dgemm(FALSE, FALSE,
-																		part_c_rows, part_c_cols, k,
-																		1.0, t_part.mat_part, x_part.mat_part,
-																		0.0, empty_array);
-  END;
-	tx_ := JOIN (theta_dist, TrainData, LEFT.block_col = RIGHT.block_row, multx(LEFT, RIGHT), LOCAL );
-	// Sum terms
-	//In the transform function check whether the left side is NULL, it can be possible that there is only one partition on one node that needs to rollup
-  Layout_Part sumTerms(Layout_Part cumm, Layout_Part term) := TRANSFORM
-		HaveTerm := IF(term.part_cols=0, FALSE, TRUE);
-    N := cumm.part_rows * cumm.part_cols;
-    SELF.mat_part := IF (HaveTerm, PBblas.BLAS.daxpy(N, 1.0, cumm.mat_part, 1, term.mat_part, 1), cumm.mat_part);
-    SELF := cumm;
-  END;
-	tx_sorted := SORT(tx_, partition_id, LOCAL);
-  tx := ROLLUP(tx_sorted, sumTerms(LEFT, RIGHT), partition_id, LOCAL);
-	// define a c++ function who does the following operations on each partition
-	// M=tx;
-	// M = bsxfun(@minus, M, max(M, [], 1));
-	// M=exp(M);
-	// M = bsxfun(@rdivide, M, sum(M));
-	//r : rows
-	//s : cols
-	// D : input matrix
-	SET OF REAL8 soft_fun (PBblas.Types.dimension_t r, PBblas.Types.dimension_t s, PBblas.Types.matrix_t D) := BEGINC++
-
-    #body
-    __lenResult = r * s* sizeof(double);
-    __isAllResult = false;
-    double * result = new double[r*s];
-    __result = (void*) result;
-    double *cell = (double*) d;
-		double *max_arr = new double[s];
-		double *sum_arr = new double[s];
-		double max_tmp;
-		double sum_tmp;
-    uint32_t cells =  r * s;
-    uint32_t i;
-		uint32_t j;
-    uint32_t pos;
-		uint32_t posj;
-		for (i=0; i<s; i++) {
-			pos = i * r;
-			max_tmp = cell[pos];
-			for (j=1; j<r; j++)
-			{
-				posj = pos +j;
-				if(cell[posj]>max_tmp)
-					max_tmp = cell[posj];
-			}
-			max_arr[i]=max_tmp;
-    }
-		for (i=0; i<cells; i++) {
-			pos = (int) i / r;
-			result[i]=exp(cell[i]-max_arr[pos]);
-		}
-    for (i=0; i<s; i++) {
-			sum_tmp = 0;
-			pos = i * r;
-			for (j=0; j<r; j++)
-			{
-					sum_tmp = sum_tmp + result[pos+j];
-			}
-			sum_arr[i]=sum_tmp;
-    }
-		for (i=0; i<cells; i++) {
-			pos = (int) i / r;
-			result[i]=result[i] / sum_arr[pos];
-		}
-
-  ENDC++;
-	Layout_Part soft_tran(Layout_Part le) := TRANSFORM
-    SELF.mat_part := soft_fun(le.part_rows, le.part_cols, le.mat_part);
-    SELF := le;
-  END;
-	tx_soft := PROJECT (tx, soft_tran (LEFT), LOCAL);//same as M in MATLAB
-	//groundTruth - tx_soft : (groundTruth-M)
-	groundTruth := TrainLabel;
-	Layout_Part grnd_tran(Layout_Part le, Layout_Part ri) := TRANSFORM
-		N := le.part_rows * le.part_cols;
-    SELF.mat_part := PBblas.BLAS.daxpy(N, -1.0, ri.mat_part, 1, le.mat_part, 1);
-    SELF := le;
-  END;
-	grnd_tx := JOIN (groundTruth, tx_soft, LEFT.partition_id = RIGHT.partition_id, grnd_tran(LEFT, RIGHT),FULL OUTER, LOCAL );
-	//grnd_tx * x' : (groundTruth-M)*x')
-	Layout_Part grndtx_xt_mul(Layout_Part g_part, Layout_Part x_part):=TRANSFORM
-		part_id     := x_part.block_row;
-		part_g_cols := g_part.part_cols;
-		part_g_rows := g_part.part_rows;
-		part_x_rows := x_part.part_rows;
-		part_x_cols := x_part.part_cols;
-		k := part_g_cols;
-		SELF.partition_id := part_id;
-		SELF.node_id      := theta_map.assigned_node(part_id);
-		SELF.block_row    := g_part.block_row;
-		SELF.block_col    := x_part.block_row;
-		SELF.first_row    := theta_map.first_row(part_id);
-		SELF.part_rows    := theta_map.part_rows(part_id);
-		SELF.first_col    := theta_map.first_col(part_id);
-		SELF.part_cols    := theta_map.part_cols(part_id);
-		SELF.mat_part     := PBblas.BLAS.dgemm(FALSE, TRUE,
-																		part_g_rows, part_x_rows, k,
-																		m_, g_part.mat_part, x_part.mat_part,
-																		0.0, empty_array);
-	END;
-	//-1/m*(groundTruth-M)*x')
-	grndtx_xt := JOIN (grnd_tx, TrainData, LEFT.block_col = RIGHT.block_col, grndtx_xt_mul(LEFT, RIGHT), LOCAL );
-	
-	Layout_Part addup(Layout_Part le, Layout_Part ri) := TRANSFORM
-	  HaveRight := IF(ri.part_cols=0, FALSE, TRUE);
-		N := le.part_rows * le.part_cols ;
-		SELF.mat_part := IF (HaveRight, PBblas.BLAS.daxpy(N, 1.0, le.mat_part, 1, ri.mat_part, 1), le.mat_part);
-		SELF := le;
-	END;
-	grndtx_xt_dist := DISTRIBUTE (grndtx_xt, node_id);
-	grndtx_xt_dist_sorted := SORT (grndtx_xt_dist, partition_id, LOCAL);
-	grndtx_xt_m := ROLLUP(grndtx_xt_dist_sorted, LEFT.partition_id = RIGHT.partition_id, addup(LEFT, RIGHT), LOCAL);
-	//calculate theta_grad
-	Layout_Part theta_grad_tran(Layout_Part le, Layout_Part ri) := TRANSFORM
-		N := le.part_rows * le.part_cols ;
-		SELF.mat_part := PBblas.BLAS.daxpy(N, LAMBDA, le.mat_part, 1, ri.mat_part, 1);
-		SELF := le;
-	END;
-	theta_grad := JOIN (theta, grndtx_xt_m,LEFT.partition_id = RIGHT.partition_id, theta_grad_tran(LEFT,RIGHT), FULL OUTER, LOCAL);
-		
-	simple := {Pbblas.types.value_t v};
-	simple wd_tran (Layout_Part le) := TRANSFORM
-		SELF.v := sum_sq(le.part_cols * le.part_rows, le.mat_part);
-	END;
-	weightdecay_term_ := PROJECT (theta, wd_tran (LEFT), LOCAL);
-	weightdecay_term := SUM (weightdecay_term_, weightdecay_term_.v);
-	// tmp=log(M).*groundTruth;
-  // log_cost=sum(tmp(:));
-	REAL8 log_cost_c (PBblas.Types.dimension_t N, PBblas.Types.matrix_t M, PBblas.Types.matrix_t D) := BEGINC++
-
-    #body
-    double result = 0;
-		double tmpp ;
-    double *cellm = (double*) m;
-		double *celld = (double*) d;
-    uint32_t i;
-		for (i=0; i<n; i++) {
-      result = result + (log(cellm[i])*celld[i]);
-    }
-		return(result);
-  ENDC++;
-	simple cost_log_tran (Layout_Part le, Layout_Part ri) := TRANSFORM
-		SELF.v := log_cost_c(le.part_cols * le.part_rows, le.mat_part, ri.mat_part);
-	END;
-	
-	Layout_Part cost_log_tran2 (Layout_Part le, Layout_Part ri) := TRANSFORM
-		SELF.mat_part := [log_cost_c(le.part_cols * le.part_rows, le.mat_part, ri.mat_part)];
-		SELF := le;
-	END;
-	log_cost_ := JOIN (tx_soft, groundTruth, LEFT.partition_id = RIGHT.partition_id, cost_log_tran(LEFT,RIGHT), LOCAL);
-	log_cost_2 := JOIN (tx_soft, groundTruth, LEFT.partition_id = RIGHT.partition_id, cost_log_tran2(LEFT,RIGHT), LOCAL);
-	log_cost := SUM (log_cost_, log_cost_.v);
-	return_record := RECORD (Layout_Part)
-		REAL8 cost_value;
-	END;
-	theta_cost := PROJECT (log_cost_2, TRANSFORM (return_record, SELF.cost_value := log_cost; SELF:=LEFT), LOCAL);
-	
-
-thrmin := PROJECT (theta_cost, TRANSFORM (minfRec,SELF.break_cond:= 10;  SELF.min_funeval :=10;  SELF.no := 10; SELF.itr_counter := 100; SELF.sty := 1; SELF.h := 1; SELF.update_itr := 1; SELF := LEFT) ,LOCAL);
-
-
-
-
-
-
- // RETURN LOOP(m1, 9, min_step2(ROWS(LEFT),COUNTER));
- // RETURN LOOP(m1, 10, min_step2(ROWS(LEFT),COUNTER));
- // RETURN CostFunc(m9(no=1),CostFunc_params,TrainData, TrainLabel);
- // RETURN m1;
- RETURN LOOP (m1, LEFT.break_cond = -1 , min_step2(ROWS(LEFT),COUNTER)); //orig
-
- // RETURN m1;
+ RETURN m1;
 // LOOP(topass_zooming, (LEFT.zoomtermination = FALSE) AND (LEFT.c < (maxLS+1)), ZoomingStep(ROWS(LEFT), COUNTER));
   END;// END MinFUNC
 

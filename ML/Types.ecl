@@ -12,6 +12,7 @@ EXPORT Types := MODULE
 EXPORT t_RecordID := UNSIGNED;
 EXPORT t_FieldNumber := UNSIGNED4;
 EXPORT t_FieldReal := REAL8;
+EXPORT t_FieldReal4 := REAL4;
 EXPORT t_FieldSign := INTEGER1;
 EXPORT t_Discrete := INTEGER4; // The number of 'groups' a population may be divided into - negative to allow for classificaiton to 'undershoot'
 EXPORT t_Item := UNSIGNED4; // Currently allows up to 9B different elements
@@ -21,6 +22,11 @@ EXPORT NumericField := RECORD
   t_RecordID id;
 	t_FieldNumber number;
 	t_FieldReal value;
+  END;
+EXPORT NumericField4 := RECORD
+  t_FieldNumber id;
+	t_FieldNumber number;
+	t_FieldReal4 value;
   END;
 
 EXPORT DiscreteField := RECORD

@@ -34,26 +34,21 @@ fileName := '~vherrara::datasets::sentiment_75pct.arff';
 TrainDS :=  PARSE(ParseDS, Line, FldVal, XF(LEFT));
 indepData := TrainDS(Number<109736);
 depData   := TrainDS(Number=109736);
-
-
-// OUTPUT (TrainDS);
-// OUTPUT (count (TrainDS));
-
 // input_data_tmp := DATASET('~maryam::mytest::mnist_5digits_traindata', value_record, CSV); // This dataset is a subset of MNIST dtaset that includes 5 digits (0 to 4), it is used for traibn
 //// max(id) = 15298
 indepDatatran := PROJECT (indepData,TRANSFORM ( Types.NumericField, SELF.id := LEFT.number; SELF.number := LEFT.id; SELF:=LEFT),LOCAL);
-// OUTPUT (indepDatatran);
-// OUTPUT (indepData);
-
-// OUTPUT (MAX (indepDatatran, id));
-// OUTPUT (MAX (indepDatatran, number));
-
-// OUTPUT (MAX (indepData_t, id), named ('col'));
-// OUTPUT (MAX (indepData_t, number), named ('row'));
 m := 1200000;
 prows := 2195;
-pcols := 240; 
+pcols := 24000; 
 mat_map := PBblas.Matrix_Map(109733,m,prows,pcols);
+/*
+OUTPUT (indepData);
+OUTPUT (MAX(indepData,id));
+OUTPUT (MAX(indepDatatran,id));
+OUTPUT (MAX(indepDatatran,number));
+// OUTPUT (MAX (indepData_t, id), named ('col'));
+// OUTPUT (MAX (indepData_t, number), named ('row'));
+
 insert_columns:=0;
 insert_value:=0.0d;
  Layout_Cell cvt_2_cell(ML.Types.NumericField lr) := TRANSFORM
@@ -63,8 +58,8 @@ insert_value:=0.0d;
     END;
 
     d00 := PROJECT(indepDatatran, cvt_2_cell(LEFT));
-		// OUTPUT (MAX(d00,y));
-	
+		OUTPUT (d00);
+		
 		Work1 := RECORD(Pbblas.Types.Layout_Cell)
     Pbblas.Types.partition_t     partition_id;
     Pbblas.Types.node_t          node_id;
@@ -108,59 +103,12 @@ insert_value:=0.0d;
       SELF.part_cols   := part_cols;
       SELF := [];
     END;
-		
-		
-Layout_Part roll_cells2(Work1 parent, Work1 cells) := TRANSFORM
-      first_row     := mat_map.first_row(parent.partition_id);
-      first_col     := mat_map.first_col(parent.partition_id);
-      part_rows     := mat_map.part_rows(parent.partition_id);
-      part_cols     := mat_map.part_cols(parent.partition_id);
-      SELF.mat_part := [1,2];
-      SELF.partition_id:= parent.partition_id;
-      SELF.node_id     := parent.node_id;
-      SELF.block_row   := parent.block_row;
-      SELF.block_col   := parent.block_col;
-      SELF.first_row   := first_row;
-      SELF.part_rows   := part_rows;
-      SELF.first_col   := first_col;
-      SELF.part_cols   := part_cols;
-      SELF := [];
-    END;		
-		
     rslt := ROLLUP(d3, GROUP, roll_cells(LEFT, ROWS(LEFT)));
     RETURN rslt;
-  END; 
+  END;
 		
 		result := FromCells(mat_map, d00, insert_columns, insert_value);
-		
-		// OUTPUT (COUNT(result));
-		
-		// result_r := PROJECT (result, TRANSFORM ({LAYOUT_part, UNSIGNED rn}, SELF.rn := LEFT.mat_part[1]; SELF:= LEFT),LOCAL);
-		// OUTPUT(result,,'~thor::maryam::mytest::kk',CSV(HEADING(SINGLE)), OVERWRITE);
-		
-		//maximum number of records in one partition_id 15758
-// OUTPUT (result_r);
-		/*
-		
-R1 := RECORD
-  result_r.rn;
-  
-  Number := COUNT(GROUP);
-
-END;
-T1 := TABLE(result_r, R1,  rn);
-
-R2 := RECORD
-	result.node_id;
-  result.partition_id;
-  cnt := COUNT(GROUP);
-
-END;
-T2 := TABLE(result, R2, node_id, partition_id, LOCAL);
-OUTPUT (T2,ALL);
-		// OUTPUT (T2);
-	*/	
-		/*
+*/
 	thsirec := RECORD 
  Pbblas.types.node_t          node_id;
     Pbblas.types.partition_t     partition_id;
@@ -174,12 +122,12 @@ OUTPUT (T2,ALL);
 UNSIGNED real_node;
 END;
 
-resultnode := PROJECT(result, TRANSFORM (thsirec,  SELF.real_node := STD.System.Thorlib.Node(); SELF := LEFT), LOCAL);
+// resultnode := PROJECT(result, TRANSFORM (thsirec,  SELF.real_node := STD.System.Thorlib.Node(); SELF := LEFT), LOCAL);
 // OUTPUT (resultnode, named ('resultnode'),ALL);
-OUTPUT (MAX (d00,x));
-OUTPUT (MIN (d00,x));
-OUTPUT (MAX (d00,y));
-OUTPUT (MIN (d00,y));
+// OUTPUT (MAX (d00,x));
+// OUTPUT (MIN (d00,x));
+// OUTPUT (MAX (d00,y));
+// OUTPUT (MIN (d00,y));
 OUTPUT (mat_map);
 
 pb := DMAT.Converted.FromNumericFieldDS(indepDatatran,mat_map);
@@ -199,6 +147,4 @@ OUTPUT (resultnodpke,ALL);
 		// SELF:= le;
 	// END;
 	// grndt_result := NORMALIZE (ll,3,grnd(LEFT, COUNTER));
-// output (llgrnd, named('llgrnd'));*/
-
-OUTPUT (ML.Utils.distrow_ranmap_part4(20,10,2 , 0.005),named ('parttheta'));
+// output (llgrnd, named('llgrnd'));

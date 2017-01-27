@@ -6,34 +6,11 @@ IMPORT STD;
 Layout_Cell := PBblas.Types.Layout_Cell;
 Layout_part := PBblas.Types.Layout_part;
 
+dimension_t := PBblas.Types.dimension_t;
+value_t := PBblas.Types.value_t;
 
 
-// fileName := '~vherrara::datasets::sparsearfffile.arff';
-fileName := '~vherrara::datasets::sentiment_75pct.arff';
-   InDS    := DATASET(fileName, {STRING Line}, CSV(SEPARATOR([])));
-   ParseDS := PROJECT(InDS, TRANSFORM({UNSIGNED RecID, STRING Line}, SELF.RecID:= COUNTER, SELF := LEFT));
-   //Parse the fields and values out
-   PATTERN ws       := ' ';
-   PATTERN RecStart := '{';
-   PATTERN ValEnd   := '}' | ',';
-   PATTERN FldNum   := PATTERN('[0-9]')+;
-   PATTERN DataQ    := '"' PATTERN('[ a-zA-Z0-9]')+ '"';
-   PATTERN DataNQ   := PATTERN('[a-zA-Z0-9]')+;
-   PATTERN DataVal  := DataQ | DataNQ;
-   PATTERN FldVal   := OPT(RecStart) FldNum ws DataVal ValEnd;
-   OutRec := RECORD
-     UNSIGNED RecID;
-     STRING   FldName;
-     STRING   FldVal;
-   END;
-   Types.NumericField XF(ParseDS L) := TRANSFORM
-     SELF.id     := L.RecID;
-     SELF.number := (TYPEOF(SELF.number))MATCHTEXT(FldNum) + 1;
-     SELF.value  := (TYPEOF(SELF.value))MATCHTEXT(DataVal);
-   END;
-TrainDS :=  PARSE(ParseDS, Line, FldVal, XF(LEFT));
-indepData := TrainDS(Number<109736);
-depData   := TrainDS(Number=109736);
+
 
 
 // OUTPUT (TrainDS);
@@ -41,7 +18,18 @@ depData   := TrainDS(Number=109736);
 
 // input_data_tmp := DATASET('~maryam::mytest::mnist_5digits_traindata', value_record, CSV); // This dataset is a subset of MNIST dtaset that includes 5 digits (0 to 4), it is used for traibn
 //// max(id) = 15298
-indepDatatran := PROJECT (indepData,TRANSFORM ( Types.NumericField, SELF.id := LEFT.number; SELF.number := LEFT.id; SELF:=LEFT),LOCAL);
+indepDatatran := DATASET ([
+{1,1,2},
+{2,2,8},
+{3,2,9},
+{1,3,10},
+{1,4,11},
+{2,5,9},
+{3,5,8},
+{1,6,7},
+{2,6,0.9},
+{3,6,17}
+],Types.NumericField);
 // OUTPUT (indepDatatran);
 // OUTPUT (indepData);
 
@@ -50,10 +38,10 @@ indepDatatran := PROJECT (indepData,TRANSFORM ( Types.NumericField, SELF.id := L
 
 // OUTPUT (MAX (indepData_t, id), named ('col'));
 // OUTPUT (MAX (indepData_t, number), named ('row'));
-m := 1200000;
-prows := 2195;
-pcols := 240; 
-mat_map := PBblas.Matrix_Map(109733,m,prows,pcols);
+m := 6;
+prows := 3;
+pcols := 3; 
+mat_map := PBblas.Matrix_Map(3,m,prows,pcols);
 insert_columns:=0;
 insert_value:=0.0d;
  Layout_Cell cvt_2_cell(ML.Types.NumericField lr) := TRANSFORM
@@ -71,6 +59,19 @@ insert_value:=0.0d;
     Pbblas.Types.dimension_t     block_row;
     Pbblas.Types.dimension_t     block_col;
   END;
+	layout_mat := RECORD
+		Pbblas.Types.dimension_t     x;    // 1 based index position
+    Pbblas.Types.dimension_t     y;    // 1 based index position
+    Pbblas.Types.matrix_t         mt;
+	END;
+Work2 := RECORD (layout_mat)
+	
+    Pbblas.Types.partition_t     partition_id;
+    Pbblas.Types.node_t          node_id;
+    Pbblas.Types.dimension_t     block_row;
+    Pbblas.Types.dimension_t     block_col;
+  END;	
+	
 		FromCells(PBblas.IMatrix_Map mat_map, DATASET(Layout_Cell) cells,
                    PBblas.Types.dimension_t insert_columns=0,
                    PBblas.Types.value_t insert_value=0.0d) := FUNCTION
@@ -84,11 +85,29 @@ insert_value:=0.0d;
       SELF.block_col      := block_col;
       SELF := lr;
     END;
+		Work2 cvt_2_xcell2(Layout_Cell lr) := TRANSFORM
+      block_row           := mat_map.row_block(lr.x);
+      block_col           := mat_map.col_block(lr.y + insert_columns);
+      partition_id        := mat_map.assigned_part(block_row, block_col);
+      SELF.partition_id   := partition_id;
+      SELF.node_id        := mat_map.assigned_node(partition_id);
+      SELF.block_row      := block_row;
+      SELF.block_col      := block_col;
+			SELF.mt := [lr.v];
+      SELF := lr;
+    END;
+		
+		
+		
+		
     inMatrix := cells.x BETWEEN 1 AND mat_map.matrix_rows
             AND cells.y BETWEEN 1 AND mat_map.matrix_cols - insert_columns;
     d0 := PROJECT(cells(inMatrix), cvt_2_xcell(LEFT),local);
+		d02 := PROJECT(cells(inMatrix), cvt_2_xcell2(LEFT),local);
     d1 := DISTRIBUTE(d0, node_id);
-    d2 := SORT(d1, partition_id, y, x, LOCAL);    // prep for column major
+		d12 := DISTRIBUTE(d02, node_id);
+    d2 := SORT(d1, partition_id, y, x, LOCAL); 
+		d22 := SORT(d12, partition_id, y, x, LOCAL);// prep for column major
     d3 := GROUP(d2, partition_id, LOCAL);
     Layout_Part roll_cells(Work1 parent, DATASET(Work1) cells) := TRANSFORM
       first_row     := mat_map.first_row(parent.partition_id);
@@ -110,7 +129,43 @@ insert_value:=0.0d;
     END;
 		
 		
-Layout_Part roll_cells2(Work1 parent, Work1 cells) := TRANSFORM
+ SET OF REAL8 appnd(dimension_t r, dimension_t s,
+                              dimension_t first_row, dimension_t first_col,
+                              DATASET(Layout_Cell) D,
+                              dimension_t insert_columns,
+                              value_t insert_value) := BEGINC++
+    typedef struct work1 {      // copy of Layout_Cell translated to C
+      uint32_t x;
+      uint32_t y;
+      double v;
+    };
+    #body
+    __lenResult = r * s * sizeof(double);
+    __isAllResult = false;
+    double * result = new double[r*s];
+    __result = (void*) result;
+    work1 *cell = (work1*) d;
+    uint32_t cells = lenD / sizeof(work1);
+    uint32_t i;
+    uint32_t pos;
+    for (i=0; i<r*s; i++) {
+      result[i] =  i/r < insert_columns  ? insert_value   : 0.0;
+    }
+    int x, y;
+    for (i=0; i<cells; i++) {
+      x = cell[i].x - first_row;                   // input co-ordinates are one based,
+      y = cell[i].y + insert_columns - first_col;  //x and y are zero based.
+      if(x < 0 || (uint32_t) x >= r) continue;   // cell does not belong
+      if(y < 0 || (uint32_t) y >= s) continue;
+      pos = (y*r) + x;
+      result[pos] = cell[i].v;
+    }
+  ENDC++;
+		
+		
+		
+		
+Layout_Part roll_cells2(Work2 parent, Work2 cells) := TRANSFORM
       first_row     := mat_map.first_row(parent.partition_id);
       first_col     := mat_map.first_col(parent.partition_id);
       part_rows     := mat_map.part_rows(parent.partition_id);
@@ -128,17 +183,15 @@ Layout_Part roll_cells2(Work1 parent, Work1 cells) := TRANSFORM
     END;		
 		
     rslt := ROLLUP(d3, GROUP, roll_cells(LEFT, ROWS(LEFT)));
-    RETURN rslt;
+    RETURN d02;
   END; 
 		
 		result := FromCells(mat_map, d00, insert_columns, insert_value);
 		
-		// OUTPUT (COUNT(result));
+		OUTPUT ((result));
 		
 		// result_r := PROJECT (result, TRANSFORM ({LAYOUT_part, UNSIGNED rn}, SELF.rn := LEFT.mat_part[1]; SELF:= LEFT),LOCAL);
 		// OUTPUT(result,,'~thor::maryam::mytest::kk',CSV(HEADING(SINGLE)), OVERWRITE);
-		
-		//maximum number of records in one partition_id 15758
 // OUTPUT (result_r);
 		/*
 		
@@ -200,5 +253,3 @@ OUTPUT (resultnodpke,ALL);
 	// END;
 	// grndt_result := NORMALIZE (ll,3,grnd(LEFT, COUNTER));
 // output (llgrnd, named('llgrnd'));*/
-
-OUTPUT (ML.Utils.distrow_ranmap_part4(20,10,2 , 0.005),named ('parttheta'));

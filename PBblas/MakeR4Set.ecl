@@ -4,10 +4,10 @@
 //where the first column is an inserted column of 1 values for the intercept.
 IMPORT PBblas.Types;
 dimension_t := Types.dimension_t;
-value_t := Types.value_t;
-Layout_Cell := Types.Layout_Cell;
+value_t := Types.value_t4;
+Layout_Cell := Types.Layout_Cell4;
 
-EXPORT SET OF REAL8 makeR8Set(dimension_t r, dimension_t s,
+EXPORT SET OF REAL4 makeR4Set(dimension_t r, dimension_t s,
                               dimension_t first_row, dimension_t first_col,
                               DATASET(Layout_Cell) D,
                               dimension_t insert_columns,
@@ -15,12 +15,12 @@ EXPORT SET OF REAL8 makeR8Set(dimension_t r, dimension_t s,
     typedef struct work1 {      // copy of Layout_Cell translated to C
       uint32_t x;
       uint32_t y;
-      double v;
+      float v;
     };
     #body
-    __lenResult = r * s * sizeof(double);
+    __lenResult = r * s * sizeof(float);
     __isAllResult = false;
-    double * result = new double[r*s];
+    float * result = new float[r*s];
     __result = (void*) result;
     work1 *cell = (work1*) d;
     uint32_t cells = lenD / sizeof(work1);

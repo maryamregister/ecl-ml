@@ -3,6 +3,7 @@
 // Note - indices will start at 1; 0 is going to be used as a null
 EXPORT t_Index := UNSIGNED4; // Supports matrices with up to 9B as the largest dimension
 EXPORT t_value := REAL8;
+EXPORT t_value4 := REAL4;
 EXPORT t_mu_no := UNSIGNED2; // Allow up to 64K matrices in one universe
 
 EXPORT Element := RECORD
@@ -10,7 +11,11 @@ EXPORT Element := RECORD
 	t_Index y; // Y is columns
 	t_value value;
 END;
-
+EXPORT Element4 := RECORD
+  t_Index x; // X is rows
+	t_Index y; // Y is columns
+	t_value4 value;
+END;
 EXPORT VecElement := RECORD
   t_Index x; // a vector does not necessarily lay upon any given dimension
 	t_Index y; // y will always be 1

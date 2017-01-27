@@ -1,4 +1,5 @@
 ﻿// Utilities for the implementation of ML (rather than the interface to it)
+IMPORT PBblas;
 IMPORT * FROM $;
 IMPORT Std.Str;
 EXPORT Utils := MODULE
@@ -433,7 +434,265 @@ END;
 RETURN TABLE(LOOP(Init,K,Permutate(ROWS(LEFT))), {Kperm});
 
 END;
+//generate a radnom matrix of size nrow*ncol where matrix is partitioned on the nodes column-wise. each partition is of size nrow * ncol_part;
+EXPORT distcol_ranmap(UNSIGNED nrow, UNSIGNED ncol, UNSIGNED ncol_part ) := FUNCTION
+blk := nrow * ncol_part;
+	Produce_Random () := FUNCTION
+		G := 1000000;
+		R := (RANDOM()%G) / (REAL8)G;
+		RETURN R;
+	END;
+	nodes_used := IF(ncol_part>0, ((ncol-1) DIV ncol_part) + 1, 1);//how many nodes are needed
+	W_Rec := RECORD
+			STRING1 x:= '';
+  END;
+	empty_init := DATASET([{' '}], W_Rec);
+	nid_rec := {UNSIGNED n_id};
+	nid_rec init_tran (UNSIGNED c) := TRANSFORM
+		SELF.n_id := c-1;
+	END;
+	init_ := NORMALIZE (empty_init, nodes_used, init_tran (COUNTER) );
+	init_dist := DISTRIBUTE (init_, n_id);
+	Mat.Types.Element gen_tran (nid_rec le, UNSIGNED c) := TRANSFORM
+		col_offset := ncol_part*le.n_id;
+		SELF.x := ((c-1) % nrow) + 1 ;
+    SELF.y := ((c-1) DIV nrow) + 1 + col_offset;
+		SELF.value := Produce_Random ();
+	END;
 	
+	result := NORMALIZE (init_dist, blk, gen_tran (LEFT, COUNTER));
+	fltr := result.x BETWEEN 1 AND nrow AND result.y BETWEEN 1 AND ncol;
+	RETURN result (fltr);
+END;//END distcol_ranmap
+
+EXPORT distrow_ranmap(UNSIGNED4 nrow, UNSIGNED4 ncol, UNSIGNED4 nrow_part ) := FUNCTION
+blk := nrow_part * ncol;
+	Produce_Random () := FUNCTION
+		G := 1000000;
+		R := (RANDOM()%G) / (REAL4)G;
+		RETURN R;
+	END;
+	nodes_used := IF(nrow_part>0, ((nrow-1) DIV nrow_part) + 1, 1);//how many nodes are needed
+	W_Rec := RECORD
+			STRING1 x:= '';
+  END;
+	empty_init := DATASET([{' '}], W_Rec);
+	nid_rec := {UNSIGNED4 n_id};
+	nid_rec init_tran (UNSIGNED c) := TRANSFORM
+		SELF.n_id := c-1;
+	END;
+	init_ := NORMALIZE (empty_init, nodes_used, init_tran (COUNTER) );
+	init_dist := DISTRIBUTE (init_, n_id);
+	Mat.Types.Element4 gen_tran (nid_rec le, UNSIGNED c) := TRANSFORM
+		row_offset := nrow_part*le.n_id;
+		SELF.x := ((c-1) % nrow_part) + 1 + row_offset;
+    SELF.y := ((c-1) DIV nrow_part) + 1;
+		SELF.value := Produce_Random ();
+	END;
+	
+	result := NORMALIZE (init_dist, blk, gen_tran (LEFT, COUNTER));
+	fltr := result.x BETWEEN 1 AND nrow AND result.y BETWEEN 1 AND ncol;
+	RETURN result (fltr);
+END;//END distrow_ranmap
+
+EXPORT distrow_ranmap_part(UNSIGNED nrow, UNSIGNED ncol, UNSIGNED nrow_part, REAL8 coef ) := FUNCTION
+
+	SET OF REAL8 rand_vec(PBblas.Types.dimension_t N, PBblas.Types.dimension_t s, REAL8 cc) := BEGINC++
+
+    #body
+    __lenResult = n * sizeof(double);
+    __isAllResult = false;
+    double * result = new double[n];
+    __result = (void*) result;
+    uint32_t i;
+		double G = 1000000.0;
+		srand (s);
+    for (i=0; i<n; i++) {
+      // result[i] = (rand() % G) / G;
+			result[i] =  cc * ((double) rand() / (RAND_MAX));
+    }
+  ENDC++;
+	Produce_Random () := FUNCTION
+		G := 1000000;
+		R := (RANDOM()%G) / (REAL8)G;
+		RETURN R;
+	END;
+	parts_used := IF(nrow_part>0, ((nrow-1) DIV nrow_part) + 1, 1);//how many nodes are needed
+	W_Rec := RECORD
+			STRING1 x:= '';
+  END;
+	empty_init := DATASET([{' '}], W_Rec);
+	nid_rec := {UNSIGNED p_id, UNSIGNED rand_seed};
+	nid_rec init_tran (UNSIGNED c) := TRANSFORM
+		SELF.p_id := c;
+		SELF.rand_seed := RANDOM();
+	END;
+	init_ := NORMALIZE (empty_init, parts_used, init_tran (COUNTER) );
+	mat_map := PBblas.Matrix_Map(nrow,ncol,nrow_part,ncol);
+	init_dist := DISTRIBUTE (init_, mat_map.assigned_node (p_id));
+	Pbblas.Types.Layout_part part_tran (nid_rec le) := TRANSFORM
+			part_id := le.p_id;
+			first_row     := mat_map.first_row(part_id);
+      first_col     := mat_map.first_col(part_id);
+      part_rows     := mat_map.part_rows(part_id);
+      part_cols     := mat_map.part_cols(part_id);
+      SELF.mat_part := rand_vec (part_rows * part_cols, le.rand_seed, coef);
+      SELF.partition_id:= part_id;
+      SELF.node_id     := mat_map.assigned_node (part_id);
+      SELF.block_row   := part_id;
+      SELF.block_col   := 1;
+      SELF.first_row   := first_row;
+      SELF.part_rows   := part_rows;
+      SELF.first_col   := first_col;
+      SELF.part_cols   := part_cols;
+      SELF := [];
+	END;
+	result := PROJECT (init_dist, part_tran(LEFT), LOCAL);
+	RETURN result;
+END;//END distrow_ranmap_part
+
+//generate a random matrix in PBblas format of size ncol by nrow where the matrix is partitioned column-wise, each column partition is of size ncol_part
+EXPORT distcol_ranmap_part(UNSIGNED nrow, UNSIGNED ncol, UNSIGNED ncol_part, REAL8 coef ) := FUNCTION
+
+	SET OF REAL8 rand_vec(PBblas.Types.dimension_t N, PBblas.Types.dimension_t s, REAL8 cc) := BEGINC++
+
+    #body
+    __lenResult = n * sizeof(double);
+    __isAllResult = false;
+    double * result = new double[n];
+    __result = (void*) result;
+    uint32_t i;
+		double G = 1000000.0;
+		srand (s);
+    for (i=0; i<n; i++) {
+      // result[i] = (rand() % G) / G;
+			result[i] =  cc * ((double) rand() / (RAND_MAX));
+    }
+  ENDC++;
+	Produce_Random () := FUNCTION
+		G := 1000000;
+		R := (RANDOM()%G) / (REAL8)G;
+		RETURN R;
+	END;
+	parts_used := IF(ncol_part>0, ((ncol-1) DIV ncol_part) + 1, 1);//how many nodes are needed
+	W_Rec := RECORD
+			STRING1 x:= '';
+  END;
+	empty_init := DATASET([{' '}], W_Rec);
+	nid_rec := {UNSIGNED p_id, UNSIGNED rand_seed};
+	nid_rec init_tran (UNSIGNED c) := TRANSFORM
+		SELF.p_id := c;
+		SELF.rand_seed := RANDOM();
+	END;
+	init_ := NORMALIZE (empty_init, parts_used, init_tran (COUNTER) );
+	mat_map := PBblas.Matrix_Map(nrow,ncol,nrow,ncol_part);
+	init_dist := DISTRIBUTE (init_, mat_map.assigned_node (p_id));
+	Pbblas.Types.Layout_part part_tran (nid_rec le) := TRANSFORM
+			part_id := le.p_id;
+			first_row     := mat_map.first_row(part_id);
+      first_col     := mat_map.first_col(part_id);
+      part_rows     := mat_map.part_rows(part_id);
+      part_cols     := mat_map.part_cols(part_id);
+      SELF.mat_part := rand_vec (part_rows * part_cols, le.rand_seed, coef);
+      SELF.partition_id:= part_id;
+      SELF.node_id     := mat_map.assigned_node (part_id);
+      SELF.block_row   := part_id;
+      SELF.block_col   := 1;
+      SELF.first_row   := first_row;
+      SELF.part_rows   := part_rows;
+      SELF.first_col   := first_col;
+      SELF.part_cols   := part_cols;
+      SELF := [];
+	END;
+	result := PROJECT (init_dist, part_tran(LEFT), LOCAL);
+	RETURN result;
+END;//END distcol_ranmap_part
+
+EXPORT distrow_ranmap_part4(UNSIGNED4 nrow, UNSIGNED4 ncol, UNSIGNED4 nrow_part, REAL4 coef ) := FUNCTION
+
+	SET OF Pbblas.Types.value_t4 rand_vec(PBblas.Types.dimension_t N, PBblas.Types.dimension_t s, REAL4 cc) := BEGINC++
+
+    #body
+    __lenResult = n * sizeof(float);
+    __isAllResult = false;
+    float * result = new float[n];
+    __result = (void*) result;
+    uint32_t i;
+		double G = 1000000.0;
+		srand (s);
+    for (i=0; i<n; i++) {
+      // result[i] = (rand() % G) / G;
+			result[i] =  cc * ((float) rand() / (float)(RAND_MAX));
+			//float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+    }
+  ENDC++;
+	Produce_Random () := FUNCTION
+		G := 1000000;
+		R := (RANDOM()%G) / (REAL4)G;
+		RETURN R;
+	END;
+	parts_used := IF(nrow_part>0, ((nrow-1) DIV nrow_part) + 1, 1);//how many nodes are needed
+	W_Rec := RECORD
+			STRING1 x:= '';
+  END;
+	empty_init := DATASET([{' '}], W_Rec);
+	nid_rec := {UNSIGNED4 p_id, UNSIGNED4 rand_seed};
+	nid_rec init_tran (UNSIGNED c) := TRANSFORM
+		SELF.p_id := c;
+		SELF.rand_seed := RANDOM();
+	END;
+	init_ := NORMALIZE (empty_init, parts_used, init_tran (COUNTER) );
+	mat_map := PBblas.Matrix_Map(nrow,ncol,nrow_part,ncol);
+	init_dist := DISTRIBUTE (init_, mat_map.assigned_node (p_id));
+	Pbblas.Types.Layout_part4 part_tran (nid_rec le) := TRANSFORM
+			part_id := le.p_id;
+			first_row     := mat_map.first_row(part_id);
+      first_col     := mat_map.first_col(part_id);
+      part_rows     := mat_map.part_rows(part_id);
+      part_cols     := mat_map.part_cols(part_id);
+      SELF.mat_part := rand_vec (part_rows * part_cols, le.rand_seed, coef);
+      SELF.partition_id:= part_id;
+      SELF.node_id     := mat_map.assigned_node (part_id);
+      SELF.block_row   := part_id;
+      SELF.block_col   := 1;
+      SELF.first_row   := first_row;
+      SELF.part_rows   := part_rows;
+      SELF.first_col   := first_col;
+      SELF.part_cols   := part_cols;
+      SELF := [];
+	END;
+	result := PROJECT (init_dist, part_tran(LEFT), LOCAL);
+	RETURN result;
+END;//END distrow_ranmap_part4
+
+// a different version of ToGroundTruth which is more optimized
+EXPORT LabelToGroundTruth4(DATASET(Types.NumericField4) Y ) := FUNCTION
+	sample_num  := MAX (Y,Y.id);
+	class_num   := MAX (Y, Y.value);
+	Types.NumericField4 grnd (Types.NumericField4 le, UNSIGNED4 c) := TRANSFORM
+		SELF.number := le.id;
+		SELF.id := c;
+		SELF.value := IF (c=le.value,1,0);
+		SELF:= le;
+	END;
+	grndt_result := NORMALIZE (Y,class_num,grnd(LEFT, COUNTER));
+	RETURN grndt_result;
+END;//END LabelToGroundTruth
+
+EXPORT LabelToGroundTruth(DATASET(Types.NumericField) Y ) := FUNCTION
+	sample_num  := MAX (Y,Y.id);
+	class_num   := MAX (Y, Y.value);
+	Types.NumericField grnd (Types.NumericField le, UNSIGNED4 c) := TRANSFORM
+		SELF.number := le.id;
+		SELF.id := c;
+		SELF.value := IF (c=le.value,1,0);
+		SELF:= le;
+	END;
+	grndt_result := NORMALIZE (Y,class_num,grnd(LEFT, COUNTER));
+	RETURN grndt_result;
+END;//END LabelToGroundTruth
+
+
 EXPORT ToGroundTruth(DATASET(Types.NumericField) Y ) := FUNCTION
 
 
@@ -455,6 +714,91 @@ Result := JOIN (scratch_mat, Y, LEFT.y=RIGHT.id , ToGT(LEFT,RIGHT));
 RETURN Result;
 
 END; // END ToGroundTruth
+
+// This version converts label to grountruth, as long as labels are distinct integer numbers it works correctly
+
+EXPORT DistinctLabeltoGroundTruth4(DATASET(Types.NumericField4) Y ) := FUNCTION
+	// find DISTINCT  labels
+	Y_sorted := SORT (Y, Y.value);
+	distinct_labels := DEDUP (Y_sorted, Y_sorted.value);
+	// assigne 1 to N (N is the number of classes) to the distict labels
+	distinct_labels_1 := PROJECT (distinct_labels, TRANSFORM (Types.NumericField4, SELF.id := COUNTER; SELF:=LEFT));
+	//JOIN distinct_labels_1 and Y in order to get a Y dataset where labels start from 1 
+	Y_1 := JOIN (Y, distinct_labels_1, LEFT.value = RIGHT.value, TRANSFORM (Types.NumericField4, SELF.value := RIGHT.id; SELF:=LEFT));
+	// now that Y_1's labels start from 1, it can be passe to LabelToGroundTruth in order to be converted to groundtruth matrix
+	RETURN LabelToGroundTruth4 (Y_1);
+END;// END DistinctLabeltoGroundTruth4
+
+
+//Extract distinct labels from 1 to number of classes 
+// input with labels 3 , 4 ,4 10 will get lables 1,2,2,3
+EXPORT DistinctLabel4(DATASET(Types.NumericField4) Y ) := FUNCTION
+	// find DISTINCT  labels
+	Y_sorted := SORT (Y, Y.value);
+	distinct_labels := DEDUP (Y_sorted, Y_sorted.value);
+	// assigne 1 to N (N is the number of classes) to the distict labels
+	distinct_labels_1 := PROJECT (distinct_labels, TRANSFORM (Types.NumericField4, SELF.id := COUNTER; SELF:=LEFT));
+	//JOIN distinct_labels_1 and Y in order to get a Y dataset where labels start from 1 
+	Y_1 := JOIN (Y, distinct_labels_1, LEFT.value = RIGHT.value, TRANSFORM (Types.NumericField4, SELF.value := RIGHT.id; SELF:=LEFT));
+	// now that Y_1's labels start from 1, it can be passe to LabelToGroundTruth in order to be converted to groundtruth matrix
+	RETURN Y_1;
+END;// END DistinctLabel4
+
+
+EXPORT DistinctLabel(DATASET(Types.NumericField) Y ) := FUNCTION
+	// find DISTINCT  labels
+	Y_sorted := SORT (Y, Y.value);
+	distinct_labels := DEDUP (Y_sorted, Y_sorted.value);
+	// assigne 1 to N (N is the number of classes) to the distict labels
+	distinct_labels_1 := PROJECT (distinct_labels, TRANSFORM (Types.NumericField, SELF.id := COUNTER; SELF:=LEFT));
+	//JOIN distinct_labels_1 and Y in order to get a Y dataset where labels start from 1 
+	Y_1 := JOIN (Y, distinct_labels_1, LEFT.value = RIGHT.value, TRANSFORM (Types.NumericField, SELF.value := RIGHT.id; SELF:=LEFT));
+	// now that Y_1's labels start from 1, it can be passe to LabelToGroundTruth in order to be converted to groundtruth matrix
+	RETURN Y_1;
+END;// END DistinctLabel
+
+
+EXPORT DistinctLabeltoGroundTruth(DATASET(Types.NumericField) Y ) := FUNCTION
+	// find DISTINCT  labels
+	Y_sorted := SORT (Y, Y.value);
+	distinct_labels := DEDUP (Y_sorted, Y_sorted.value);
+	// assigne 1 to N (N is the number of classes) to the distict labels
+	distinct_labels_1 := PROJECT (distinct_labels, TRANSFORM (Types.NumericField, SELF.id := COUNTER; SELF:=LEFT));
+	//JOIN distinct_labels_1 and Y in order to get a Y dataset where labels start from 1 
+	Y_1 := JOIN (Y, distinct_labels_1, LEFT.value = RIGHT.value, TRANSFORM (Types.NumericField, SELF.value := RIGHT.id; SELF:=LEFT));
+	// now that Y_1's labels start from 1, it can be passe to LabelToGroundTruth in order to be converted to groundtruth matrix
+	RETURN LabelToGroundTruth (Y_1);
+END;// END DistinctLabeltoGroundTruth
+
+
+// This function converts the number values in a way they start from 1 to the number of distinct number values
+// [{1,10,9},{2,3,89}] -> [{1,2,9},{2,1,89}] : features number 10 and 3 are converted to features number 2 and 1 respectively
+EXPORT DistinctFeaturest4(DATASET(Types.NumericField4) Y ) := FUNCTION
+	// find DISTINCT  features
+	Y_sorted := SORT (Y, Y.number);
+	distinct_features := DEDUP (Y_sorted, Y_sorted.number);
+	// assigne 1 to N (N is the number of features) to the distict features
+	distinct_features_1 := PROJECT (distinct_features, TRANSFORM (Types.NumericField4, SELF.id := COUNTER; SELF:=LEFT));
+	//JOIN distinct_features_1 and Y in order to get a Y dataset where numbers (features) start from 1 
+	Y_1 := JOIN (Y, distinct_features_1, LEFT.number = RIGHT.number, TRANSFORM (Types.NumericField4, SELF.number := RIGHT.id; SELF:=LEFT));
+	// now that Y_1's labels start from 1, it can be passe to LabelToGroundTruth in order to be converted to groundtruth matrix
+	RETURN Y_1;
+END;// END DistinctFeaturest4
+// This function normalize
+
+// This function converts the number values in a way they start from 1 to the number of distinct number values
+// [{1,10,9},{2,3,89}] -> [{1,2,9},{2,1,89}] : features number 10 and 3 are converted to features number 2 and 1 respectively
+EXPORT DistinctFeaturest(DATASET(Types.NumericField) Y ) := FUNCTION
+	// find DISTINCT  features
+	Y_sorted := SORT (Y, Y.number);
+	distinct_features := DEDUP (Y_sorted, Y_sorted.number);
+	// assigne 1 to N (N is the number of features) to the distict features
+	distinct_features_1 := PROJECT (distinct_features, TRANSFORM (Types.NumericField, SELF.id := COUNTER; SELF:=LEFT));
+	//JOIN distinct_features_1 and Y in order to get a Y dataset where numbers (features) start from 1 
+	Y_1 := JOIN (Y, distinct_features_1, LEFT.number = RIGHT.number, TRANSFORM (Types.NumericField, SELF.number := RIGHT.id; SELF:=LEFT));
+	// now that Y_1's labels start from 1, it can be passe to LabelToGroundTruth in order to be converted to groundtruth matrix
+	RETURN Y_1;
+END;// END DistinctFeaturest
 
 //Take a dataset of cells for a partition and pack into a dense matrix.  Specify Row or Column major
 //First row and first column are one based.

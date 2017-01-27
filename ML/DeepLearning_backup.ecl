@@ -1,13 +1,12 @@
-﻿
+﻿// the backup before I change REAL8 to PBblas.Types.value_t
+
 IMPORT ML;
 IMPORT * FROM $;
 IMPORT $.Mat; 
 IMPORT * FROM ML.Types;
 IMPORT PBblas;
 Layout_Cell := PBblas.Types.Layout_Cell;
-Layout_Cell4 := PBblas.Types.Layout_Cell4;
 Layout_Part := PBblas.Types.Layout_Part;
-Layout_Part4 := PBblas.Types.Layout_Part4;
 emptyC := DATASET([], Types.NumericField);
 SHARED emptyMUelm := DATASET([], Mat.Types.MUElement);
 IMPORT STD;
@@ -15,12 +14,7 @@ IMPORT std.system.Thorlib;
 SHARED Layout_Cell_nid := RECORD (Layout_Cell)
 UNSIGNED4 node_id;
 END;
-SHARED Layout_Cell_nid4 := RECORD (Layout_Cell4)
-PBblas.Types.node_t node_id;
-END;
-SHARED 	costgrad_record4 := RECORD (Layout_Part4)
-	REAL4 cost_value;
-END;
+
 EXPORT DeepLearning := MODULE
 EXPORT Sparse_Autoencoder_IntWeights (INTEGER4 NumberofFeatures, INTEGER4 NumberofHiddenLayerNodes) := FUNCTION
 		W_Rec := RECORD
@@ -4421,9 +4415,6 @@ END;
 	theta_part_no_check :=  ASSERT(theta_Part_no, node_id=Thorlib.node() and node_id=(partition_id-1), 'sparse autoencoder gradient is not distributed correctly', FAIL);
 	return_record := RECORD (Layout_Part)
 		REAL8 cost_value;
-	END;
-	return_record4 := RECORD (Layout_Part)
-		PBblas.Types.value_t4 cost_value;
 	END;
 	ToReturn := PROJECT (theta_part_no_check, TRANSFORM (return_record, SELF.cost_value := cost; SELF:=LEFT), LOCAL);
 	//RETURN  theta_part_no_check + Cost_part_no;
@@ -13171,9 +13162,8 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_partitions_datadist( DATASET(Layout_Part
 // if theta is l*f matrix , l is partitioned to part_rows parts and the partitions are of side part_rows * f
 // I decided on this implementation because of the lhtcs large dataset which would cause memory issues with SoftMax_compatible_lbfgs_sparse_partitions_datadist implementation
 //train data is distributed on all the nodes theta is distributed on. since train data is in numerifcfield and sparse format, it does not take a lot of memory and can be distributed on all the nodes/nodes theta is distributed on
-EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4)  theta, DATASET(Types.NumericField4) CostFunc_params, DATASET(Layout_Cell_nid4)  TrainData , DATASET(PBblas.Types.Layout_Part4)  TrainLabel) := function
-  
-	Numfeat:= CostFunc_params(id=2)[1].value;
+EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(Layout_Part) theta, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Cell_nid)  TrainData , DATASET(Layout_Part) TrainLabel) := function
+  Numfeat:= CostFunc_params(id=2)[1].value;
   NumClass := CostFunc_params(id=3)[1].value;// number of features
   m := CostFunc_params(id=1)[1].value;// number of samples
 	m_ := -1/m;
@@ -13182,26 +13172,24 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4
   LAMBDA:= CostFunc_params(id=6)[1].value;
 	//maps used
 	SET OF PBblas.Types.value_t empty_array := [];
-	SET OF PBblas.Types.value_t4 empty_array4 := [];
 	theta_map := PBblas.Matrix_Map(NumClass, Numfeat, part_rows, Numfeat);
 	map_c := PBblas.Matrix_Map(NumClass, m, part_rows, m);
-	
 	//calculated theta*TrainData
 	//M=(theta*x);
 	//part_sparse_mul multiplies matrix M in Pbblas format of size r by s to the matrix D which is in numericfield format and its size is s by samp and the size od matrix D is num. Natrix D is a sparse matrix so its size is not necessarily s*samp
-	SET OF Pbblas.Types.value_t4 part_sparse_mul(PBblas.types.dimension_t r, PBblas.types.dimension_t s, PBblas.types.dimension_t samp, PBblas.types.dimension_t num, PBblas.types.matrix_t4 M, DATASET(PBblas.types.Layout_Cell4) D) := BEGINC++
-    typedef struct work3 {      // copy of numericfield4 translated to C
+	SET OF REAL8 part_sparse_mul(PBblas.types.dimension_t r, PBblas.types.dimension_t s, PBblas.types.dimension_t samp, PBblas.types.dimension_t num, PBblas.types.matrix_t M, DATASET(PBblas.types.Layout_Cell) D) := BEGINC++
+    typedef struct work3 {      // copy of numericfield translated to C
       uint32_t x;
       uint32_t y;
-      float v;
+      double v;
     };
     #body
-    __lenResult = r * samp * sizeof(float);
+    __lenResult = r * samp * sizeof(double);
     __isAllResult = false;
-    float *result = new float[r * samp];
+    double *result = new double[r * samp];
     __result = (void*) result;
     work3 *celld = (work3*) d;
-		float *cellm = (float*) m;
+		double *cellm = (double*) m;
 		uint32_t cells = num;
     uint32_t i, j;
     uint32_t pos;
@@ -13218,8 +13206,7 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4
 			}		
 		}
   ENDC++;
-	
-	PBblas.Types.Layout_Part4 txtran (PBblas.Types.Layout_Part4 le, DATASET(PBblas.Types.Layout_Cell4) cells) := TRANSFORM
+	PBblas.Types.Layout_Part txtran (PBblas.Types.Layout_Part le, DATASET(PBblas.Types.Layout_Cell) cells) := TRANSFORM
 		part_id := le.partition_id;;
 		SELF.partition_id := part_id;
 		SELF.node_id      := map_c.assigned_node(part_id);
@@ -13229,7 +13216,7 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4
 		SELF.part_rows    := map_c.part_rows(part_id);
 		SELF.first_col    := map_c.first_col(part_id);
 		SELF.part_cols    := map_c.part_cols(part_id);
-		SELF.mat_part := part_sparse_mul(le.part_rows, le.part_cols, m, COUNT (cells), le.mat_part, PROJECT(cells, TRANSFORM (PBblas.Types.layout_cell4, SELF:= LEFT)));
+		SELF.mat_part := part_sparse_mul(le.part_rows, le.part_cols, m, COUNT (cells), le.mat_part, PROJECT(cells, TRANSFORM (PBblas.Types.layout_cell, SELF:= LEFT)));
 		SELF := le;
 	END;
 	
@@ -13237,19 +13224,18 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4
                             LEFT.node_id = RIGHT.node_id,
                             GROUP,
                             txtran(LEFT,ROWS(RIGHT)), LOCAL);
-														
 	// M=tx;
 	// M = bsxfun(@minus, M, max(M, [], 1));
 	// first calculate  max(M, [], 1)
-	SET OF Pbblas.Types.value_t4 max_col (PBblas.Types.dimension_t r, PBblas.Types.dimension_t s, PBblas.Types.matrix_t4 D) := BEGINC++
+	SET OF REAL8 max_col (PBblas.Types.dimension_t r, PBblas.Types.dimension_t s, PBblas.Types.matrix_t D) := BEGINC++
 
     #body
-    __lenResult = s * sizeof(float);
+    __lenResult = s * sizeof(double);
     __isAllResult = false;
-    float * result = new float[s];
+    double * result = new double[s];
     __result = (void*) result;
-    float *cell = (float*) d;
-		float max_tmp;
+    double *cell = (double*) d;
+		double max_tmp;
     uint32_t i;
 		uint32_t j;
     uint32_t pos;
@@ -13268,15 +13254,15 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4
 
   ENDC++;
 	//calculates the max between two arrays elemenwise
-	SET OF Pbblas.Types.value_t4 arr_max (PBblas.Types.dimension_t s, PBblas.Types.matrix_t4 C, PBblas.Types.matrix_t4 D) := BEGINC++
+	SET OF REAL8 arr_max (PBblas.Types.dimension_t s, PBblas.Types.matrix_t C, PBblas.Types.matrix_t D) := BEGINC++
 	#body
-    __lenResult = s * sizeof(float);
+    __lenResult = s * sizeof(double);
     __isAllResult = false;
-    float * result = new float[s];
+    double * result = new double[s];
     __result = (void*) result;
-    float *celld = (float*) d;
-		float *cellc = (float*) c;
-		float max_tmp;
+    double *celld = (double*) d;
+		double *cellc = (double*) c;
+		double max_tmp;
     uint32_t i;
 		uint32_t j;
     uint32_t pos;
@@ -13293,15 +13279,13 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4
     }
 
   ENDC++;
-	
-	Layout_Part4 max_tran(Layout_Part4 le) := TRANSFORM
+	Layout_Part max_tran(Layout_Part le) := TRANSFORM
     SELF.mat_part := max_col(le.part_rows, le.part_cols, le.mat_part);
 		SELF.partition_id := 1;
     SELF := le;
   END;
 	M_max_col_ := PROJECT ( tx, max_tran (LEFT), LOCAL);
-	
-	PBblas.Types.Layout_Part4 maxtran (PBblas.Types.Layout_Part4 le, PBblas.Types.Layout_Part4 ri) := TRANSFORM
+	PBblas.Types.Layout_Part maxtran (PBblas.Types.Layout_Part le, PBblas.Types.Layout_Part ri) := TRANSFORM
 		part_id := 1;
 		SELF.partition_id := part_id;
 		SELF.node_id      := 0;
@@ -13318,16 +13302,15 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4
 	//M = bsxfun(@minus, M, max(M, [], 1));
 	//M=exp(M);
 	//result = exp(M - repmat (V, r, 1))
-	
-	SET OF PBblas.Types.value_t4 exp_mat_vec_minus(PBblas.Types.dimension_t N, PBblas.Types.dimension_t r, PBblas.Types.matrix_t4 M, PBblas.Types.matrix_t4 V) := BEGINC++
+	SET OF REAL8 exp_mat_vec_minus(PBblas.Types.dimension_t N, PBblas.Types.dimension_t r, PBblas.Types.matrix_t M, PBblas.Types.matrix_t V) := BEGINC++
 
     #body
-    __lenResult = n * sizeof(float);
+    __lenResult = n * sizeof(double);
     __isAllResult = false;
-    float * result = new float[n];
+    double * result = new double[n];
     __result = (void*) result;
-    float *cellm = (float*) m;
-		float *cellv = (float*) v;
+    double *cellm = (double*) m;
+		double *cellv = (double*) v;
     uint32_t cells =  n;
     uint32_t i;
 		uint32_t pos;
@@ -13336,26 +13319,25 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4
       result[i] = exp(cellm[i] - cellv[pos]);
     }
   ENDC++;
-	PBblas.Types.Layout_Part4 expmax_tran (PBblas.Types.Layout_Part4 le, PBblas.Types.Layout_Part4 ri) := TRANSFORM
+	PBblas.Types.Layout_Part expmax_tran (PBblas.Types.Layout_Part le, PBblas.Types.Layout_Part ri) := TRANSFORM
 		SELF.mat_part := exp_mat_vec_minus(le.part_cols * le.part_rows, le.part_rows, le.mat_part, ri.mat_part) ;
 		SELF := le;
 	END;
 	tx_max_exp := JOIN (tx, M_max_col, TRUE, expmax_tran(LEFT,RIGHT), ALL);
-	
 	// M = bsxfun(@rdivide, M, sum(M));
 	//returns the summation of elements in each coumn
-	SET OF PBblas.Types.value_t4 sum_col (PBblas.Types.dimension_t r, PBblas.Types.dimension_t s, PBblas.Types.matrix_t4 D) := BEGINC++
+	SET OF REAL8 sum_col (PBblas.Types.dimension_t r, PBblas.Types.dimension_t s, PBblas.Types.matrix_t D) := BEGINC++
 
     #body
-    __lenResult = s * sizeof(float);
+    __lenResult = s * sizeof(double);
     __isAllResult = false;
-    float * result = new float[s];
+    double * result = new double[s];
     __result = (void*) result;
-    float *cell = (float*) d;
+    double *cell = (double*) d;
     uint32_t cells =  r * s;
     uint32_t i,j;
     uint32_t pos;
-		float sum_tmp;
+		double sum_tmp;
 	 for (i=0; i<s; i++) {
 		sum_tmp = 0;
 		pos = i * r;
@@ -13368,15 +13350,15 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4
 
   ENDC++;
 
-	SET OF PBblas.Types.value_t4 mat_vec_div(PBblas.Types.dimension_t N, PBblas.Types.dimension_t r, PBblas.Types.matrix_t4 M, PBblas.Types.matrix_t4 V) := BEGINC++
+	SET OF REAL8 mat_vec_div(PBblas.Types.dimension_t N, PBblas.Types.dimension_t r, PBblas.Types.matrix_t M, PBblas.Types.matrix_t V) := BEGINC++
 
     #body
-    __lenResult = n * sizeof(float);
+    __lenResult = n * sizeof(double);
     __isAllResult = false;
-    float * result = new float[n];
+    double * result = new double[n];
     __result = (void*) result;
-    float *cellm = (float*) m;
-		float *cellv = (float*) v;
+    double *cellm = (double*) m;
+		double *cellv = (double*) v;
     uint32_t cells =  n;
     uint32_t i;
 		uint32_t pos;
@@ -13387,23 +13369,22 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4
     }
   ENDC++;
 	
-	Layout_Part4 sum_tran(Layout_Part4 le) := TRANSFORM
+	Layout_Part sum_tran(Layout_Part le) := TRANSFORM
     SELF.mat_part := sum_col(le.part_rows, le.part_cols, le.mat_part);
 		SELF.partition_id := 1;
     SELF := le;
   END;
 	tx_max_exp_sum_col_ := PROJECT (tx_max_exp, sum_tran (LEFT), LOCAL);
-	
 	//summation of two arrays element-wise
-	SET OF PBblas.Types.value_t4 arr_sum (PBblas.Types.dimension_t s, PBblas.Types.matrix_t4 C, PBblas.Types.matrix_t4 D) := BEGINC++
+	SET OF REAL8 arr_sum (PBblas.Types.dimension_t s, PBblas.Types.matrix_t C, PBblas.Types.matrix_t D) := BEGINC++
 	#body
-    __lenResult = s * sizeof(float);
+    __lenResult = s * sizeof(double);
     __isAllResult = false;
-    float * result = new float[s];
+    double * result = new double[s];
     __result = (void*) result;
-    float *celld = (float*) d;
-		float *cellc = (float*) c;
-		float max_tmp;
+    double *celld = (double*) d;
+		double *cellc = (double*) c;
+		double max_tmp;
     uint32_t i;
 		uint32_t j;
     uint32_t pos;
@@ -13413,7 +13394,7 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4
     }
 
   ENDC++;
-	PBblas.Types.Layout_Part4 sumtran (PBblas.Types.Layout_Part4 le, PBblas.Types.Layout_Part4 ri) := TRANSFORM
+	PBblas.Types.Layout_Part sumtran (PBblas.Types.Layout_Part le, PBblas.Types.Layout_Part ri) := TRANSFORM
 		part_id := 1;
 		SELF.partition_id := part_id;
 		SELF.node_id      := 0;
@@ -13427,61 +13408,30 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label( DATASET(PBblas.Types.Layout_Part4
 		SELF := le;
 	END;
 	tx_max_exp_sum_col := ROLLUP (tx_max_exp_sum_col_, LEFT.partition_id = RIGHT.partition_id, sumtran(LEFT,RIGHT));
-	PBblas.Types.Layout_Part4 divsumtran (PBblas.Types.Layout_Part4 le, PBblas.Types.Layout_Part4 ri) := TRANSFORM
+	PBblas.Types.Layout_Part divsumtran (PBblas.Types.Layout_Part le, PBblas.Types.Layout_Part ri) := TRANSFORM
 		SELF.mat_part := mat_vec_div(le.part_cols * le.part_rows, le.part_rows, le.mat_part, ri.mat_part) ;
 		SELF := le;
 	END;
 	tx_soft := JOIN (tx_max_exp, tx_max_exp_sum_col, TRUE, divsumtran(LEFT,RIGHT), ALL);//same as M in MATLAB
 
-SET OF Pbblas.Types.value_t4 m_label_minus(PBblas.types.dimension_t r, PBblas.types.dimension_t s, PBblas.types.dimension_t f, PBblas.types.matrix_t4 M, PBblas.types.matrix_t4 D) := BEGINC++
-
-    #body
-    __lenResult = r * s * sizeof(float);
-    __isAllResult = false;
-    float * result = new float[r*s];
-    __result = (void*) result;
-		float *cellm = (float*) m;
-    float *celld = (float*) d;
-		uint32_t tmp;
-    uint32_t i;
-		uint32_t j;
-    uint32_t pos;
-		uint32_t f_ = f-1;
-		uint32_t posj = r+f;
-		for (i=0; i<s*r; i++) {
-			result[i] = -1 * cellm[i];
-    }
-		for (i=0; i<s; i++) {
-			tmp = (uint32_t)celld[i];
-			if (tmp >= f && tmp <posj) {
-				pos = (i*r) + tmp - f;
-				result [pos] = result [pos] + 1;
-			}
-		}
-
-  ENDC++;
-	
-	grnd_tx := JOIN (tx_soft, TrainLabel, LEFT.node_id=RIGHT.node_id, TRANSFORM (Layout_PART4, SELF.mat_part:= m_label_minus(LEFT.part_rows, LEFT.part_cols, LEFT.first_row, LEFT.mat_part, RIGHT.mat_part)  ; SELF:=LEFT), LOCAL);
-
 
 	//groundTruth - tx_soft : (groundTruth-M)
-	// groundTruth := TrainLabel;
-	// grnd_tx := Pbblas.PB_daxpy(-1, tx_soft, groundTruth);
-	
+	groundTruth := TrainLabel;
+	grnd_tx := Pbblas.PB_daxpy(-1, tx_soft, groundTruth);
 	//-1/m*(groundTruth-M)*x'
-	SET OF Pbblas.Types.value_t4 part_sparse_tran_mul(PBblas.types.dimension_t r, PBblas.types.dimension_t s, PBblas.types.dimension_t samp, PBblas.types.dimension_t num, PBblas.types.matrix_t4 M, DATASET(PBblas.types.Layout_Cell4) D, PBblas.Types.value_t4 mc) := BEGINC++
+	SET OF REAL8 part_sparse_tran_mul(PBblas.types.dimension_t r, PBblas.types.dimension_t s, PBblas.types.dimension_t samp, PBblas.types.dimension_t num, PBblas.types.matrix_t M, DATASET(PBblas.types.Layout_Cell) D) := BEGINC++
     typedef struct work2 {      // copy of numericfield translated to C
       uint32_t y;
       uint32_t x;
-      float v;
+      double v;
     };
     #body
-    __lenResult = r * samp * sizeof(float);
+    __lenResult = r * samp * sizeof(double);
     __isAllResult = false;
-    float *result = new float[r * samp];
+    double *result = new double[r * samp];
     __result = (void*) result;
     work2 *celld = (work2*) d;
-		float *cellm = (float*) m;
+		double *cellm = (double*) m;
 		uint32_t cells = num;
     uint32_t i, j;
     uint32_t pos;
@@ -13497,11 +13447,8 @@ SET OF Pbblas.Types.value_t4 m_label_minus(PBblas.types.dimension_t r, PBblas.ty
 				result[pos] = result[pos] + cellm[r * x + j] * celld[i].v;
 			}		
 		}
-		for (i=0; i < r * samp; i++){
-			result[i]= result[i] * mc;
-		}
   ENDC++; // END part_sparse_tran_mul
-	PBblas.Types.Layout_Part4 gradtran (PBblas.Types.Layout_Part4 le, DATASET(PBblas.Types.Layout_Cell4) cells) := TRANSFORM 
+	PBblas.Types.Layout_Part gradtran (PBblas.Types.Layout_Part le, DATASET(PBblas.Types.Layout_Cell) cells) := TRANSFORM 
 		part_id := le.partition_id;;
 		SELF.partition_id := part_id;
 		SELF.node_id      := map_c.assigned_node(part_id);
@@ -13511,7 +13458,7 @@ SET OF Pbblas.Types.value_t4 m_label_minus(PBblas.types.dimension_t r, PBblas.ty
 		SELF.part_rows    := theta_map.part_rows(part_id);
 		SELF.first_col    := theta_map.first_col(part_id);
 		SELF.part_cols    := theta_map.part_cols(part_id);
-		SELF.mat_part := part_sparse_tran_mul(le.part_rows, le.part_cols, Numfeat, COUNT (cells), le.mat_part, PROJECT(cells, TRANSFORM (PBblas.Types.layout_cell4, SELF:= LEFT)), m_);
+		SELF.mat_part := part_sparse_tran_mul(le.part_rows, le.part_cols, Numfeat, COUNT (cells), le.mat_part, PROJECT(cells, TRANSFORM (PBblas.Types.layout_cell, SELF:= LEFT)));
 		SELF := le;
 	END;
 	
@@ -13519,39 +13466,21 @@ SET OF Pbblas.Types.value_t4 m_label_minus(PBblas.types.dimension_t r, PBblas.ty
                             LEFT.node_id = RIGHT.node_id,
                             GROUP,
 	                         gradtran(LEFT,ROWS(RIGHT)), LOCAL);
-	grndtx_xt_m :=  grnd_tx_xt;
-	
-	SET OF Pbblas.Types.value_t4 summation(PBblas.types.dimension_t N, Pbblas.Types.value_t4 L, PBblas.types.matrix_t4 M, PBblas.types.matrix_t4 D) := BEGINC++
-
-    #body
-    __lenResult = n * sizeof(float);
-    __isAllResult = false;
-    float * result = new float[n];
-    __result = (void*) result;
-		float *cellm = (float*) m;
-    float *celld = (float*) d;
-    uint32_t i;
-		for (i=0; i<n; i++) {
-			result[i] = (l*cellm[i])+celld[i];
-    }
-		
-  ENDC++;
-	
+	grndtx_xt_m :=  PBblas.PB_dscal(m_, grnd_tx_xt);
 	//calculate theta_grad
-	Layout_Part4 theta_grad_tran(Layout_Part4 le, Layout_Part4 ri) := TRANSFORM
+	Layout_Part theta_grad_tran(Layout_Part le, Layout_Part ri) := TRANSFORM
 		N := le.part_rows * le.part_cols ;
-		SELF.mat_part := summation(N, LAMBDA, le.mat_part, ri.mat_part);
+		SELF.mat_part := PBblas.BLAS.daxpy(N, LAMBDA, le.mat_part, 1, ri.mat_part, 1);
 		SELF := le;
 	END;
 	theta_grad := JOIN (theta, grndtx_xt_m,LEFT.partition_id = RIGHT.partition_id, theta_grad_tran(LEFT,RIGHT), FULL OUTER, LOCAL);
-	
 	//calculate cost
-	Pbblas.Types.value_t4 sum_sq(PBblas.Types.dimension_t N, PBblas.Types.matrix_t4 M) := BEGINC++
+	REAL8 sum_sq(PBblas.Types.dimension_t N, PBblas.Types.matrix_t M) := BEGINC++
 
     #body
-    float result = 0;
-		float tmpp ;
-    float *cellm = (float*) m;
+    double result = 0;
+		double tmpp ;
+    double *cellm = (double*) m;
     uint32_t i;
 		for (i=0; i<n; i++) {
       result = result + (cellm[i]*cellm[i]);
@@ -13559,626 +13488,46 @@ SET OF Pbblas.Types.value_t4 m_label_minus(PBblas.types.dimension_t r, PBblas.ty
 		return(result);
 
   ENDC++;
-	simple := {Pbblas.types.value_t4 v};
-	simple wd_tran (Layout_Part4 le) := TRANSFORM
+	simple := {Pbblas.types.value_t v};
+	simple wd_tran (Layout_Part le) := TRANSFORM
 		SELF.v := sum_sq(le.part_cols * le.part_rows, le.mat_part);
 	END;
 	weightdecay_term_ := PROJECT (theta, wd_tran (LEFT), LOCAL);
 	weightdecay_term := SUM (weightdecay_term_, weightdecay_term_.v);
-	
 	// tmp=log(M).*groundTruth;
   // log_cost=sum(tmp(:));
-	Pbblas.Types.value_t4 log_cost_c(PBblas.types.dimension_t r, PBblas.types.dimension_t s, PBblas.types.dimension_t f, PBblas.types.matrix_t4 M, PBblas.types.matrix_t4 D) := BEGINC++
+	REAL8 log_cost_c (PBblas.Types.dimension_t N, PBblas.Types.matrix_t M, PBblas.Types.matrix_t D) := BEGINC++
 
     #body
-    float result = 0.0;
-		float *cellm = (float*) m;
-    float *celld = (float*) d;
-		uint32_t tmp;
+    double result = 0;
+		double tmpp ;
+    double *cellm = (double*) m;
+		double *celld = (double*) d;
     uint32_t i;
-		uint32_t j;
-    uint32_t pos;
-		uint32_t f_ = f-1;
-		uint32_t posj = r+f;
-		for (i=0; i<s; i++) {
-			tmp = (uint32_t)celld[i];
-			if (tmp >= f && tmp <posj) {
-				pos = (i*r) + tmp - f;
-				result  = result + log(cellm [pos]);
-			}
-		}
-		return (result);
+		for (i=0; i<n; i++) {
+      result = result + (log(cellm[i])*celld[i]);
+    }
+		return(result);
   ENDC++;
-	// Pbblas.Types.value_t4 log_cost_c (PBblas.Types.dimension_t N, PBblas.Types.matrix_t4 M, PBblas.Types.matrix_t4 D) := BEGINC++
-
-    // #body
-    // float result = 0;
-		// float tmpp ;
-    // float *cellm = (float*) m;
-		// float *celld = (float*) d;
-    // uint32_t i;
-		// for (i=0; i<n; i++) {
-      // result = result + (log(cellm[i])*celld[i]);
-    // }
-		// return(result);
-  // ENDC++;
-	simple cost_log_tran (Layout_Part4 le, Layout_Part4 ri) := TRANSFORM
-		SELF.v := log_cost_c(le.part_rows , le.part_cols, le.first_row, le.mat_part, ri.mat_part);
+	simple cost_log_tran (Layout_Part le, Layout_Part ri) := TRANSFORM
+		SELF.v := log_cost_c(le.part_cols * le.part_rows, le.mat_part, ri.mat_part);
 	END;
-	log_cost_ := JOIN (tx_soft, TrainLabel, LEFT.node_id = RIGHT.node_id, cost_log_tran(LEFT,RIGHT), LOCAL);
+	log_cost_ := JOIN (tx_soft, groundTruth, LEFT.partition_id = RIGHT.partition_id, cost_log_tran(LEFT,RIGHT), LOCAL);
 	log_cost := SUM (log_cost_, log_cost_.v);
-	
-	thisrec := RECORD
-	REAL4 v;
-	UNSIGNED4 nd;
-	END;
-
-	
 	//cost=((-1/m)*log_cost)+((lambda/2)*weightdecay_term);
 	cost := m_*log_cost + ((LAMBDA/2)*weightdecay_term);
 	//return results
-
-return_record := RECORD (Layout_Part4)
-		REAL4 cost_value;
+	return_record := RECORD (Layout_Part)
+		REAL8 cost_value;
 	END;
 	theta_cost := PROJECT (theta_grad, TRANSFORM (return_record, SELF.cost_value := cost; SELF:=LEFT), LOCAL);
 	theta_cost_check :=  ASSERT(theta_cost, node_id=Thorlib.node() and node_id=theta_map.assigned_node (partition_id), 'softmax gradient is not distributed correctly', FAIL);
 	ToReturn := theta_cost_check;
 //soft function should change to work with the new paritiones
+	RETURN   ToReturn;
+	
 
-SET OF Pbblas.Types.value_t4 testit(PBblas.types.dimension_t r, PBblas.types.dimension_t s, PBblas.types.dimension_t f, PBblas.types.matrix_t4 M, PBblas.types.matrix_t4 D) := BEGINC++
-
-    #body
-    __lenResult = s* sizeof(float);
-    __isAllResult = false;
-    float * result = new float[s];
-    __result = (void*) result;
-		float *cellm = (float*) m;
-    float *celld = (float*) d;
-		uint32_t tmp;
-    uint32_t i;
-		uint32_t j=0;
-    uint32_t pos;
-		uint32_t f_ = f-1;
-		uint32_t posj = r+f;
-		for (i=0; i<s; i++) {
-		result[i]=-100;
-		}
-		for (i=0; i<s; i++) {
-			tmp = (uint32_t)celld[i];
-			if (tmp >= f && tmp <posj) {
-				pos = (i*r) + tmp - f;
-				result [j] = cellm[pos] ;
-				j = j+1;
-			}
-		}
-result [j]=j;
-  ENDC++;
-
-testres := JOIN (tx_soft, TrainLabel, LEFT.node_id=RIGHT.node_id, TRANSFORM (Layout_PART4, SELF.mat_part:= testit(LEFT.part_rows, LEFT.part_cols, LEFT.first_row, LEFT.mat_part, RIGHT.mat_part)  ; SELF:=LEFT), LOCAL);
-		thisrec cost_log_tran2 (Layout_Part4 le, Layout_Part4 ri) := TRANSFORM
-		SELF.v := log_cost_c(le.part_rows , le.part_cols, le.first_row, le.mat_part, ri.mat_part);
-		SELF.nd := le.node_id;
-	END;
-	log_cost_2 := JOIN (tx_soft, TrainLabel, LEFT.node_id = RIGHT.node_id, cost_log_tran2(LEFT,RIGHT), LOCAL);
-	alog := log_cost_c(240, 93805, 12055, tx_soft(node_id=49)[1].mat_part, TrainLabel(node_id=49)[1].mat_part);
-	alog_mat := testit(240, 93805, 12055, tx_soft(node_id=49)[1].mat_part, TrainLabel(node_id=49)[1].mat_part);
-	RETURN ToReturn;
   END; //END SoftMax_compatible_lbfgs_sparse_label
-EXPORT  SoftMax_compatible_lbfgs_sparse_label_test( DATASET(PBblas.Types.Layout_Part4)  theta, DATASET(Types.NumericField4) CostFunc_params, DATASET(Layout_Cell_nid4)  TrainData , DATASET(PBblas.Types.Layout_Part4)  TrainLabel) := function
-  SET OF Pbblas.Types.value_t4 scale_mat (PBblas.Types.dimension_t N, Pbblas.Types.value_t4 c, PBblas.Types.matrix_t4 M ) := BEGINC++
-
-    #body
-    __lenResult = n * sizeof(float);
-    __isAllResult = false;
-    float * result = new float[n];
-    __result = (void*) result;
-    float *cellm = (float*) m;
-    uint32_t i;
-		for (i=0; i<n; i++){
-			result[i] = cellm[i]*c;
-		}
-
-  ENDC++;
-	// l*M + D
-	Numfeat:= CostFunc_params(id=2)[1].value;
-  NumClass := CostFunc_params(id=3)[1].value;// number of features
-  m := CostFunc_params(id=1)[1].value;// number of samples
-	m_ := -1.0/m;
-  part_rows := CostFunc_params(id=4)[1].value;// this is used to partition the rows in theta matrix
-  part_cols := CostFunc_params(id=5)[1].value;// this is not used in this version of the softmax implementation
-  LAMBDA:= CostFunc_params(id=6)[1].value;
-	//maps used
-	SET OF PBblas.Types.value_t empty_array := [];
-	SET OF PBblas.Types.value_t4 empty_array4 := [];
-	theta_map := PBblas.Matrix_Map(NumClass, Numfeat, part_rows, Numfeat);
-	map_c := PBblas.Matrix_Map(NumClass, m, part_rows, m);
-	
-
-	//calculated theta*TrainData
-	//M=(theta*x);
-	//part_sparse_mul multiplies matrix M in Pbblas format of size r by s to the matrix D which is in numericfield format and its size is s by samp and the size od matrix D is num. Natrix D is a sparse matrix so its size is not necessarily s*samp
-	SET OF Pbblas.Types.value_t4 part_sparse_mul(PBblas.types.dimension_t r, PBblas.types.dimension_t s, PBblas.types.dimension_t samp, PBblas.types.dimension_t num, PBblas.types.matrix_t4 M, DATASET(PBblas.types.Layout_Cell4) D) := BEGINC++
-    typedef struct work3 {      // copy of numericfield4 translated to C
-      uint32_t x;
-      uint32_t y;
-      float v;
-    };
-    #body
-    __lenResult = r * samp * sizeof(float);
-    __isAllResult = false;
-    float *result = new float[r * samp];
-    __result = (void*) result;
-    work3 *celld = (work3*) d;
-		float *cellm = (float*) m;
-		uint32_t cells = num;
-    uint32_t i, j;
-    uint32_t pos;
-    for (i=0; i< r * samp; i++) {
-      result[i] =  0.0;
-    }
-		uint32_t x, y;
-		for (i=0; i < cells; i++){
-			x = celld[i].x - 1;   // input co-ordinates are one based,
-      y = celld[i].y - 1;  //x and y are zero based.
-			for (j=0; j<r; j++){
-				pos = y * r + j;
-				result[pos] = result[pos] + cellm[r * x + j] * celld[i].v;
-			}		
-		}
-  ENDC++;
-	
-	PBblas.Types.Layout_Part4 txtran (PBblas.Types.Layout_Part4 le, DATASET(PBblas.Types.Layout_Cell4) cells) := TRANSFORM
-		part_id := le.partition_id;;
-		SELF.partition_id := part_id;
-		SELF.node_id      := map_c.assigned_node(part_id);
-		SELF.block_row    := le.block_row;
-		SELF.block_col    := le.block_col;
-		SELF.first_row    := map_c.first_row(part_id);
-		SELF.part_rows    := map_c.part_rows(part_id);
-		SELF.first_col    := map_c.first_col(part_id);
-		SELF.part_cols    := map_c.part_cols(part_id);
-		SELF.mat_part := part_sparse_mul(le.part_rows, le.part_cols, m, COUNT (cells), le.mat_part, PROJECT(cells, TRANSFORM (PBblas.Types.layout_cell4, SELF:= LEFT)));
-		SELF := le;
-	END;
-	
-	tx := DENORMALIZE(theta, TrainData,
-                            LEFT.node_id = RIGHT.node_id,
-                            GROUP,
-                            txtran(LEFT,ROWS(RIGHT)), LOCAL);
-														
-	// M=tx;
-	// M = bsxfun(@minus, M, max(M, [], 1));
-	// first calculate  max(M, [], 1)
-	SET OF Pbblas.Types.value_t4 max_col (PBblas.Types.dimension_t r, PBblas.Types.dimension_t s, PBblas.Types.matrix_t4 D) := BEGINC++
-
-    #body
-    __lenResult = s * sizeof(float);
-    __isAllResult = false;
-    float * result = new float[s];
-    __result = (void*) result;
-    float *cell = (float*) d;
-		float max_tmp;
-    uint32_t i;
-		uint32_t j;
-    uint32_t pos;
-		uint32_t posj;
-		for (i=0; i<s; i++) {
-			pos = i * r;
-			max_tmp = cell[pos];
-			for (j=1; j<r; j++)
-			{
-				posj = pos +j;
-				if(cell[posj]>max_tmp)
-					max_tmp = cell[posj];
-			}
-			result[i]=max_tmp;
-    }
-
-  ENDC++;
-	//calculates the max between two arrays elemenwise
-	SET OF Pbblas.Types.value_t4 arr_max (PBblas.Types.dimension_t s, PBblas.Types.matrix_t4 C, PBblas.Types.matrix_t4 D) := BEGINC++
-	#body
-    __lenResult = s * sizeof(float);
-    __isAllResult = false;
-    float * result = new float[s];
-    __result = (void*) result;
-    float *celld = (float*) d;
-		float *cellc = (float*) c;
-		float max_tmp;
-    uint32_t i;
-		uint32_t j;
-    uint32_t pos;
-		uint32_t posj;
-		for (i=0; i<s; i++) {
-			if (celld[i]>cellc[i])
-			{
-				result[i]= celld[i];
-			}
-			else
-			{
-				result[i]= cellc[i];
-			}
-    }
-
-  ENDC++;
-	
-	Layout_Part4 max_tran(Layout_Part4 le) := TRANSFORM
-    SELF.mat_part := max_col(le.part_rows, le.part_cols, le.mat_part);
-		SELF.partition_id := 1;
-    SELF := le;
-  END;
-	M_max_col_ := PROJECT ( tx, max_tran (LEFT), LOCAL);
-	
-	PBblas.Types.Layout_Part4 maxtran (PBblas.Types.Layout_Part4 le, PBblas.Types.Layout_Part4 ri) := TRANSFORM
-		part_id := 1;
-		SELF.partition_id := part_id;
-		SELF.node_id      := 0;
-		SELF.block_row    := 1;
-		SELF.block_col    := 1;
-		SELF.first_row    := 1;
-		SELF.part_rows    := 1;
-		SELF.first_col    := 1;
-		SELF.part_cols    := le.part_cols;
-		SELF.mat_part :=  arr_max (le.part_cols, le.mat_part, ri.mat_part);
-		SELF := le;
-	END;
-	M_max_col := ROLLUP (M_max_col_, LEFT.partition_id = RIGHT.partition_id, maxtran(LEFT,RIGHT));
-	//M = bsxfun(@minus, M, max(M, [], 1));
-	//M=exp(M);
-	//result = exp(M - repmat (V, r, 1))
-	
-	SET OF PBblas.Types.value_t4 exp_mat_vec_minus(PBblas.Types.dimension_t N, PBblas.Types.dimension_t r, PBblas.Types.matrix_t4 M, PBblas.Types.matrix_t4 V) := BEGINC++
-
-    #body
-    __lenResult = n * sizeof(float);
-    __isAllResult = false;
-    float * result = new float[n];
-    __result = (void*) result;
-    float *cellm = (float*) m;
-		float *cellv = (float*) v;
-    uint32_t cells =  n;
-    uint32_t i;
-		uint32_t pos;
-    for (i=0; i<cells; i++) {
-		  pos = i / r;
-      result[i] = exp(cellm[i] - cellv[pos]);
-    }
-  ENDC++;
-	PBblas.Types.Layout_Part4 expmax_tran (PBblas.Types.Layout_Part4 le, PBblas.Types.Layout_Part4 ri) := TRANSFORM
-		SELF.mat_part := exp_mat_vec_minus(le.part_cols * le.part_rows, le.part_rows, le.mat_part, ri.mat_part) ;
-		SELF := le;
-	END;
-	tx_max_exp := JOIN (tx, M_max_col, TRUE, expmax_tran(LEFT,RIGHT), ALL);
-	
-	// M = bsxfun(@rdivide, M, sum(M));
-	//returns the summation of elements in each coumn
-	SET OF PBblas.Types.value_t4 sum_col (PBblas.Types.dimension_t r, PBblas.Types.dimension_t s, PBblas.Types.matrix_t4 D) := BEGINC++
-
-    #body
-    __lenResult = s * sizeof(float);
-    __isAllResult = false;
-    float * result = new float[s];
-    __result = (void*) result;
-    float *cell = (float*) d;
-    uint32_t cells =  r * s;
-    uint32_t i,j;
-    uint32_t pos;
-		float sum_tmp;
-	 for (i=0; i<s; i++) {
-		sum_tmp = 0;
-		pos = i * r;
-		for (j=0; j<r; j++)
-		{
-				sum_tmp = sum_tmp + cell[pos+j];
-		}
-		result[i]=sum_tmp;
-    }
-
-  ENDC++;
-
-	SET OF PBblas.Types.value_t4 mat_vec_div(PBblas.Types.dimension_t N, PBblas.Types.dimension_t r, PBblas.Types.matrix_t4 M, PBblas.Types.matrix_t4 V) := BEGINC++
-
-    #body
-    __lenResult = n * sizeof(float);
-    __isAllResult = false;
-    float * result = new float[n];
-    __result = (void*) result;
-    float *cellm = (float*) m;
-		float *cellv = (float*) v;
-    uint32_t cells =  n;
-    uint32_t i;
-		uint32_t pos;
-    for (i=0; i<cells; i++) {
-		  pos = i / r;
-      result[i] = cellm[i] / cellv[pos];
-
-    }
-  ENDC++;
-	
-	Layout_Part4 sum_tran(Layout_Part4 le) := TRANSFORM
-    SELF.mat_part := sum_col(le.part_rows, le.part_cols, le.mat_part);
-		SELF.partition_id := 1;
-    SELF := le;
-  END;
-	tx_max_exp_sum_col_ := PROJECT (tx_max_exp, sum_tran (LEFT), LOCAL);
-	
-	//summation of two arrays element-wise
-	SET OF PBblas.Types.value_t4 arr_sum (PBblas.Types.dimension_t s, PBblas.Types.matrix_t4 C, PBblas.Types.matrix_t4 D) := BEGINC++
-	#body
-    __lenResult = s * sizeof(float);
-    __isAllResult = false;
-    float * result = new float[s];
-    __result = (void*) result;
-    float *celld = (float*) d;
-		float *cellc = (float*) c;
-		float max_tmp;
-    uint32_t i;
-		uint32_t j;
-    uint32_t pos;
-		uint32_t posj;
-		for (i=0; i<s; i++) {
-			result[i] = celld[i] + cellc[i];
-    }
-
-  ENDC++;
-	PBblas.Types.Layout_Part4 sumtran (PBblas.Types.Layout_Part4 le, PBblas.Types.Layout_Part4 ri) := TRANSFORM
-		part_id := 1;
-		SELF.partition_id := part_id;
-		SELF.node_id      := 0;
-		SELF.block_row    := 1;
-		SELF.block_col    := 1;
-		SELF.first_row    := 1;
-		SELF.part_rows    := 1;
-		SELF.first_col    := 1;
-		SELF.part_cols    := le.part_cols;
-		SELF.mat_part :=  arr_sum (le.part_cols, le.mat_part, ri.mat_part);
-		SELF := le;
-	END;
-	tx_max_exp_sum_col := ROLLUP (tx_max_exp_sum_col_, LEFT.partition_id = RIGHT.partition_id, sumtran(LEFT,RIGHT));
-	PBblas.Types.Layout_Part4 divsumtran (PBblas.Types.Layout_Part4 le, PBblas.Types.Layout_Part4 ri) := TRANSFORM
-		SELF.mat_part := mat_vec_div(le.part_cols * le.part_rows, le.part_rows, le.mat_part, ri.mat_part) ;
-		SELF := le;
-	END;
-	tx_soft := JOIN (tx_max_exp, tx_max_exp_sum_col, TRUE, divsumtran(LEFT,RIGHT), ALL);//same as M in MATLAB
-
-SET OF Pbblas.Types.value_t4 m_label_minus(PBblas.types.dimension_t r, PBblas.types.dimension_t s, PBblas.types.dimension_t f, PBblas.types.matrix_t4 M, PBblas.types.matrix_t4 D) := BEGINC++
-
-    #body
-    __lenResult = r * s * sizeof(float);
-    __isAllResult = false;
-    float * result = new float[r*s];
-    __result = (void*) result;
-		float *cellm = (float*) m;
-    float *celld = (float*) d;
-		uint32_t tmp;
-    uint32_t i;
-		uint32_t j;
-    uint32_t pos;
-		uint32_t f_ = f-1;
-		uint32_t posj = r+f;
-		for (i=0; i<s*r; i++) {
-			result[i] = -1 * cellm[i];
-    }
-		for (i=0; i<s; i++) {
-			tmp = (uint32_t)celld[i];
-			if (tmp >= f && tmp <posj) {
-				pos = (i*r) + tmp - f;
-				result [pos] = result [pos] + 1;
-			}
-		}
-
-  ENDC++;
-	
-	grnd_tx := JOIN (tx_soft, TrainLabel, LEFT.node_id=RIGHT.node_id, TRANSFORM (Layout_PART4, SELF.mat_part:= m_label_minus(LEFT.part_rows, LEFT.part_cols, LEFT.first_row, LEFT.mat_part, RIGHT.mat_part)  ; SELF:=LEFT), LOCAL);
-
-
-	//groundTruth - tx_soft : (groundTruth-M)
-	// groundTruth := TrainLabel;
-	// grnd_tx := Pbblas.PB_daxpy(-1, tx_soft, groundTruth);
-	
-	//-1/m*(groundTruth-M)*x'
-	SET OF Pbblas.Types.value_t4 part_sparse_tran_mul(PBblas.types.dimension_t r, PBblas.types.dimension_t s, PBblas.types.dimension_t samp, PBblas.types.dimension_t num, PBblas.types.matrix_t4 M, DATASET(PBblas.types.Layout_Cell4) D, PBblas.Types.value_t4 mc) := BEGINC++
-    typedef struct work2 {      // copy of numericfield translated to C
-      uint32_t y;
-      uint32_t x;
-      float v;
-    };
-    #body
-    __lenResult = r * samp * sizeof(float);
-    __isAllResult = false;
-    float *result = new float[r * samp];
-    __result = (void*) result;
-    work2 *celld = (work2*) d;
-		float *cellm = (float*) m;
-		uint32_t cells = num;
-    uint32_t i, j;
-    uint32_t pos;
-    for (i=0; i< r * samp; i++) {
-      result[i] =  0.0;
-    }
-		uint32_t x, y;
-		for (i=0; i < cells; i++){
-			x = celld[i].x - 1;   // input co-ordinates are one based,
-      y = celld[i].y - 1;  //x and y are zero based.
-			for (j=0; j<r; j++){
-				pos = y * r + j;
-				result[pos] = result[pos] + cellm[r * x + j] * celld[i].v;
-			}		
-		}
-		for (i=0; i < r * samp; i++){
-			result[i]= result[i] * mc;
-		}
-  ENDC++; // END part_sparse_tran_mul
-	PBblas.Types.Layout_Part4 gradtran (PBblas.Types.Layout_Part4 le, DATASET(PBblas.Types.Layout_Cell4) cells) := TRANSFORM 
-		part_id := le.partition_id;;
-		SELF.partition_id := part_id;
-		SELF.node_id      := map_c.assigned_node(part_id);
-		SELF.block_row    := le.block_row;
-		SELF.block_col    := le.block_col;
-		SELF.first_row    := theta_map.first_row(part_id);
-		SELF.part_rows    := theta_map.part_rows(part_id);
-		SELF.first_col    := theta_map.first_col(part_id);
-		SELF.part_cols    := theta_map.part_cols(part_id);
-		SELF.mat_part := part_sparse_tran_mul(le.part_rows, le.part_cols, Numfeat, COUNT (cells), le.mat_part, PROJECT(cells, TRANSFORM (PBblas.Types.layout_cell4, SELF:= LEFT)), m_);
-		SELF := le;
-	END;
-	
-	grnd_tx_xt := DENORMALIZE(grnd_tx, TrainData,
-                            LEFT.node_id = RIGHT.node_id,
-                            GROUP,
-	                         gradtran(LEFT,ROWS(RIGHT)), LOCAL);
-	grndtx_xt_m :=  grnd_tx_xt;
-	
-	SET OF Pbblas.Types.value_t4 summation(PBblas.types.dimension_t N, Pbblas.Types.value_t4 L, PBblas.types.matrix_t4 M, PBblas.types.matrix_t4 D) := BEGINC++
-
-    #body
-    __lenResult = n * sizeof(float);
-    __isAllResult = false;
-    float * result = new float[n];
-    __result = (void*) result;
-		float *cellm = (float*) m;
-    float *celld = (float*) d;
-    uint32_t i;
-		for (i=0; i<n; i++) {
-			result[i] = (l*cellm[i])+celld[i];
-    }
-		
-  ENDC++;
-	
-	//calculate theta_grad
-	Layout_Part4 theta_grad_tran(Layout_Part4 le, Layout_Part4 ri) := TRANSFORM
-		N := le.part_rows * le.part_cols ;
-		SELF.mat_part := summation(N, LAMBDA, le.mat_part, ri.mat_part);
-		SELF := le;
-	END;
-	theta_grad := JOIN (theta, grndtx_xt_m,LEFT.partition_id = RIGHT.partition_id, theta_grad_tran(LEFT,RIGHT), FULL OUTER, LOCAL);
-	
-	//calculate cost
-	Pbblas.Types.value_t4 sum_sq(PBblas.Types.dimension_t N, PBblas.Types.matrix_t4 M) := BEGINC++
-
-    #body
-    float result = 0;
-		float tmpp ;
-    float *cellm = (float*) m;
-    uint32_t i;
-		for (i=0; i<n; i++) {
-      result = result + (cellm[i]*cellm[i]);
-    }
-		return(result);
-
-  ENDC++;
-	simple := {Pbblas.types.value_t4 v};
-	simple wd_tran (Layout_Part4 le) := TRANSFORM
-		SELF.v := sum_sq(le.part_cols * le.part_rows, le.mat_part);
-	END;
-	weightdecay_term_ := PROJECT (theta, wd_tran (LEFT), LOCAL);
-	weightdecay_term := SUM (weightdecay_term_, weightdecay_term_.v);
-	
-	// tmp=log(M).*groundTruth;
-  // log_cost=sum(tmp(:));
-	Pbblas.Types.value_t4 log_cost_c(PBblas.types.dimension_t r, PBblas.types.dimension_t s, PBblas.types.dimension_t f, PBblas.types.matrix_t4 M, PBblas.types.matrix_t4 D) := BEGINC++
-
-    #body
-    float result = 0.0;
-		float *cellm = (float*) m;
-    float *celld = (float*) d;
-		uint32_t tmp;
-    uint32_t i;
-		uint32_t j;
-    uint32_t pos;
-		uint32_t f_ = f-1;
-		uint32_t posj = r+f;
-		for (i=0; i<s; i++) {
-			tmp = (uint32_t)celld[i];
-			if (tmp >= f && tmp <posj) {
-				pos = (i*r) + tmp - f;
-				result  = result + log(cellm [pos]);
-			}
-		}
-		return (result);
-  ENDC++;
-	// Pbblas.Types.value_t4 log_cost_c (PBblas.Types.dimension_t N, PBblas.Types.matrix_t4 M, PBblas.Types.matrix_t4 D) := BEGINC++
-
-    // #body
-    // float result = 0;
-		// float tmpp ;
-    // float *cellm = (float*) m;
-		// float *celld = (float*) d;
-    // uint32_t i;
-		// for (i=0; i<n; i++) {
-      // result = result + (log(cellm[i])*celld[i]);
-    // }
-		// return(result);
-  // ENDC++;
-	simple cost_log_tran (Layout_Part4 le, Layout_Part4 ri) := TRANSFORM
-		SELF.v := log_cost_c(le.part_rows , le.part_cols, le.first_row, le.mat_part, ri.mat_part);
-	END;
-	log_cost_ := JOIN (tx_soft, TrainLabel, LEFT.node_id = RIGHT.node_id, cost_log_tran(LEFT,RIGHT), LOCAL);
-	log_cost := SUM (log_cost_, log_cost_.v);
-	
-	thisrec := RECORD
-	REAL4 v;
-	UNSIGNED4 nd;
-	END;
-
-	
-	//cost=((-1/m)*log_cost)+((lambda/2)*weightdecay_term);
-	cost := m_*log_cost + ((LAMBDA/2)*weightdecay_term);
-	//return results
-
-return_record := RECORD (Layout_Part4)
-		REAL4 cost_value;
-	END;
-	theta_cost := PROJECT (theta_grad, TRANSFORM (return_record, SELF.cost_value := cost; SELF:=LEFT), LOCAL);
-	theta_cost_check :=  ASSERT(theta_cost, node_id=Thorlib.node() and node_id=theta_map.assigned_node (partition_id), 'softmax gradient is not distributed correctly', FAIL);
-	ToReturn := theta_cost_check;
-//soft function should change to work with the new paritiones
-
-SET OF Pbblas.Types.value_t4 testit(PBblas.types.dimension_t r, PBblas.types.dimension_t s, PBblas.types.dimension_t f, PBblas.types.matrix_t4 M, PBblas.types.matrix_t4 D) := BEGINC++
-
-    #body
-    __lenResult = s* sizeof(float);
-    __isAllResult = false;
-    float * result = new float[s];
-    __result = (void*) result;
-		float *cellm = (float*) m;
-    float *celld = (float*) d;
-		uint32_t tmp;
-    uint32_t i;
-		uint32_t j=0;
-    uint32_t pos;
-		uint32_t f_ = f-1;
-		uint32_t posj = r+f;
-		for (i=0; i<s; i++) {
-		result[i]=-100;
-		}
-		for (i=0; i<s; i++) {
-			tmp = (uint32_t)celld[i];
-			if (tmp >= f && tmp <posj) {
-				pos = (i*r) + tmp - f;
-				result [j] = cellm[pos] ;
-				j = j+1;
-			}
-		}
-result [j]=j;
-  ENDC++;
-
-testres := JOIN (tx_soft, TrainLabel, LEFT.node_id=RIGHT.node_id, TRANSFORM (Layout_PART4, SELF.mat_part:= testit(LEFT.part_rows, LEFT.part_cols, LEFT.first_row, LEFT.mat_part, RIGHT.mat_part)  ; SELF:=LEFT), LOCAL);
-		thisrec cost_log_tran2 (Layout_Part4 le, Layout_Part4 ri) := TRANSFORM
-		SELF.v := log_cost_c(le.part_rows , le.part_cols, le.first_row, le.mat_part, ri.mat_part);
-		SELF.nd := le.node_id;
-	END;
-	log_cost_2 := JOIN (tx_soft, TrainLabel, LEFT.node_id = RIGHT.node_id, cost_log_tran2(LEFT,RIGHT), LOCAL);
-	alog := log_cost_c(240, 93805, 12055, tx_soft(node_id=49)[1].mat_part, TrainLabel(node_id=49)[1].mat_part);
-	alog_mat := testit(240, 93805, 12055, tx_soft(node_id=49)[1].mat_part, TrainLabel(node_id=49)[1].mat_part);
-
-
-
-
-	RETURN cost;
-  END; //END SoftMax_compatible_lbfgs_sparse_label_test
-
 //// the implementation of SoftMax_compatible_lbfgs_sparse_partitions_datadist where the last join is done in a loop in order to avoid memory problem
 EXPORT  SoftMax_compatible_lbfgs_sparse_partitions_datadist_loop( DATASET(Layout_Part) theta, DATASET(Types.NumericField) CostFunc_params, DATASET(Layout_Part) TrainData , DATASET(Layout_Part) TrainLabel) := function
   Numfeat:= CostFunc_params(id=2)[1].value;
@@ -14456,9 +13805,8 @@ grndtx_xt_m := LOOP (DATASET ([], Layout_Part), data_nodesused, multi_loop (ROWS
 	theta_cost_check :=  ASSERT(theta_cost, node_id=Thorlib.node() and node_id=theta_map.assigned_node (partition_id), 'softmax gradient is not distributed correctly', FAIL);
 	ToReturn := theta_cost_check;
 
-  // RETURN  PROJECT (grnd_tx, TRANSFORM (return_record, SELF.cost_value := 10; SELF:=LEFT), LOCAL);
-	RETURN  ToReturn; 
-
+  RETURN  PROJECT (grnd_tx, TRANSFORM (return_record, SELF.cost_value := 10; SELF:=LEFT), LOCAL);
+	// RETURN  ToReturn; 
 	
 
   END; //END SoftMax_compatible_lbfgs_sparse_partitions_datadist_loop
@@ -15084,7 +14432,9 @@ END;//softmax_lbfgs_partitions
 This way we do not need to distribute the whole theta on all the nodes in order to calculate tx. theta is just distributed based on partition id and data is distributed based on block row
 so corresponding block rows of data end up on the same node of the coresponding theta block columns. and tx can be calculated. */
 EXPORT softmax_lbfgs_partitions_datadist (INTEGER4 NumberofFeatures, INTEGER4 NumberofClasses, UNSIGNED4 prows=0, UNSIGNED4 pcols=0, BOOLEAN tonorm=FALSE) := MODULE
-SHARED SM(DATASET(Types.NumericField4) X, DATASET(Types.NumericField4) Y,DATASET(Mat.Types.Element4) Inttheta, REAL4 LAMBDA=0.001, UNSIGNED MaxIter=100, UNSIGNED LBFGS_corrections = 100) := MODULE
+
+
+SHARED SM(DATASET(Types.NumericField) X, DATASET(Types.NumericField) Y,DATASET(Mat.Types.Element) Inttheta, REAL8 LAMBDA=0.001, UNSIGNED2 MaxIter=100, UNSIGNED LBFGS_corrections = 100) := MODULE
 
 	NormalizeOne (DATASET (Layout_Part) in_d) := FUNCTION
 	//this function adds up the column value in a matrix of size r by c, the result is a vector of size r
@@ -15152,34 +14502,27 @@ SHARED SM(DATASET(Types.NumericField4) X, DATASET(Types.NumericField4) Y,DATASET
 	m := MAX (X,X.id);// number of samples
 	f := NumberofFeatures; // number of features
 	//Create block matrix d
-	Xtran := PROJECT (X,TRANSFORM ( ML.Types.NumericField4, SELF.id := LEFT.number; SELF.number := LEFT.id; SELF:=LEFT),LOCAL);//through the analysis rows represent features and columns represent samples
+	Xtran := PROJECT (X,TRANSFORM ( ML.Types.NumericField, SELF.id := LEFT.number; SELF.number := LEFT.id; SELF:=LEFT),LOCAL);//through the analysis rows represent features and columns represent samples
 	dmap := PBblas.Matrix_Map(f,m,prows,pcols);
-	num_class := MAX (Y, Y.value);
-	labelmap := PBblas.Matrix_Map(m,1,m,1);
 	dmap_usednodes := MIN (dmap.row_blocks, Thorlib.nodes());
-	
 	insert_columns:=0;
 	insert_value:=0.0d;
-	Layout_Cell4 cvt_2_cell(ML.Types.NumericField4 lr) := TRANSFORM
+	Layout_Cell cvt_2_cell(ML.Types.NumericField lr) := TRANSFORM
 		SELF.x := lr.id;     // 1 based
 		SELF.y := lr.number; // 1 based
 		SELF.v := lr.value;
   END;
   Xtran_cell := PROJECT(Xtran, cvt_2_cell(LEFT));
-	Y_cell := PROJECT(Y, cvt_2_cell(LEFT));
-	Inttheta_ := PROJECT (Inttheta, TRANSFORM (Types.NumericField4, SELF.id := LEFT.x; SELF.number := LEFT.y; SELF.value := LEFT.value));
-	theta_cell := PROJECT(Inttheta_, cvt_2_cell(LEFT));
-	Work1 := RECORD(Layout_Cell4)
+	Work1 := RECORD(Layout_Cell)
     PBblas.Types.partition_t     partition_id;
     PBblas.Types.node_t          node_id;
     PBblas.Types.dimension_t     block_row;
     PBblas.Types.dimension_t     block_col;
   END;
-	
-  FromCells(PBblas.IMatrix_Map mat_map, DATASET(Layout_Cell4) cells,
+  FromCells(PBblas.IMatrix_Map mat_map, DATASET(Layout_Cell) cells,
                    PBblas.Types.dimension_t insert_columns=0,
                    PBblas.Types.value_t insert_value=0.0d) := FUNCTION
-    Work1 cvt_2_xcell(Layout_Cell4 lr) := TRANSFORM
+    Work1 cvt_2_xcell(Layout_Cell lr) := TRANSFORM
       block_row           := mat_map.row_block(lr.x);
       block_col           := mat_map.col_block(lr.y + insert_columns);
       partition_id        := mat_map.assigned_part(block_row, block_col);
@@ -15195,13 +14538,13 @@ SHARED SM(DATASET(Types.NumericField4) X, DATASET(Types.NumericField4) Y,DATASET
     d1 := DISTRIBUTE(d0, node_id);
     d2 := SORT(d1, partition_id, y, x, LOCAL);    // prep for column major
     d3 := GROUP(d2, partition_id, LOCAL);
-    Layout_Part4 roll_cells(Work1 parent, DATASET(Work1) cells) := TRANSFORM
+    Layout_Part roll_cells(Work1 parent, DATASET(Work1) cells) := TRANSFORM
       first_row     := mat_map.first_row(parent.partition_id);
       first_col     := mat_map.first_col(parent.partition_id);
       part_rows     := mat_map.part_rows(parent.partition_id);
       part_cols     := mat_map.part_cols(parent.partition_id);
-      SELF.mat_part := PBblas.MakeR4Set(part_rows, part_cols, first_row, first_col,
-                                        PROJECT(cells, Layout_Cell4),
+      SELF.mat_part := PBblas.MakeR8Set(part_rows, part_cols, first_row, first_col,
+                                        PROJECT(cells, Layout_Cell),
                                         insert_columns, insert_value);
       SELF.partition_id:= parent.partition_id;
       SELF.node_id     := parent.node_id;
@@ -15216,9 +14559,7 @@ SHARED SM(DATASET(Types.NumericField4) X, DATASET(Types.NumericField4) Y,DATASET
     rslt := ROLLUP(d3, GROUP, roll_cells(LEFT, ROWS(LEFT)));
     RETURN rslt;
   END;
-	
 	ddist_ := FromCells(dmap, Xtran_cell, insert_columns, insert_value);
-	labeldist := FromCells(labelmap, Y_cell, insert_columns, insert_value);
 	//this function normalize ddist_ data where each column adds up to one
 		NormalizeFeaturesOne (DATASET (Layout_Part) in_d) := FUNCTION
 	//this function adds up the row value in a matrix of size r by s, the result is a vector of size s
@@ -15293,28 +14634,22 @@ Layout_Part norm_d_sum_row (Layout_Part te, INTEGER co) := TRANSFORM
 	 rs := JOIN(in_d, d_sum_row_norm_dist, LEFT.block_col = RIGHT.block_col , norm_tran(LEFT,RIGHT), LOCAL);
 		RETURN rs;
 	END; //END NormalizeFeaturesOne
-//	ddist := IF (tonorm, NormalizeFeaturesOne(ddist_), ddist_);
+	ddist := IF (tonorm, NormalizeFeaturesOne(ddist_), ddist_);
 	// groundTruth := Utils.ToGroundTruth (Y); orig//Instead of working with label matrix we work with groundTruth matrix 
-	groundTruth := Utils.DistinctLabeltoGroundTruth4 (Y);
-
-
+	groundTruth := Utils.DistinctLabeltoGroundTruth (Y);
 	// groundTruth := Utils.LabelToGroundTruth (Y);
   //groundTruth is a Numclass*NumSamples matrix. groundTruth(i,j)=1 if label of the jth sample is i, otherwise groundTruth(i,j)=0
 	ymap := PBblas.Matrix_Map(NumberofClasses,m,NumberofClasses,pcols);
 	ymap_label := PBblas.Matrix_Map(NumberofClasses,m,prows,m);
 	// ydist := DMAT.Converted.FromElement(groundTruth,ymap); orig
-	//ydist := DMAT.Converted.FromNumericFieldDS(groundTruth,ymap);// for groundtruth matrix partiion id equals the block)col so DMAT.Converted.FromNumericFieldDS distributes the data based on block_col which is what we want 
-
-	ydist_label := DMAT.Converted.FromNumericFieldDS4(groundTruth,ymap_label);
-	
+	ydist := DMAT.Converted.FromNumericFieldDS(groundTruth,ymap);// for groundtruth matrix partiion id equals the block)col so DMAT.Converted.FromNumericFieldDS distributes the data based on block_col which is what we want 
+	ydist_label := DMAT.Converted.FromNumericFieldDS(groundTruth,ymap_label);
 	// partition theta
 	thetamap := PBblas.Matrix_Map(NumberofClasses,f,NumberofClasses,prows);
-	//theta_dist := DMAT.Converted.FromElement(Inttheta,thetamap);
+	theta_dist := DMAT.Converted.FromElement(Inttheta,thetamap);
+
 	thetamap_label := PBblas.Matrix_Map(NumberofClasses,f,prows,f);
-	theta_dist_label := DMAT.Converted.FromElement4(Inttheta,thetamap_label);
-theta_dist_dist := FromCells(thetamap_label, theta_cell, insert_columns, insert_value);
-	
-	
+	theta_dist_label := DMAT.Converted.FromElement(Inttheta,thetamap_label);
 	//NormalizeFeaturesOne for numerifcField dataset
 	NormalizeFeaturesOne_nf (DATASET (Types.NumericField) d_in) := FUNCTION
 		d_in_dist := DISTRIBUTE (d_in, d_in.number);
@@ -15328,23 +14663,9 @@ theta_dist_dist := FromCells(thetamap_label, theta_cell, insert_columns, insert_
 		norm_d_in := JOIN (d_in_dist_sorted, sumcol, LEFT.number = RIGHT.number, TRANSFORM (Types.NumericField, SELF.value := LEFT.value/RIGHT.sc ;SELF:= LEFT),LOCAL);
 		RETURN norm_d_in;
 	END;
-	NormalizeFeaturesOne_nf4 (DATASET (Types.NumericField4) d_in) := FUNCTION
-		d_in_dist := DISTRIBUTE (d_in, d_in.number);
-		d_in_dist_sorted := SORT (d_in_dist, d_in_dist.number, LOCAL);
-		d_in_dist_sorted_grouped := GROUP (d_in_dist_sorted, d_in_dist_sorted.number);
-		sumcol_red := RECORD
-			d_in_dist_sorted_grouped.number;
-			REAL8 sc := SUM (GROUP, d_in_dist_sorted_grouped.value);//sum col
-		END;
-		sumcol := TABLE (d_in_dist_sorted_grouped, sumcol_red, number, LOCAL);
-		norm_d_in := JOIN (d_in_dist_sorted, sumcol, LEFT.number = RIGHT.number, TRANSFORM (Types.NumericField4, SELF.value := LEFT.value/RIGHT.sc ;SELF:= LEFT),LOCAL);
-		RETURN norm_d_in;
-	END;
-	
-	Xtran_normone := NormalizeFeaturesOne_nf4 (Xtran);
+	Xtran_normone := NormalizeFeaturesOne_nf (Xtran);
 	theta_node_used := thetamap_label.nodes_used;
-	
-	Layout_Cell_nid4 x_norm_tran (Types.NumericField4 le, UNSIGNED coun) := TRANSFORM
+	Layout_Cell_nid x_norm_tran (Types.NumericField le, UNSIGNED coun) := TRANSFORM
 		SELF.x := le.id;
 		SELF.y := le.number;
 		SELF.v := le.value;
@@ -15352,13 +14673,6 @@ theta_dist_dist := FromCells(thetamap_label, theta_cell, insert_columns, insert_
 	END;
 	Xtran_normone_norm := NORMALIZE(Xtran_normone, theta_node_used, x_norm_tran(LEFT, COUNTER) );
 	Xtran_normone_norm_dist := DISTRIBUTE (Xtran_normone_norm, node_id);
-	
-	Layout_Part4 label_norm_tran (Layout_Part4 le, UNSIGNED coun) := TRANSFORM
-		SELF.node_id := coun%theta_node_used;
-		SELF := le;
-	END;
-	labeldist_norm := NORMALIZE(labeldist, theta_node_used, label_norm_tran(LEFT, COUNTER) );
-	labeldist_norm_dist := DISTRIBUTE (labeldist_norm, node_id);
 	// parameters for softmax
 	SM_param := DATASET([
     {1,1,m},
@@ -15367,20 +14681,20 @@ theta_dist_dist := FromCells(thetamap_label, theta_cell, insert_columns, insert_
     {4,1,prows},
     {5,1,pcols},
     {6,1,LAMBDA}
-    ], Types.NumericField4);
+    ], Types.NumericField);
 	paramnumber := NumberofFeatures * NumberofClasses;
-	//lbfgs_result := Optimization_new_new_2_2 (0, 0, 0, 0).MinFUNC(theta_dist,SM_param,ddist,ydist,SoftMax_compatible_lbfgs_sparse_partitions_datadist, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0);
+	lbfgs_result := Optimization_new_new_2_2 (0, 0, 0, 0).MinFUNC(theta_dist,SM_param,ddist,ydist,SoftMax_compatible_lbfgs_sparse_partitions_datadist, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0);
 	// lbfgs_result := Optimization_new_new_2_2_test (0, 0, 0, 0).MinFUNC(theta_dist,SM_param,ddist,ydist,SoftMax_compatible_lbfgs_sparse_partitions_datadist, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0); 
 	
-	// gg := SoftMax_compatible_lbfgs_sparse( theta_dist, SM_param, ddist , ydist);
-	// arm_t_rec := RECORD
-			// real8 init_arm_t;
-			// Layout_part.partition_id;
-		// END;
+	gg := SoftMax_compatible_lbfgs_sparse( theta_dist, SM_param, ddist , ydist);
+	arm_t_rec := RECORD
+			real8 init_arm_t;
+			Layout_part.partition_id;
+		END;
 		
-		// arminitt := DATASET ([{0.01,1},{0.01,2}],arm_t_rec);
-		// wolfe_result := Optimization_new_new_2_2 (0, 0, 0, 0).WolfeLineSearch4_4_2(1, theta_dist, SM_param, ddist , ydist, SoftMax_compatible_lbfgs_sparse , 1.0, theta_dist, gg, 10,0.0001, 0.9, 25, 0.000000001);
-	// armijo_result := Optimization_new_new_2_2 (0, 0, 0, 0).ArmijoBacktrack_fromwolfe(theta_dist, SM_param, ddist , ydist,SoftMax_compatible_lbfgs_sparse, DISTRIBUTE(arminitt, partition_id-1), theta_dist, gg, 10, 0.0001, 0.9, 0.000000001);
+		arminitt := DATASET ([{0.01,1},{0.01,2}],arm_t_rec);
+		wolfe_result := Optimization_new_new_2_2 (0, 0, 0, 0).WolfeLineSearch4_4_2(1, theta_dist, SM_param, ddist , ydist, SoftMax_compatible_lbfgs_sparse , 1.0, theta_dist, gg, 10,0.0001, 0.9, 25, 0.000000001);
+	armijo_result := Optimization_new_new_2_2 (0, 0, 0, 0).ArmijoBacktrack_fromwolfe(theta_dist, SM_param, ddist , ydist,SoftMax_compatible_lbfgs_sparse, DISTRIBUTE(arminitt, partition_id-1), theta_dist, gg, 10, 0.0001, 0.9, 0.000000001);
 		// lbfgs_result := Optimization_new_new_2_2 (0, 0, 0, 0).MinFUNC(theta_dist,SM_param,ddist,ydist,SoftMax_compatible_lbfgs, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0);
 		
 	// lbfgs_rec := RECORD (Layout_Part)
@@ -15408,17 +14722,17 @@ SET OF REAL8 sum_row2 (PBblas.Types.dimension_t r, PBblas.Types.dimension_t s, P
 				result[pos] = result[pos] + cell[i];
 			}	
 	 ENDC++;
-	// d_sum_row_ := PROJECT (ddist, TRANSFORM(Layout_Part, SELF.mat_part := sum_row2 (LEFT.part_rows, LEFT.part_cols, LEFT.mat_part); SELF:= LEFT), LOCAL);
+	 d_sum_row_ := PROJECT (ddist, TRANSFORM(Layout_Part, SELF.mat_part := sum_row2 (LEFT.part_rows, LEFT.part_cols, LEFT.mat_part); SELF:= LEFT), LOCAL);
 
-// Layout_Part addparts(Layout_Part le, Layout_Part ri) := TRANSFORM
-	  // HaveRight := IF(ri.part_cols=0, FALSE, TRUE);
-		// N := 1 * le.part_cols ;
-		// SELF.mat_part := IF (HaveRight, PBblas.BLAS.daxpy(N, 1.0, le.mat_part, 1, ri.mat_part, 1), le.mat_part);
-		// SELF := le;
-	// END;
-	// d_sum_row_dist := DISTRIBUTE (d_sum_row_, block_col);
-	// d_sum_row_sorted := SORT (d_sum_row_dist, block_col, LOCAL);
-	// d_sum_row := ROLLUP(d_sum_row_sorted, LEFT.block_col = RIGHT.block_col, addparts(LEFT, RIGHT), LOCAL);
+Layout_Part addparts(Layout_Part le, Layout_Part ri) := TRANSFORM
+	  HaveRight := IF(ri.part_cols=0, FALSE, TRUE);
+		N := 1 * le.part_cols ;
+		SELF.mat_part := IF (HaveRight, PBblas.BLAS.daxpy(N, 1.0, le.mat_part, 1, ri.mat_part, 1), le.mat_part);
+		SELF := le;
+	END;
+	d_sum_row_dist := DISTRIBUTE (d_sum_row_, block_col);
+	d_sum_row_sorted := SORT (d_sum_row_dist, block_col, LOCAL);
+	d_sum_row := ROLLUP(d_sum_row_sorted, LEFT.block_col = RIGHT.block_col, addparts(LEFT, RIGHT), LOCAL);
 	// EXPORT mod := theta_dist;
 	// EXPORT mod := lbfgs_result; //orig
 	// EXPORT mod := ddist;
@@ -15446,39 +14760,18 @@ SET OF REAL8 sum_row (PBblas.Types.dimension_t r, PBblas.Types.dimension_t s, PB
       result[pos] = result[pos] + cell[i];
     }
 
-  ENDC++; 
+  ENDC++; */
 	// EXPORT mod := PROJECT (ydist, TRANSFORM (Layout_part, SELF.mat_part := sum_row(LEFT.part_rows, LEFT.part_cols, LEFT.mat_part);SELF:= LEFT),LOCAL);
 		// EXPORT mod := SoftMax_compatible_lbfgs_sparse_partitions_datadist( theta_dist, SM_param, ddist , ydist);
-		//part_theta := ML.Utils.distrow_ranmap_part(NumberofClasses,f,prows , 0.005) ;
+		part_theta := ML.Utils.distrow_ranmap_part(NumberofClasses,f,prows , 0.005) ;
 		// EXPORT mod := SoftMax_compatible_lbfgs_sparse_label( part_theta, SM_param, Xtran_normone_norm_dist , ydist_label);
 		// EXPORT mod := SoftMax_compatible_lbfgs_sparse_partitions_datadist_loop( theta_dist, SM_param, ddist , ydist);
 		// EXPORT mod := Xtran_normone_norm_dist;
 		EXPORT mod :=  Optimization_new_new_2_2_nf (0, 0, 0, 0).MinFUNC(part_theta,SM_param,Xtran_normone_norm_dist,ydist_label,SoftMax_compatible_lbfgs_sparse_label, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0);
-*/
-part_theta := ML.Utils.distrow_ranmap_part4(NumberofClasses,f,prows , 1.0) ;
 
-
-		// costgrad_record10 := RECORD (PBblas.Types.Layout_Part)
-			// REAL8 cost_value;
-	  // END;
-
-// thistestfun (DATASET(PBblas.Types.Layout_Part4) le , DATASET(Layout_Cell_nid4) TrainData)  := FUNCTION
-	// return_record := RECORD (Layout_Part4)
-		// REAL4 cost_value;
-	// END;
-	// bi := PROJECT(le,TRANSFORM(return_record,SELF.cost_value := 10.0; SELF:=LEFT));
-// RETURN bi;
-// END;
-
-// EXPORT mod :=  Optimization_new_new_2_2_nf4 (0, 0, 0, 0).MinFUNC6(part_theta, thistestfun);
-// EXPORT mod :=  Optimization_new_new_2_2_nf4 (0, 0, 0, 0).MinFUNC5(part_theta,SM_param,Xtran_normone_norm_dist,labeldist_norm_dist,SoftMax_compatible_lbfgs_sparse_label);
-part_theta_in := DATASET('~thor::maryam::mytest::lshtclarge_inttheta',Layout_Part4,THOR);
-// EXPORT mod :=  Optimization_new_new_2_2_nf4 (0, 0, 0, 0).MinFUNC4(part_theta,SM_param,Xtran_normone_norm_dist,labeldist_norm_dist,SoftMax_compatible_lbfgs_sparse_label, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0);
-// EXPORT mod := part_theta;
-EXPORT mod := SoftMax_compatible_lbfgs_sparse_label( part_theta, SM_param, Xtran_normone_norm_dist , labeldist_norm_dist);
 	END; // END SM
 
-	EXPORT LearnC (DATASET(Types.NumericField4) X, DATASET(Types.NumericField4) Y,DATASET(Mat.Types.Element4) Inttheta, REAL4 LAMBDA=0.001, UNSIGNED2 MaxIter=100, UNSIGNED2 LBFGS_corrections = 100)  := SM( X,  Y, Inttheta, LAMBDA,  MaxIter,  LBFGS_corrections ) .mod;
+	EXPORT LearnC (DATASET(Types.NumericField) X, DATASET(Types.NumericField) Y,DATASET(Mat.Types.Element) Inttheta, REAL8 LAMBDA=0.001, UNSIGNED2 MaxIter=100, UNSIGNED LBFGS_corrections = 100)  := SM( X,  Y, Inttheta, LAMBDA,  MaxIter,  LBFGS_corrections ) .mod;
 	
 SHARED lbfgs_rec2 := RECORD (Layout_part)
 			REAL8 cost_value;
