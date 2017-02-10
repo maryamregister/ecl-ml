@@ -11,7 +11,7 @@ Layout_part := PBblas.Types.Layout_part;
 // filename2 := '~maryam::mytest::small_lshtc_train';
  // filename2 := '~maryam::mytest::small_lshtc_train_task3.txt';
 // filename2:= '~online::maryam::large_lshtc_train_task1.txt'; // 347256 number of features, 12294 labels, 93805 samples
-filename2:= '~online::maryam::wikipediamediumpreproclshtcv3-train.txt'; // 31521 classes, 346299 features
+filename2:= '~online::maryam::wikipediamediumpreproclshtcv3-train.txt';
 InDS2    := DATASET(filename2, {STRING Line}, CSV(SEPARATOR([])));
 ParseDS2 := PROJECT(InDS2, TRANSFORM({UNSIGNED RecID, STRING Line}, SELF.Line := LEFT.Line + ' '; SELF.RecID:= COUNTER, SELF := LEFT));
 //Parse the fields and values out
@@ -66,7 +66,7 @@ LoopNum := 200; // Number of iterations in softmax algortihm
 LAMBDA := 0.00001; // weight decay parameter in  claculation of SoftMax Cost fucntion
 
 
- UNSIGNED corr := 3;
+ UNSIGNED corr := 30;
 // prows := 31;
 // prows := 41;
 // prows := 49;
@@ -233,12 +233,13 @@ END;
  
  
 
-*/
+
  
  
 /*
 
 */
+
 
 
 
@@ -278,7 +279,7 @@ END;
 // T1kk := TABLE(softresult, R1,  block_col);
 // OUTPUT (MAX (T1kk, Number_count), named ('T1kk'));
 
-OUTPUT (PROJECT(softresult(no=2), TRANSFORM (thsirec,  SELF.real_node := STD.System.Thorlib.Node(); SELF := LEFT), LOCAL),named ('realnodes'),ALL);
+OUTPUT (PROJECT(softresult, TRANSFORM (thsirec,  SELF.real_node := STD.System.Thorlib.Node(); SELF := LEFT), LOCAL),named ('realnodes'),ALL);
 	SET OF Pbblas.Types.value_t4 to4(PBblas.types.dimension_t N, PBblas.types.matrix_t M) := BEGINC++
 
     #body
@@ -361,8 +362,8 @@ OUTPUT (PROJECT(softresult, TRANSFORM (lbfgs_rec,  SELF.real_node := STD.System.
 
 // OUTPUT (COUNT (softresult));
 // the lbfgs one 
-*/
 
+*/
 
  lbfgs_rec := RECORD 
 Pbblas.types.node_t          node_id;
@@ -388,7 +389,7 @@ Pbblas.types.node_t          node_id;
     END;
 		lbfgs_result := PROJECT(softresult, TRANSFORM (lbfgs_rec,  SELF.real_node := STD.System.Thorlib.Node(); SELF := LEFT), LOCAL);
 OUTPUT (lbfgs_result,named ('realnodes_lbfgs'));
-// OUTPUT(lbfgs_result,,'~thor::maryam::mytest::lshtc_realnodes', OVERWRITE);
+OUTPUT(lbfgs_result,,'~thor::maryam::mytest::lshtc_realnodes', OVERWRITE);
 
 /*
 // testdata := DATASET([{1,1,9},{1,3,8},{3,3,3.3},{4,6,10}], ML.Types.NumericField);  

@@ -1,4 +1,4 @@
-IMPORT ML;
+﻿IMPORT ML;
 IMPORT ML.Docs AS Docs;
 d11 := DATASET([                                                                                                                
 {'In the beginning God created the heavens and the earth. '},
@@ -16,20 +16,34 @@ d11 := DATASET([
 d00 := DATASET([{'aa bb cc dd ee'},{'bb cc dd ee ff gg hh ii'},{'bb cc dd ee ff gg hh ii'}, {'dd ee ff'},{'bb dd ee'}],{string r});
 d := d11;
 d1 := PROJECT(d,TRANSFORM(Docs.Types.Raw,SELF.Txt := LEFT.r));
+OUTPUT (d1, named ('d1'));
 d2 := Docs.Tokenize.Enumerate(d1);
+OUTPUT (d2, named ('d2'));
 d3 := Docs.Tokenize.Clean(d2);
+OUTPUT (d3, named ('d3'));
 d4 := Docs.Tokenize.Split(d3);
+OUTPUT (d4, named ('d4'));
 lex := Docs.Tokenize.Lexicon(d4);
+OUTPUT (lex, named ('lex'));
 o1 := Docs.Tokenize.ToO(d4,lex);
+OUTPUT (o1, named ('o1'));
 o2 := Docs.Trans(O1).WordBag;
+OUTPUT (o2, named ('o2'));
 lex;
 ForAssoc := PROJECT( o2, TRANSFORM(ML.Types.ItemElement,SELF.id := LEFT.id,
 SELF.value := LEFT.word ));
 ForAssoc;
-ML.Associate(ForAssoc,2).Apriori1;
-ML.Associate(ForAssoc,2).Apriori2;
-ML.Associate(ForAssoc,2).Apriori3;
-ML.Associate(ForAssoc,2).AprioriN(40);
+OUTPUT (ForAssoc, named ('ForAssoc'), ALL);
+ap1 := ML.Associate(ForAssoc,2).Apriori1;
+OUTPUT (ap1, named ('apriori1'),ALL);
+
+ap2 := ML.Associate(ForAssoc,2).Apriori2;
+OUTPUT (ap2, named ('apriori2'),ALL);
+ap3 := ML.Associate(ForAssoc,2).Apriori3;
+OUTPUT (ap3, named ('apriori3'),ALL);
+ap4 := ML.Associate(ForAssoc,2).AprioriN(3);
+OUTPUT (ap4, named ('apriori4'),ALL);
 
 //Added - not part of the doc.
-ML.Associate(ForAssoc,2).EclatN(40);
+ecl := ML.Associate(ForAssoc,2).EclatN(3);
+OUTPUT (ecl, named ('result'), ALL);

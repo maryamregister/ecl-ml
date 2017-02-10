@@ -13630,11 +13630,11 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label_sparse( DATASET(Layout_Part) theta
     __result = (void*) result;
     double *celld = (double*) d;
 		double *cellc = (double*) c;
-		double max_tmp;
+		// double max_tmp;
     uint32_t i;
-		uint32_t j;
-    uint32_t pos;
-		uint32_t posj;
+		// uint32_t j;
+    // uint32_t pos;
+		// uint32_t posj;
 		for (i=0; i<s; i++) {
 			if (celld[i]>cellc[i])
 			{
@@ -13702,7 +13702,7 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label_sparse( DATASET(Layout_Part) theta
     double * result = new double[s];
     __result = (void*) result;
     double *cell = (double*) d;
-    uint32_t cells =  r * s;
+    // uint32_t cells =  r * s;
     uint32_t i,j;
     uint32_t pos;
 		double sum_tmp;
@@ -13752,11 +13752,11 @@ EXPORT  SoftMax_compatible_lbfgs_sparse_label_sparse( DATASET(Layout_Part) theta
     __result = (void*) result;
     double *celld = (double*) d;
 		double *cellc = (double*) c;
-		double max_tmp;
+		// double max_tmp;
     uint32_t i;
-		uint32_t j;
-    uint32_t pos;
-		uint32_t posj;
+		// uint32_t j;
+    // uint32_t pos;
+		// uint32_t posj;
 		for (i=0; i<s; i++) {
 			result[i] = celld[i] + cellc[i];
     }
@@ -13795,9 +13795,9 @@ SET OF Pbblas.Types.value_t m_label_minus(PBblas.types.dimension_t r, PBblas.typ
     double *celld = (double*) d;
 		uint32_t tmp;
     uint32_t i;
-		uint32_t j;
+		// uint32_t j;
     uint32_t pos;
-		uint32_t f_ = f-1;
+		// uint32_t f_ = f-1;
 		uint32_t posj = r+f;
 		for (i=0; i<s*r; i++) {
 			result[i] = -1.0 * cellm[i];
@@ -13845,7 +13845,7 @@ SET OF Pbblas.Types.value_t m_label_minus(PBblas.types.dimension_t r, PBblas.typ
 		}
   ENDC++; // END part_sparse_tran_mul
 	PBblas.Types.Layout_Part gradtran (PBblas.Types.Layout_Part le, DATASET(PBblas.Types.Layout_Cell) cells) := TRANSFORM 
-		part_id := le.partition_id;;
+		part_id := le.partition_id;
 		SELF.partition_id := part_id;
 		SELF.node_id      := map_c.assigned_node(part_id);
 		SELF.block_row    := le.block_row;
@@ -13875,7 +13875,7 @@ SET OF Pbblas.Types.value_t m_label_minus(PBblas.types.dimension_t r, PBblas.typ
 
     #body
     double result = 0;
-		double tmpp ;
+		// double tmpp ;
     double *cellm = (double*) m;
     uint32_t i;
 		for (i=0; i<n; i++) {
@@ -13900,9 +13900,9 @@ SET OF Pbblas.Types.value_t m_label_minus(PBblas.types.dimension_t r, PBblas.typ
     double *celld = (double*) d;
 		uint32_t tmp;
     uint32_t i;
-		uint32_t j;
+		// uint32_t j;
     uint32_t pos;
-		uint32_t f_ = f-1;
+		// uint32_t f_ = f-1;
 		uint32_t posj = r+f;
 		for (i=0; i<s; i++) {
 			tmp = (uint32_t)celld[i];
@@ -13925,7 +13925,7 @@ SET OF Pbblas.Types.value_t m_label_minus(PBblas.types.dimension_t r, PBblas.typ
 		REAL8 cost_value;
 	END;
 	theta_cost := PROJECT (theta_grad, TRANSFORM (return_record, SELF.cost_value := cost; SELF:=LEFT), LOCAL);
-	theta_cost_check :=  ASSERT(theta_cost, node_id=Thorlib.node() and node_id=theta_map.assigned_node (partition_id), 'softmax gradient is not distributed correctly', FAIL);
+	theta_cost_check :=  ASSERT(theta_cost, node_id=Thorlib.node() and node_id=theta_map.assigned_node (partition_id) , 'softmax gradient is not distributed correctly', FAIL);
 	ToReturn := theta_cost_check;
 //soft function should change to work with the new paritiones
 	RETURN   ToReturn;
@@ -15125,7 +15125,8 @@ Layout_Part norm_d_sum_row (Layout_Part te, INTEGER co) := TRANSFORM
 		norm_d_in := JOIN (d_in_dist_sorted, sumcol, LEFT.number = RIGHT.number, TRANSFORM (Types.NumericField, SELF.value := LEFT.value/RIGHT.sc ;SELF:= LEFT),LOCAL);
 		RETURN norm_d_in;
 	END;
-	Xtran_normone := NormalizeFeaturesOne_nf (Xtran);
+	Xtran_normone_ := NormalizeFeaturesOne_nf (Xtran);
+	Xtran_normone := IF (tonorm,Xtran_normone_ , Xtran);
 	theta_node_used := thetamap_label.nodes_used;
 	Layout_Cell_nid x_norm_tran (Types.NumericField le, UNSIGNED coun) := TRANSFORM
 		SELF.x := le.id;
@@ -15235,8 +15236,35 @@ SET OF REAL8 sum_row (PBblas.Types.dimension_t r, PBblas.Types.dimension_t s, PB
 		part_theta := ML.Utils.distrow_ranmap_part(NumberofClasses,f,prows , 0.005) ;
 		// EXPORT mod := SoftMax_compatible_lbfgs_sparse_label( part_theta, SM_param, Xtran_normone_norm_dist , ydist_label);
 		// EXPORT mod := SoftMax_compatible_lbfgs_sparse_partitions_datadist_loop( theta_dist, SM_param, ddist , ydist);
-		// EXPORT mod := Xtran_normone_norm_dist;
-		EXPORT mod :=  Optimization_new_new_2_2_nf_cost (0, 0, 0, 0).MinFUNC(part_theta,SM_param,Xtran_normone_norm_dist,labeldist_norm_dist,SoftMax_compatible_lbfgs_sparse_label_sparse, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0);
+		// EXPORT mod := part_theta;
+		EXPORT mod :=  Optimization_new_new_2_2_nf_cost (0, 0, 0, 0).MinFUNC(part_theta,SM_param,Xtran_normone_norm_dist,labeldist_norm_dist,SoftMax_compatible_lbfgs_sparse_label_sparse, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0);//orig
+		
+
+
+
+
+//start
+Xtran_normone_norm_dist2 := DATASET('~maryam::mytest::Xtrannormonenormdist', Layout_Cell_nid, THOR);
+part_theta2 := DATASET('~maryam::mytest::parttheta', Layout_Part, THOR);
+labeldist_norm_dist2 := DATASET('~maryam::mytest::labeldistnormdist', Layout_Part, THOR);
+// EXPORT mod := SoftMax_compatible_lbfgs_sparse_label_sparse( part_theta2, SM_param, Xtran_normone_norm_dist2 , labeldist_norm_dist2);
+// EXPORT mod := Optimization_new_new_2_2_nf_cost (0, 0, 0, 0).MinFUNC(part_theta2,SM_param,Xtran_normone_norm_dist2,labeldist_norm_dist2,SoftMax_compatible_lbfgs_sparse_label_sparse, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0);//orig
+// EXPORT mod  := part_theta2;
+
+
+// EXPORT mod := SoftMax_compatible_lbfgs_sparse_label_sparse( part_theta, SM_param, Xtran_normone_norm_dist , labeldist_norm_dist);
+
+		// OUTPUT(part_theta,Layout_Part,'~maryam::mytest::parttheta', OVERWRITE);
+		// OUTPUT(Xtran_normone_norm_dist,Layout_Cell_nid,'~maryam::mytest::Xtrannormonenormdist', OVERWRITE);
+		// OUTPUT(labeldist_norm_dist,Layout_Part,'~maryam::mytest::labeldistnormdist', OVERWRITE);
+		// EXPORT mod := 1;
+/*
+		part_theta := DATASET('~maryam::mytest::parttheta', Layout_Part);
+		labeldist_norm_dist := DATASET('~maryam::mytest::labeldistnormdist', Layout_Part);
+		Xtran_normone_norm_dist := DATASET('~maryam::mytest::Xtrannormonenormdist', Layout_Cell_nid);
+*/
+
+		// EXPORT mod := part_theta;
 // EXPORT mod := Xtran_normone_norm_dist;
 // EXPORT mod := SoftMax_compatible_lbfgs_sparse_label_sparse( part_theta, SM_param, Xtran_normone_norm_dist , labeldist_norm_dist);
 

@@ -505,7 +505,7 @@ EXPORT distrow_ranmap_part(UNSIGNED nrow, UNSIGNED ncol, UNSIGNED nrow_part, REA
     double * result = new double[n];
     __result = (void*) result;
     uint32_t i;
-		double G = 1000000.0;
+		//double G = 1000000.0;
 		srand (s);
     for (i=0; i<n; i++) {
       // result[i] = (rand() % G) / G;
@@ -739,7 +739,7 @@ EXPORT DistinctLabel4(DATASET(Types.NumericField4) Y ) := FUNCTION
 	// assigne 1 to N (N is the number of classes) to the distict labels
 	distinct_labels_1 := PROJECT (distinct_labels, TRANSFORM (Types.NumericField4, SELF.id := COUNTER; SELF:=LEFT));
 	//JOIN distinct_labels_1 and Y in order to get a Y dataset where labels start from 1 
-	Y_1 := JOIN (Y, distinct_labels_1, LEFT.value = RIGHT.value, TRANSFORM (Types.NumericField4, SELF.value := RIGHT.id; SELF:=LEFT));
+	Y_1 := JOIN (Y, distinct_labels_1, LEFT.value = RIGHT.value, TRANSFORM (Types.NumericField4, SELF.value :=(REAL4)RIGHT.id; SELF:=LEFT));
 	// now that Y_1's labels start from 1, it can be passe to LabelToGroundTruth in order to be converted to groundtruth matrix
 	RETURN Y_1;
 END;// END DistinctLabel4
@@ -752,10 +752,22 @@ EXPORT DistinctLabel(DATASET(Types.NumericField) Y ) := FUNCTION
 	// assigne 1 to N (N is the number of classes) to the distict labels
 	distinct_labels_1 := PROJECT (distinct_labels, TRANSFORM (Types.NumericField, SELF.id := COUNTER; SELF:=LEFT));
 	//JOIN distinct_labels_1 and Y in order to get a Y dataset where labels start from 1 
-	Y_1 := JOIN (Y, distinct_labels_1, LEFT.value = RIGHT.value, TRANSFORM (Types.NumericField, SELF.value := RIGHT.id; SELF:=LEFT));
+	Y_1 := JOIN (Y, distinct_labels_1, LEFT.value = RIGHT.value, TRANSFORM (Types.NumericField, SELF.value := (REAL8)RIGHT.id; SELF:=LEFT));
 	// now that Y_1's labels start from 1, it can be passe to LabelToGroundTruth in order to be converted to groundtruth matrix
 	RETURN Y_1;
 END;// END DistinctLabel
+
+EXPORT DistinctLabel_test(DATASET(Types.NumericField) Y ) := FUNCTION
+	// find DISTINCT  labels
+	Y_sorted := SORT (Y, Y.value);
+	distinct_labels := DEDUP (Y_sorted, Y_sorted.value);
+	// assigne 1 to N (N is the number of classes) to the distict labels
+	distinct_labels_1 := PROJECT (distinct_labels, TRANSFORM (Types.NumericField, SELF.id := COUNTER; SELF:=LEFT));
+	//JOIN distinct_labels_1 and Y in order to get a Y dataset where labels start from 1 
+	Y_1 := JOIN (Y, distinct_labels_1, LEFT.value = RIGHT.value, TRANSFORM (Types.NumericField, SELF.value := (REAL8)RIGHT.id; SELF:=LEFT));
+	// now that Y_1's labels start from 1, it can be passe to LabelToGroundTruth in order to be converted to groundtruth matrix
+	RETURN Y_1;
+END;// END DistinctLabel_test
 
 
 EXPORT DistinctLabeltoGroundTruth(DATASET(Types.NumericField) Y ) := FUNCTION

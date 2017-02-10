@@ -78,7 +78,7 @@ UNSIGNED real_node;
 END;
 
 OUTPUT (PROJECT(softresult, TRANSFORM (thsirec,  SELF.real_node := STD.System.Thorlib.Node(); SELF := LEFT), LOCAL),named ('realnodes'), ALL);
-OUTPUT(softresult,,'~thor::maryam::mytest::news20',CSV(HEADING(SINGLE)), OVERWRITE);
+OUTPUT(softresult,,'~maryam::mytest::news20',OVERWRITE);
 
  lbfgs_rec := RECORD 
 Pbblas.types.node_t          node_id;
