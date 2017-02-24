@@ -21,10 +21,10 @@ matrix_t     := SET OF REAL8;
       INTEGER8 WolfeFunEval;
     END;
       
-// A version of Optimization_new_new_2_2 where the costfuc has a different format than costfun in Optimization_new_new_2_2
+// A version of Optimization_new_new_2_2_nf_cost trying to figure out wehre MP link closed error coming from
 // the train data is provided in Layout_Cell_nid which has been converted from numericfield format (_nf)
 //Func : handle to the function we want to minimize it, its output should be the error cost and the error gradient
-EXPORT Optimization_new_new_2_2_nf_cost (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
+EXPORT Optimization_new_new_2_2_nf_cost_mp (UNSIGNED4 prows=0, UNSIGNED4 pcols=0, UNSIGNED4 Maxrows=0, UNSIGNED4 Maxcols=0) := MODULE
     // BFGS Search Direction
     //
     // This function returns the (L-BFGS) approximate inverse Hessian,
@@ -1927,14 +1927,21 @@ EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.
 			prev_num := 1;
 			new_num := 2;
 			prev_or_new := IF (cond1, (IF (cost_cond, prev_num, new_num)) , IF (cond2, new_num, IF (cond3, IF (cost_cond, prev_num, new_num) , new_num)));
-			SELF.mat_part := IF (prev_or_new = 1 , prev_mat, new_mat);
-			SELF.cost_value := IF (prev_or_new = 1 , fPrev, fNew);
-			SELF.high_cost_value := IF (prev_or_new = 1 , fNew, fPrev);
-			SELF.prev_gtd := IF (prev_or_new = 1 , gtdPrev, gtdNew);
-			SELF.high_gtd := IF (prev_or_new = 1 , gtdNew, gtdPrev);
-			SELF.prev_t := IF (prev_or_new = 1 , tPrev, newt);
-			SELF.high_t := IF (prev_or_new = 1 , newt, tPrev);
-			SELF.id := prev_or_new; // thd id shows whether the associated value to prev is the left or riht side of the bracket, the hight value will be the other value of id (if id=1 it means the prev values start the bracket and high ends the brackte) 
+			// SELF.mat_part := IF (prev_or_new = 1 , prev_mat, new_mat);
+			SELF.mat_part := IF (cond1, (IF (cost_cond, prev_mat, new_mat)) , IF (cond2, new_mat, IF (cond3, IF (cost_cond, prev_mat, new_mat) , new_mat)));
+			// SELF.cost_value := IF (prev_or_new = 1 , fPrev, fNew);
+			SELF.cost_value :=      IF (cond1, (IF (cost_cond, fPrev, fNew)) , IF (cond2, fNew, IF (cond3, IF (cost_cond, fPrev, fNew) , fNew)));;
+			// SELF.high_cost_value := IF (prev_or_new = 1 , fNew, fPrev);
+			SELF.high_cost_value := IF (cond1, (IF (cost_cond, fNew, fPrev)) , IF (cond2, fPrev, IF (cond3, IF (cost_cond, fNew, fPrev) , fPrev)));
+			// SELF.prev_gtd := IF (prev_or_new = 1 , gtdPrev, gtdNew);
+			SELF.prev_gtd := IF (cond1, (IF (cost_cond, gtdPrev, gtdNew)) , IF (cond2, gtdNew, IF (cond3, IF (cost_cond, gtdPrev, gtdNew) , gtdNew)));
+			// SELF.high_gtd := IF (prev_or_new = 1 , gtdNew, gtdPrev);
+			SELF.high_gtd := IF (cond1, (IF (cost_cond, gtdNew, gtdPrev)) , IF (cond2, gtdPrev, IF (cond3, IF (cost_cond, gtdNew, gtdPrev) , gtdPrev)));
+			// SELF.prev_t := IF (prev_or_new = 1 , tPrev, newt);
+			SELF.prev_t := IF (cond1, (IF (cost_cond, tPrev, newt)) , IF (cond2, newt, IF (cond3, IF (cost_cond, tPrev, newt) , newt)));
+			// SELF.high_t := IF (prev_or_new = 1 , newt, tPrev);
+			SELF.high_t := IF (cond1, (IF (cost_cond, newt, tPrev)) , IF (cond2, tPrev, IF (cond3, IF (cost_cond, newt, tPrev) , tPrev)));
+			SELF.id := prev_or_new; // thd id shows whether the associated value to prev is the left or right side of the bracket, the hight value will be the other value of id (if id=1 it means the prev values start the bracket and high ends the brackte) 
 			//actually the id only matters when we exit the loop because of cond1 or cond3. cond2 and reaching maxitr casue program to end so id does not matter becasue we don't go to zooming loop
 			SELF.bracketing_cond := WhichCond;
 			SELF.c := coun;
@@ -1943,13 +1950,15 @@ EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.
 			SELF := le_prev;
 		END;
 		Result := JOIN (inputp, CostGrad_new, LEFT.partition_id = RIGHT.partition_id, main_tran(LEFT, RIGHT), LOCAL);
-		final_result := IF (IS_f_g_new_legal, result, Arm_result_zoomingformat); // if either of f_new or g_new are not legal return the armijobacktracking instead of wolfelinesearch
+		// final_result := IF (IS_f_g_new_legal, result, Arm_result_zoomingformat); //orig wiki// if either of f_new or g_new are not legal return the armijobacktracking instead of wolfelinesearch
+		final_result := result; 
 		RETURN final_result;
 	END; // END BracketingStep
 	//after the bracketing step check whether we have reached maxitr , however if we left bracketing step with which_cond==10 which means we used armijobacktracking then this is the final result and does not need to go for maxitr check
 	ZoomingRecord maxitr_tran (ZoomingRecord le_brack , CostGrad_record ri_g) := TRANSFORM
 		itr_num := le_brack.c;
-		maxitr_cond := (itr_num = (maxLS+1)) AND le_brack.bracketing_cond !=10; // itr number should be equal to (maxLS+1) and also bracketing_cond should not be 10, if bracketing_cond is equal to 10 it means that in the bracketing step we entered ArmijoBackTrackign and soomterminaition is true and we will return
+		// maxitr_cond := (itr_num = (maxLS+1)) AND le_brack.bracketing_cond !=10; orig wiki// itr number should be equal to (maxLS+1) and also bracketing_cond should not be 10, if bracketing_cond is equal to 10 it means that in the bracketing step we entered ArmijoBackTrackign and soomterminaition is true and we will return
+		maxitr_cond := (itr_num = (maxLS+1)) ; // 
 		cost_cond_0 := ri_g.cost_value < le_brack.cost_value;
 		SELF.mat_part := IF (maxitr_cond , IF (cost_cond_0, ri_g.mat_part, le_brack.mat_part) , le_brack.mat_part);
 		SELF.cost_value := IF (maxitr_cond , IF (cost_cond_0, ri_g.cost_value, le_brack.cost_value) , le_brack.cost_value);
@@ -1963,7 +1972,7 @@ EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.
 	bracketing_result_ := LOOP(topass_bracketing, LEFT.bracketing_cond = -1, BracketingStep(ROWS(LEFT), COUNTER));
 	//check if MAXITR is reached and decide between bracketing result and f (t=0) to be returned
 	bracketing_result := JOIN (bracketing_result_ , g, LEFT.partition_id = RIGHT.partition_id, maxitr_tran (LEFT, RIGHT), LOCAL);
-	topass_zooming := bracketing_result;
+	topass_zooming := ASSERT(bracketing_result, COUNT(bracketing_result)=385 , 'bracketingresult '+cccc +' '+COUNT(bracketing_result), FAIL);
 	ZoomingStep (DATASET (ZoomingRecord) inputp, UNSIGNED coun) := FUNCTION
 		//similar to BracketingStep, first we calculate the new point (for that we need to calculate the new t using interpolation)
 		//after the new point is calculated we JOIN the input and the new point in order to decide which one to return
@@ -2084,7 +2093,7 @@ EXPORT WolfeLineSearch4_4_2(INTEGER cccc, DATASET(Layout_Part) x, DATASET(Types.
 	//RETURN LOOP(topass_bracketing, (maxLS+1), LEFT.bracketing_cond = -1, BracketingStep(ROWS(LEFT), COUNTER));
 	//RETURN bracketing_result;// works
 	//RETURN zooming_result;
-	RETURN zooming_result;
+	RETURN ASSERT(zooming_result, COUNT(zooming_result)=385 , 'zommingresult '+cccc+' '+COUNT(zooming_result), FAIL);
 	//RETURN LOOP(topass_bracketing, LEFT.bracketing_cond = -1, BracketingStep(ROWS(LEFT), COUNTER)); // works correctly
 	//RETURN BracketingStep(topass_bracketing, 1); works correctly
 	//RETURN LOOP(topass_bracketing, 1, BracketingStep(ROWS(LEFT), COUNTER));works correctly
@@ -4980,7 +4989,8 @@ corrections := 3;
 		//Conversly, if no condition is satisfied, it means we are going to the next iteration so we need to update Hdiag, s and y if and only if update_cond is satisfied, otherwise no update is done and we just return the current values to the next iteration
 		TheReturn := IF (minfunc_cond = -1, IF (update_cond, g_x_nextitr + s_s_corr + y_y_corr, g_x_nextitr), break_result);
 		Rresult := IF (dlegalstep, IF (gtdprogress, noprogalong_return, TheReturn) , dnotlegal_return);
-		RETURN Rresult;
+		// RETURN Rresult; orig wiki
+		RETURN  g_x_nextitr + s_s_corr + y_y_corr;
 		//RETURN g_x_nextitr + s_s_corr + y_y_corr;
 	 END;// END min_step_firstitr
 	 
@@ -5259,9 +5269,10 @@ corrections := 3;
 		//Conversly, if no condition is satisfied, it means we are going to the next iteration so we need to update Hdiag, s and y if and only if update_cond is satisfied, otherwise no update is done and we just return the current values to the next iteration
 		TheReturn := IF (minfunc_cond = -1, IF (update_cond, g_x_nextitr + s_s_corr + y_y_corr, g_x_nextitr), break_result);
 		Rresult := IF (dlegalstep, IF (gtdprogress, noprogalong_return, TheReturn) , dnotlegal_return);
-		RETURN Rresult;
+		 RETURN Rresult; 
 		//RETURN PROJECT (w, TRANSFORM(minfRec, SELF.sty:=LEFT.prev_t; SELF.break_cond := LEFT.bracketing_cond; SELF.h := -1; SELF.update_itr := 0; SELF.no := 10; SELF.min_funeval := LEFT.wolfe_funevals;SELF:= LEFT), LOCAL);
 		//RETURN g_x_nextitr + s_s_corr + y_y_corr;
+		// RETURN  g_x_nextitr + s_s_corr + y_y_corr;
  END;//END min_step
  	 min_step2_4 (DATASET(minfRec) inp,unsigned4 min_c) := FUNCTION
 		g_pre := inp (no = 1);
@@ -5412,7 +5423,7 @@ corrections := 3;
 		//calculate d
 		upitr := MAX (inp, inp.update_itr);
 		// lbfgs_d := lbfgs2 (inp, min_c);
-		lbfgs_d := lbfgs2 (inp, upitr);
+		lbfgs_d := lbfgs2 (inp, upitr); 
 		d := lbfgs_d;
 		// is d legal
 		dlegalstep := IsLegal (d);// lbfgs algorithm keeps the funevals, cost_value and other fields for final calculated d same as what it is recieved intitially (inp(no=1))
@@ -5428,7 +5439,7 @@ corrections := 3;
 		gtdprogress := gtd > -1*tolX;
 		// Find Point satisfying Wolfe
 		t_init := 1;
-		w := WolfeLineSearch4_4_2(1, x_pre, CostFunc_params, TrainData, TrainLabel,CostFunc, t_init, d, g_pre, gtd, 0.0001, 0.9, wolfe_max_itr, 0.000000001);
+		w := WolfeLineSearch4_4_2(min_c, x_pre, CostFunc_params, TrainData, TrainLabel,CostFunc, t_init, d, g_pre, gtd, 0.0001, 0.9, wolfe_max_itr, 0.000000001);
 		//w := ASSERT(w_, EXISTS(w_), 'w has zero rows', FAIL);
 		//calculate new oint
 		//calculate td
@@ -5542,10 +5553,11 @@ corrections := 3;
 		// IF one of the break conditions is satisfied and minfunc!=-1 we need to return only x_new and g_new and no need to calculated Hdiag, s, y fo rthe next iteration
 		//Conversly, if no condition is satisfied, it means we are going to the next iteration so we need to update Hdiag, s and y if and only if update_cond is satisfied, otherwise no update is done and we just return the current values to the next iteration
 		TheReturn := IF (minfunc_cond = -1, IF (update_cond, g_x_nextitr + s_s_corr + y_y_corr, g_x_nextitr), break_result);
-		Rresult := IF (dlegalstep, IF (gtdprogress, noprogalong_return, TheReturn) , dnotlegal_return);
-		RETURN Rresult;
+		// Rresult := IF (dlegalstep, IF (gtdprogress, noprogalong_return, TheReturn) , dnotlegal_return); orig wiki
+		Rresult := IF (gtdprogress, noprogalong_return, IF ((NOT optimality_cond) AND (NOT lack_prog_cond) AND (NOT costCond), IF (update_cond, g_x_nextitr + s_s_corr + y_y_corr, g_x_nextitr), break_result)) ;
+		// RETURN Rresult;
 		//RETURN PROJECT (w, TRANSFORM(minfRec, SELF.sty:=LEFT.prev_t; SELF.break_cond := LEFT.bracketing_cond; SELF.h := -1; SELF.update_itr := 0; SELF.no := 10; SELF.min_funeval := LEFT.wolfe_funevals;SELF:= LEFT), LOCAL);
-		//RETURN g_x_nextitr + s_s_corr + y_y_corr;
+		RETURN g_x_nextitr + s_s_corr + y_y_corr;
  END;//END min_step2
  
  
@@ -5858,9 +5870,9 @@ m6 := LOOP(m1, COUNTER <= 6, min_step(ROWS(LEFT),COUNTER));
 	//start here
 	m9 := LOOP(m1, 9, min_step2(ROWS(LEFT),COUNTER));
 	
- // RETURN LOOP (m1, LEFT.break_cond = -1 , min_step2(ROWS(LEFT),COUNTER)); //orig
- m3mp := LOOP (m1, 3 , min_step2(ROWS(LEFT),COUNTER));
-  RETURN  min_step2(m3mp,4); //orig
+ RETURN LOOP (m1, LEFT.break_cond = -1 , min_step2(ROWS(LEFT),COUNTER)); //orig
+ // m3mp := LOOP (m1, 9 , min_step2(ROWS(LEFT),COUNTER));
+  // RETURN  m3mp; // works
  // RETURN min_step2_wiki(m1,1);
  // m22:= min_step2(m1,1); 
  // RETURN m22;
@@ -5871,6 +5883,7 @@ m6 := LOOP(m1, COUNTER <= 6, min_step(ROWS(LEFT),COUNTER));
 
 // m3_wiki := LOOP (m1, 3 , min_step2(ROWS(LEFT),COUNTER));
 // m4_wiki := min_step2_wiki (m3_wiki,4);
+// RETURN LOOP (m1, 4 , min_step2_4(ROWS(LEFT),COUNTER));
 // RETURN LOOP (m1, 4 , min_step2_4(ROWS(LEFT),COUNTER));
 // RETURN min_step2 (m3_wiki,4);
   END;// END MinFUNC

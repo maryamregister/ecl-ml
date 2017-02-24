@@ -15237,7 +15237,7 @@ SET OF REAL8 sum_row (PBblas.Types.dimension_t r, PBblas.Types.dimension_t s, PB
 		// EXPORT mod := SoftMax_compatible_lbfgs_sparse_label( part_theta, SM_param, Xtran_normone_norm_dist , ydist_label);
 		// EXPORT mod := SoftMax_compatible_lbfgs_sparse_partitions_datadist_loop( theta_dist, SM_param, ddist , ydist);
 		// EXPORT mod := part_theta;
-		EXPORT mod :=  Optimization_new_new_2_2_nf_cost (0, 0, 0, 0).MinFUNC(part_theta,SM_param,Xtran_normone_norm_dist,labeldist_norm_dist,SoftMax_compatible_lbfgs_sparse_label_sparse, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0);//orig
+		// EXPORT mod :=  Optimization_new_new_2_2_nf_cost (0, 0, 0, 0).MinFUNC(part_theta,SM_param,Xtran_normone_norm_dist,labeldist_norm_dist,SoftMax_compatible_lbfgs_sparse_label_sparse, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0);//orig
 		
 
 
@@ -15248,7 +15248,7 @@ Xtran_normone_norm_dist2 := DATASET('~maryam::mytest::Xtrannormonenormdist', Lay
 part_theta2 := DATASET('~maryam::mytest::parttheta', Layout_Part, THOR);
 labeldist_norm_dist2 := DATASET('~maryam::mytest::labeldistnormdist', Layout_Part, THOR);
 // EXPORT mod := SoftMax_compatible_lbfgs_sparse_label_sparse( part_theta2, SM_param, Xtran_normone_norm_dist2 , labeldist_norm_dist2);
-// EXPORT mod := Optimization_new_new_2_2_nf_cost (0, 0, 0, 0).MinFUNC(part_theta2,SM_param,Xtran_normone_norm_dist2,labeldist_norm_dist2,SoftMax_compatible_lbfgs_sparse_label_sparse, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0);//orig
+EXPORT mod := Optimization_new_new_2_2_nf_cost (0, 0, 0, 0).MinFUNC(part_theta2,SM_param,Xtran_normone_norm_dist2,labeldist_norm_dist2,SoftMax_compatible_lbfgs_sparse_label_sparse, paramnumber,MaxIter, 0.00001, 0.000000001,  1000, LBFGS_corrections, 0, 0, 0,0);//orig
 // EXPORT mod  := part_theta2;
 
 

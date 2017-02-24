@@ -66,13 +66,13 @@ LoopNum := 200; // Number of iterations in softmax algortihm
 LAMBDA := 0.00001; // weight decay parameter in  claculation of SoftMax Cost fucntion
 
 
- UNSIGNED corr := 3;
+ UNSIGNED corr := 5;
 // prows := 31;
 // prows := 41;
 // prows := 49;
 // prows := 61;
 // prows := 123;
-prows := 79; //medium wikipedia
+prows := 82; //medium wikipedia
 pcols := 1;
 // T1 := ML.Utils.distrow_ranmap(12294, 347256, prows ) ;
 

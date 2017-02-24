@@ -52,13 +52,13 @@ depDataC := L_n;
 
 //initialize THETA
 Numclass := COUNT (DEDUP (SORT (depDataC, value),value)); // number of distinct values represents the numebr of classes
-// OUTPUT  (Numclass, NAMED ('Numclass'));
+OUTPUT  (Numclass, NAMED ('Numclass'));
 InputSize := COUNT (DEDUP (SORT (indepDataC, number),number));
 numsamples := MAX (indepDataC, indepDataC.id);
-// OUTPUT (InputSize, named ('InputSize'));
+OUTPUT (InputSize, named ('InputSize'));
 // OUTPUT (MAX (indepDataC,number),named('maxnumber'));
 // OUTPUT (MIN (indepDataC,number),named('minnumber'));
-// OUTPUT (numsamples, named('numsamples'));
+OUTPUT (numsamples, named('numsamples'));
 
 
 //Set Parameters
@@ -246,7 +246,7 @@ END;
 
 
 
-
+/*
 // trainer := DeepLearning.softmax_lbfgs (InputSize, Numclass, prows,  pcols); 
 trainer := DeepLearning8.softmax_lbfgs_partitions_datadist (InputSize, Numclass, prows,  pcols , TRUE); 
 //SM( X,  Y, Inttheta, LAMBDA,  MaxIter,  LBFGS_corrections ) 
@@ -364,7 +364,7 @@ OUTPUT (PROJECT(softresult, TRANSFORM (lbfgs_rec,  SELF.real_node := STD.System.
 // the lbfgs one 
 
 */
-
+/*
  lbfgs_rec := RECORD 
 Pbblas.types.node_t          node_id;
     Pbblas.types.partition_t     partition_id;
